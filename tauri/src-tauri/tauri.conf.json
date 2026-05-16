@@ -1,0 +1,23 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeBuildCommand": "yarn build",
+    "beforeDevCommand": "yarn start",
+    "devPath": "http://localhost:3000",
+    "distDir": "../build"
+  },
+  "package": { "productName": "Lightkid AI Studio", "version": "0.1.0" },
+  "tauri": {
+    "bundle": {
+      "active": true,
+      "identifier": "com.lightkid.studio",
+      "targets": "all",
+      "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"]
+    },
+    "allowlist": { "all": true, "shell": { "all": true, "open": true }, "fs": { "all": true } },
+    "windows": [
+      { "title": "Lightkid AI Studio", "width": 1400, "height": 900, "minWidth": 1100, "minHeight": 700, "decorations": true, "transparent": false }
+    ],
+    "security": { "csp": null }
+  }
+}
