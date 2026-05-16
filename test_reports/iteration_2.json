@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 2 backend testing complete. 38/38 tests passed (100%) — 23 regression (iter1) + 15 new for Bible Sources + AI Composer + OAuth callback. Verified: GET /api/bible/translations returns dict keyed by 7 languages (English/German/Italian/Russian/Spanish/French/Portuguese), each with non-empty translation items containing id/name/source; GET /api/bible/books returns exactly 17 book metadata objects; LIVE chapter fetches verified for translation=web (bible-api.com, English WEB, John 1 → 51 verses), translation=deu_l12 (helloao.org, German Luther 1912, John 1 → 51 verses), translation=rus_syn (Russian Synodal, 51 verses), translation=ita_dio (Italian Diodati, 51 verses) — all hybrid routing correct. AI Composer: PUT/GET /api/ai/compose-config persists arbitrary nested JSON; POST /api/ai/compose-lyrics WITHOUT openrouter_api_key returns 200 with {error, items: []} (not 500). OAuth callback: GET /api/oauth/callback without code/state returns 400 HTML; with invalid code returns 400 HTML (token exchange failed). Regression confirmed: music/image/video/upload jobs gracefully fall back to mock when suno_cookie/mj_proxy_url/ffmpeg binary/google creds missing. _id excluded from all 10 spot-checked endpoints.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py /api/bible/chapter has duplicate `except HTTPException: raise / except Exception as e: raise HTTPException(502, ...)` block (lines 793-798) — the second pair is unreachable dead code; remove it.",
+    "server.py is now ~970 lines — past comfort threshold. Strongly recommend splitting routes into modules (bible.py, ai_composer.py, oauth.py, jobs.py, channels.py, songs.py) before adding more integrations.",
+    "fetch_chapter does not retry on transient helloao 5xx — third-party flakiness will surface as user-facing 502. Consider 1-2 retries with backoff inside the endpoint.",
+    "/api/ai/compose-lyrics returns 200 on missing key (per spec) but consider also returning 200 with error on OpenRouter 4xx/5xx instead of 200/500 mix; currently 4xx from OpenRouter already returns 200+error (good), but generic exceptions also return 200+error (good) — pattern is consistent.",
+    "/api/oauth/callback returns 200 HTMLResponse default for the success page — fine, but on httpx exception it returns 500 HTML. Acceptable for a user-facing OAuth landing page.",
+    "BIBLE_TRANSLATIONS English includes id 'BSB' and 'ENGWEBP' with source='helloao' but they were NOT tested live — assumed working via the same helloao path. Spot-check recommended.",
+    "ComposeRequest model is solid (Pydantic), but the /api/ai/compose-config endpoint accepts raw Dict — consider validating structure.",
+    "Settings model now has 13 fields; consider grouping into nested sub-models (suno: {cookie}, mj: {cookie, token, proxy}, google: {client_id, client_secret, redirect_uri, etc.}) for clarity in next iteration.",
+    "_real_youtube_upload only verifies auth then returns a mock-styled real id — wire real resumable upload of composed mp4 bytes in next iteration (already noted in code log).",
+    "No rate limiting on /api/bible/chapter — a malicious client could exhaust upstream quotas. Add simple in-process rate limit before public release."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py (new)"
+  ],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "not tested (per request)"},
+  "test_credentials": "none required - all integrations gracefully fall back to mock",
+  "seed_data_creation": "Tests create TEST_ prefixed project/song/channel/upload and clean up project (cascade) and channel. compose_config singleton is overwritten with TEST_ values; settings singleton is mutated during tests (suno_cookie/mj_proxy_url cleared, google client_id set) — main agent should be aware these tests mutate the global settings doc.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full backend regression suite at /app/backend/tests/ (backend_test.py = iter1, test_iteration2.py = iter2). Run with `pytest /app/backend/tests/ -v`. Bible chapter tests are LIVE network — bible-api.com and bible.helloao.org. Tests include retry helper for helloao flakiness; rus_syn/ita_dio tests skip on 5xx (not fail). Settings doc is mutated during tests — fixture isolation not yet implemented; this is intentional since real integration toggles are tested. Compose config singleton has TEST_theme_iter2 after run.",
+  "rca of the issue": "N/A — no failures."
+}

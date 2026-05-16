@@ -5,7 +5,7 @@ import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
-import { Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save } from "lucide-react";
+import { Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Settings() {
@@ -48,10 +48,20 @@ export default function Settings() {
       </Card>
 
       <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Bot className="w-4 h-4 text-primary" /><h2 className="font-semibold">AI Composer (OpenRouter / Qwen)</h2></div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <Field k="openrouter_api_key" label="OpenRouter API key" placeholder="sk-or-..." type="password" testid="settings-openrouter-key" />
+          <Field k="openrouter_model" label="Model" placeholder="qwen/qwen-2.5-72b-instruct:free" testid="settings-openrouter-model" />
+        </div>
+        <div className="mt-3 text-xs text-muted-foreground">Get a free key at <span className="text-foreground">openrouter.ai/keys</span> — the free Qwen model has generous limits.</div>
+      </Card>
+
+      <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Img className="w-4 h-4 text-primary" /><h2 className="font-semibold">Midjourney</h2><StatusPill k="mj" /></div>
         <div className="space-y-3">
           <Field k="mj_cookie" label="midjourney.com session cookie" placeholder="cookie string..." testid="settings-mj-cookie" />
           <Field k="mj_discord_token" label="Discord wrapper token (optional fallback)" placeholder="bot/user token" testid="settings-mj-discord" />
+          <Field k="mj_proxy_url" label="MJ proxy URL (e.g. self-hosted midjourney-proxy)" placeholder="https://your-mj-proxy/api" testid="settings-mj-proxy" />
         </div>
         <Button size="sm" variant="secondary" data-testid="settings-test-mj" className="mt-3" onClick={()=>testS("mj")}><Cookie className="w-3 h-3 mr-2" />Test</Button>
       </Card>
