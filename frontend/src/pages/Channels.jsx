@@ -54,7 +54,32 @@ export default function Channels() {
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 8</div>
-      <h1 className="text-4xl sm:text-5xl font-bold mb-2">Channel Manager</h1>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
+        <h1 className="text-4xl sm:text-5xl font-bold">Channel Manager</h1>
+        <Button data-testid="channels-connect-all-btn" onClick={async ()=>{
+          const r = await api.connectAllUrls();
+          const items = (r.items || []).filter(x => x.url);
+          if (!items.length) return toast.success("All channels already connected");
+          toast.info(`Opening ${items.length} OAuth popups one at a time…`);
+          let i = 0;
+          const next = () => {
+            if (i >= items.length) { toast.success("Done"); return; }
+            const it = items[i++];
+            const win = window.open(it.url, "_blank", "width=720,height=820");
+            let attempts = 0;
+            const poll = setInterval(async () => {
+              attempts++;
+              const all = await api.listChannels();
+              const ch = all.find(x => x.id === it.channel_id);
+              if ((ch && ch.connected) || (win && win.closed) || attempts > 120) {
+                clearInterval(poll); try { win && !win.closed && win.close(); } catch {}
+                load(); setTimeout(next, 300);
+              }
+            }, 1500);
+          };
+          next();
+        }}><ShieldCheck className="w-4 h-4 mr-2" />Connect all</Button>
+      </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Add YouTube channels and connect each via Google OAuth. Manage multiple OAuth clients below to spread upload quota across language groups.</p>
 
       <OAuthClientsPanel defaultOpen={false} onChange={setOauthClients} />

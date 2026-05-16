@@ -1026,6 +1026,162 @@ async def publish_all(bg: BackgroundTasks):
     return {"queued": len(jobs)}
 
 
+# --- Bulk upload helpers ---
+
+@api.post("/uploads/bulk-from-videos")
+async def bulk_from_videos(body: Dict[str, Any]):
+    """Create one Upload row per (video_ready song × matching channel × format).
+    Body: {project_id?, formats: [...], privacy?, match_by? = 'language'}"""
+    pid = body.get("project_id")
+    formats = body.get("formats") or ["youtube"]
+    privacy = body.get("privacy") or "public"
+    q = {"status": "video_ready"}
+    if pid: q["project_id"] = pid
+    songs = await db.songs.find(q, {"_id": 0}).to_list(2000)
+    channels = await db.channels.find({}, {"_id": 0}).to_list(500)
+    created = []
+    for song in songs:
+        matching = [c for c in channels if (c.get("language") or "").lower() == (song.get("language") or "").lower()]
+        # if no exact match, fall back to all channels (lets user manually pick later)
+        if not matching: matching = channels
+        for ch in matching:
+            for fmt in formats:
+                # skip dupes (same song+channel+format already queued/published)
+                exists = await db.uploads.find_one({"song_id": song["id"], "channel_id": ch["id"], "format": fmt}, {"_id": 0})
+                if exists: continue
+                u = {"id": str(uuid.uuid4()), "song_id": song["id"], "channel_id": ch["id"],
+                     "title": song.get("title", ""), "description": "", "tags": [],
+                     "category": "Music", "privacy": privacy, "format": fmt,
+                     "status": "pending", "created_at": now_iso()}
+                await db.uploads.insert_one(u); u.pop("_id", None); created.append(u)
+    return {"created": len(created), "songs": len(songs), "channels": len(channels)}
+
+
+@api.get("/uploads/preflight")
+async def uploads_preflight():
+    """Return what would block a bulk publish: which channels referenced by pending uploads aren't connected,
+    plus a ready-to-open oauth URL for each. Frontend opens them sequentially."""
+    pending = await db.uploads.find({"status": "pending"}, {"_id": 0}).to_list(2000)
+    ch_ids = list({u["channel_id"] for u in pending if u.get("channel_id")})
+    need = []
+    ready = []
+    for cid in ch_ids:
+        ch = await db.channels.find_one({"id": cid}, {"_id": 0})
+        if not ch: continue
+        if ch.get("connected") and ch.get("refresh_token"):
+            ready.append({"channel_id": cid, "name": ch.get("name")})
+            continue
+        client = await _pick_oauth_client(ch, ch.get("oauth_client_id"))
+        if not client:
+            need.append({"channel_id": cid, "name": ch.get("name"), "url": "", "label": None,
+                         "error": "no oauth client matches this channel's language"})
+            continue
+        scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
+        url = (f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code"
+               f"&client_id={client['client_id']}&redirect_uri={client['redirect_uri']}"
+               f"&scope={scope.replace(' ', '%20')}&access_type=offline&prompt=consent&state={cid}")
+        await db.channels.update_one({"id": cid}, {"$set": {"oauth_client_id": client.get("id")}})
+        need.append({"channel_id": cid, "name": ch.get("name"), "url": url, "label": client.get("label")})
+    return {"need_oauth": need, "ready": ready, "pending_uploads": len(pending)}
+
+
+async def _qwen_text(system: str, user: str) -> str:
+    """Single-shot OpenRouter Qwen text completion. Returns '' on failure (caller decides fallback)."""
+    s = await db.settings.find_one({"_id": "singleton"}, {"_id": 0}) or {}
+    key = s.get("openrouter_api_key", "").strip()
+    if not key: return ""
+    model = s.get("openrouter_model") or "qwen/qwen-2.5-72b-instruct:free"
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post("https://openrouter.ai/api/v1/chat/completions",
+                             headers={"Authorization": f"Bearer {key}",
+                                      "HTTP-Referer": "https://lightkid.studio",
+                                      "X-Title": "Lightkid AI Studio",
+                                      "Content-Type": "application/json"},
+                             json={"model": model, "temperature": 0.7,
+                                   "messages": [{"role": "system", "content": system},
+                                                {"role": "user", "content": user}]})
+            if r.status_code >= 400: return ""
+            return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return ""
+
+
+@api.post("/uploads/ai-enrich")
+async def ai_enrich_uploads(body: Dict[str, Any]):
+    """For each pending Upload: auto-fill title (from song), description (transform global → channel's language),
+    and tags (from song.lyrics + styles + language). Uses OpenRouter Qwen if configured else a deterministic fallback."""
+    global_desc = (body.get("global_description") or "").strip()
+    only_empty = bool(body.get("only_empty", True))  # don't overwrite manual edits unless regenerate=True
+    regenerate = bool(body.get("regenerate", False))
+    pending = await db.uploads.find({"status": "pending"}, {"_id": 0}).to_list(2000)
+    updated = 0
+    for u in pending:
+        song = await db.songs.find_one({"id": u["song_id"]}, {"_id": 0})
+        if not song: continue
+        ch = await db.channels.find_one({"id": u["channel_id"]}, {"_id": 0})
+        lang = (song.get("language") or "English")
+        style = song.get("styles", "")
+        lyrics = (song.get("lyrics") or "")[:400]
+        chunk = {}
+        if regenerate or only_empty:
+            need_title = regenerate or not u.get("title")
+            need_desc = regenerate or not u.get("description")
+            need_tags = regenerate or not (u.get("tags") or [])
+            if need_title:
+                chunk["title"] = song.get("title", u.get("title", ""))
+            if need_desc:
+                ai_desc = ""
+                if global_desc:
+                    ai_desc = await _qwen_text(
+                        system="You adapt YouTube video descriptions for different languages and music styles. Reply ONLY with the adapted description text — no preamble, no markdown.",
+                        user=(f"Source description (English):\n{global_desc}\n\n"
+                              f"Adapt for: language={lang}, style='{style}', channel='{ch.get('name','') if ch else ''}'.\n"
+                              f"Keep tone, include the song title '{song.get('title','')}' near top, end with up to 5 relevant hashtags."))
+                if not ai_desc:
+                    # deterministic fallback
+                    ai_desc = (f"{song.get('title','')}\n\nA {style} interpretation in {lang}.\n\n"
+                               f"{global_desc}\n\n#AIMusicVideo #{lang} #{style.replace(' ','')}").strip()
+                chunk["description"] = ai_desc
+            if need_tags:
+                ai_tags = await _qwen_text(
+                    system="You generate a JSON array of 8-12 short, lowercase, hyphen-free YouTube tags (no leading #). Reply ONLY with the JSON array.",
+                    user=f"Music style: {style}\nLanguage: {lang}\nTitle: {song.get('title','')}\nLyrics snippet: {lyrics}")
+                tags = []
+                if ai_tags:
+                    m = re.search(r"\[[\s\S]*\]", ai_tags)
+                    if m:
+                        try: tags = [str(t).strip().lstrip("#") for t in jsonlib.loads(m.group(0)) if str(t).strip()]
+                        except Exception: tags = []
+                if not tags:
+                    tags = [lang.lower(), "music video", "ai music", style.lower()] + [w for w in style.lower().split() if len(w) > 2]
+                chunk["tags"] = tags[:12]
+            if "privacy" not in u or not u.get("privacy"): chunk["privacy"] = "public"
+        if chunk:
+            await db.uploads.update_one({"id": u["id"]}, {"$set": chunk}); updated += 1
+    return {"updated": updated, "total_pending": len(pending)}
+
+
+@api.post("/channels/connect-all-urls")
+async def channels_connect_all_urls():
+    """Return ordered list of {channel_id, name, language, url, label} for every NOT-connected channel
+    that has a resolvable OAuth client. Frontend opens them sequentially."""
+    chs = await db.channels.find({}, {"_id": 0}).to_list(500)
+    out = []
+    for ch in chs:
+        if ch.get("connected") and ch.get("refresh_token"): continue
+        client = await _pick_oauth_client(ch, ch.get("oauth_client_id"))
+        if not client: continue
+        scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
+        url = (f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code"
+               f"&client_id={client['client_id']}&redirect_uri={client['redirect_uri']}"
+               f"&scope={scope.replace(' ', '%20')}&access_type=offline&prompt=consent&state={ch['id']}")
+        await db.channels.update_one({"id": ch["id"]}, {"$set": {"oauth_client_id": client.get("id")}})
+        out.append({"channel_id": ch["id"], "name": ch.get("name"), "language": ch.get("language"),
+                    "url": url, "label": client.get("label")})
+    return {"items": out}
+
+
 # Jobs
 @api.get("/jobs")
 async def list_jobs(limit: int = 200):

@@ -57,6 +57,10 @@ export const api = {
   createUpload: (b) => http.post("/uploads", b).then(r => r.data),
   publish: (id) => http.post(`/uploads/${id}/publish`).then(r => r.data),
   publishAll: () => http.post("/uploads/publish-all").then(r => r.data),
+  bulkFromVideos: (b) => http.post("/uploads/bulk-from-videos", b).then(r => r.data),
+  uploadsPreflight: () => http.get("/uploads/preflight").then(r => r.data),
+  aiEnrich: (b) => http.post("/uploads/ai-enrich", b).then(r => r.data),
+  connectAllUrls: () => http.post("/channels/connect-all-urls").then(r => r.data),
   // jobs
   listJobs: () => http.get("/jobs").then(r => r.data),
   retryJob: (id) => http.post(`/jobs/${id}/retry`).then(r => r.data),
