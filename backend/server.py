@@ -807,13 +807,31 @@ BIBLE_BOOKS = [
 ]
 
 BIBLE_TRANSLATIONS = {
-    "English": [
-        {"id": "web", "name": "World English Bible (WEB)", "source": "bible-api"},
-        {"id": "kjv", "name": "King James Version (KJV)", "source": "bible-api"},
-        {"id": "bbe", "name": "Bible in Basic English (BBE)", "source": "bible-api"},
-        {"id": "asv", "name": "American Standard Version (ASV)", "source": "bible-api"},
-        {"id": "BSB", "name": "Berean Standard Bible (BSB)", "source": "helloao"},
-        {"id": "ENGWEBP", "name": "World English Bible (helloao)", "source": "helloao"},
+    "English (modern)": [
+        {"id": "web", "name": "World English Bible (WEB) — public domain", "source": "bible-api"},
+        {"id": "BSB", "name": "Berean Standard Bible — literal modern", "source": "helloao"},
+        {"id": "bbe", "name": "Bible in Basic English (BBE) — plain English", "source": "bible-api"},
+        {"id": "ENGWEBP", "name": "WEB w/ apocrypha (helloao)", "source": "helloao"},
+        {"id": "oeb-cw", "name": "Open English Bible (OEB-CW)", "source": "bible-api"},
+    ],
+    "English (literal / original-meaning)": [
+        {"id": "ylt", "name": "Young's Literal Translation (YLT) — wooden literal", "source": "bible-api"},
+        {"id": "darby", "name": "Darby Bible — literal 1890", "source": "bible-api"},
+        {"id": "eng_dby", "name": "Darby (helloao)", "source": "helloao"},
+        {"id": "GHT", "name": "Garth's Hyper-literal Translation — extreme literal", "source": "helloao"},
+        {"id": "eng_lxx", "name": "Septuagint in American English (LXX2012)", "source": "helloao"},
+        {"id": "eng_lxu", "name": "Septuagint in British English (LXX2012)", "source": "helloao"},
+        {"id": "asv", "name": "American Standard Version (ASV) 1901", "source": "bible-api"},
+        {"id": "kjv", "name": "King James Version (KJV) 1611", "source": "bible-api"},
+    ],
+    "Greek (Koine / NT)": [
+        {"id": "GHTG", "name": "Garth's Hyper-literal (Greek interlinear-style)", "source": "helloao"},
+        {"id": "grc_byz", "name": "Byzantine Greek New Testament", "source": "helloao"},
+        {"id": "grc_bre", "name": "Septuagint (Greek OT, LXX)", "source": "helloao"},
+    ],
+    "Hebrew (OT)": [
+        {"id": "heb_mod", "name": "Modern Hebrew Bible", "source": "helloao"},
+        {"id": "heb_scg", "name": "Salkinson-Ginsburg Hebrew NT", "source": "helloao"},
     ],
     "German": [
         {"id": "deu_l12", "name": "Luther 1912", "source": "helloao"},
@@ -849,6 +867,9 @@ HELLOAO_BOOK_MAP = {
     "romans": "ROM", "1corinthians": "1CO", "revelation": "REV",
 }
 
+# bible-api.com supported direct ids (no helloao fallback)
+BIBLE_API_IDS = {"web", "kjv", "bbe", "asv", "ylt", "darby", "oeb-cw"}
+
 
 @api.get("/bible/translations")
 async def list_translations():
@@ -860,11 +881,10 @@ async def list_books():
 
 @api.get("/bible/chapter")
 async def fetch_chapter(translation: str, book: str, chapter: int):
-    """Hybrid fetcher: bible-api.com for direct English IDs (web/kjv/bbe/asv), helloao.org for the rest."""
-    direct_ids = {"web", "kjv", "bbe", "asv"}
+    """Hybrid fetcher: bible-api.com for English direct IDs, helloao.org for the rest."""
     try:
         async with httpx.AsyncClient(timeout=20) as c:
-            if translation in direct_ids:
+            if translation in BIBLE_API_IDS:
                 book_name = next((b["name"] for b in BIBLE_BOOKS if b["id"] == book.lower()), book)
                 ref = f"{book_name} {chapter}".replace(" ", "+")
                 r = await c.get(f"https://bible-api.com/{ref}", params={"translation": translation})
@@ -872,7 +892,6 @@ async def fetch_chapter(translation: str, book: str, chapter: int):
                 d = r.json()
                 return {"reference": d.get("reference"), "translation": translation,
                         "verses": [{"verse": v["verse"], "text": v["text"].strip()} for v in d.get("verses", [])]}
-            # helloao: bible.helloao.org/api/{translation}/{USFM_BOOK}/{chapter}.json
             book_usfm = HELLOAO_BOOK_MAP.get(book.lower(), book.upper())
             url = f"https://bible.helloao.org/api/{translation}/{book_usfm}/{chapter}.json"
             r = await c.get(url)
@@ -890,9 +909,52 @@ async def fetch_chapter(translation: str, book: str, chapter: int):
     except HTTPException: raise
     except Exception as e:
         raise HTTPException(502, f"bible fetch failed: {e}")
-    except HTTPException: raise
-    except Exception as e:
-        raise HTTPException(502, f"bible fetch failed: {e}")
+
+
+# ---------------- Pasted chapters (user-supplied) ----------------
+@api.get("/bible/pasted")
+async def list_pasted():
+    return await db.pasted_chapters.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api.post("/bible/pasted")
+async def save_pasted(body: Dict[str, Any]):
+    doc = {"id": body.get("id") or str(uuid.uuid4()),
+           "name": body.get("name") or "Pasted chapter",
+           "language": body.get("language") or "English",
+           "translation": body.get("translation") or "manual",
+           "book": body.get("book") or "", "chapter": int(body.get("chapter") or 0),
+           "text": body.get("text") or "",
+           "created_at": now_iso(), "updated_at": now_iso()}
+    await db.pasted_chapters.update_one({"id": doc["id"]}, {"$set": doc}, upsert=True)
+    return doc
+
+@api.delete("/bible/pasted/{pid}")
+async def delete_pasted(pid: str):
+    await db.pasted_chapters.delete_one({"id": pid})
+    return {"ok": True}
+
+
+# ---------------- Generic drafts (auto-save across sessions) ----------------
+@api.get("/drafts")
+async def list_drafts():
+    return await db.drafts.find({}, {"_id": 0}).to_list(500)
+
+@api.get("/drafts/{key}")
+async def get_draft(key: str):
+    d = await db.drafts.find_one({"_id": key}, {"_id": 0})
+    return d or {}
+
+@api.put("/drafts/{key}")
+async def put_draft(key: str, body: Dict[str, Any]):
+    body.pop("_id", None)
+    body["updated_at"] = now_iso()
+    await db.drafts.update_one({"_id": key}, {"$set": body}, upsert=True)
+    return body
+
+@api.delete("/drafts/{key}")
+async def del_draft(key: str):
+    await db.drafts.delete_one({"_id": key})
+    return {"ok": True}
 
 
 # ---------------- AI Composer (Qwen via OpenRouter) ----------------

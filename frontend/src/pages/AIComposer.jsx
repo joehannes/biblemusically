@@ -12,6 +12,7 @@ import { Slider } from "../components/ui/slider";
 import { Bot, Plus, X, Save, Upload, Download, Sparkles, FlaskConical, ArrowRight, Wand2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { useAutoSave, AutoSaveChip } from "../lib/hooks";
 
 const STYLE_PACKS = {
   "Biblical Concept": ["cinematic biblical concept art", "sacred celestial symbolism", "radiant divine light", "visionary spiritual realism", "majestic ancient atmosphere"],
@@ -55,19 +56,34 @@ export default function AIComposer() {
   const [sectionIdea, setSectionIdea] = useState("");
   const importRef = useRef();
   const taRef = useRef();
+  const composerState = { cfg, chapterRef, chapterText, chapterLang, chapterBook, chapterNum };
+  const { status: asStatus, lastSaved, restore: restoreDraft } = useAutoSave("ai-composer", composerState, { delay: 800 });
 
-  // Load bible selection if pushed from BibleSources screen
+  // Load bible selection if pushed from BibleSources screen + restore auto-saved composer draft
   useEffect(() => {
-    const raw = localStorage.getItem("studio:bible-selection");
-    if (raw) {
-      try {
-        const b = JSON.parse(raw);
-        setChapterRef(b.reference); setChapterText(b.text); setChapterLang(b.language || "English");
-        setChapterBook(b.book || "john"); setChapterNum(b.chapter || 1);
-      } catch {}
-      localStorage.removeItem("studio:bible-selection");
-    }
-    api.getComposeConfig().then(d => { if (d && Object.keys(d).length) setCfg(c => ({ ...c, ...d })); });
+    (async () => {
+      const draft = await restoreDraft();
+      if (draft) {
+        if (draft.cfg) setCfg(c => ({ ...c, ...draft.cfg }));
+        if (draft.chapterRef) setChapterRef(draft.chapterRef);
+        if (draft.chapterText) setChapterText(draft.chapterText);
+        if (draft.chapterLang) setChapterLang(draft.chapterLang);
+        if (draft.chapterBook) setChapterBook(draft.chapterBook);
+        if (draft.chapterNum) setChapterNum(draft.chapterNum);
+      }
+      const raw = localStorage.getItem("studio:bible-selection");
+      if (raw) {
+        try {
+          const b = JSON.parse(raw);
+          setChapterRef(b.reference); setChapterText(b.text); setChapterLang(b.language || "English");
+          setChapterBook(b.book || "john"); setChapterNum(b.chapter || 1);
+        } catch {}
+        localStorage.removeItem("studio:bible-selection");
+      }
+      const d = await api.getComposeConfig();
+      if (d && Object.keys(d).length && !draft) setCfg(c => ({ ...c, ...d }));
+    })();
+    // eslint-disable-next-line
   }, []);
 
   const saveCfg = async () => { await api.saveComposeConfig(cfg); toast.success("Saved on server"); };
@@ -156,7 +172,8 @@ export default function AIComposer() {
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 1 · author</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">AI Composer</h1>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
+          <AutoSaveChip status={asStatus} lastSaved={lastSaved} />
           <Button size="sm" variant="secondary" data-testid="composer-save-cfg" onClick={saveCfg}><Save className="w-3 h-3 mr-2" />Save config</Button>
           <Button data-testid="composer-generate-btn" onClick={generate} disabled={busy}>{busy ? <FlaskConical className="w-4 h-4 mr-2 animate-pulse" /> : <Sparkles className="w-4 h-4 mr-2" />}Generate via Qwen</Button>
         </div>

@@ -44,15 +44,18 @@ def test_bible_translations_dict_keyed_by_language():
     assert r.status_code == 200
     j = r.json()
     assert isinstance(j, dict)
-    expected_langs = {"English", "German", "Italian", "Russian", "Spanish", "French", "Portuguese"}
+    # iter5: "English" was split into "English (modern)" + "English (literal / original-meaning)"
+    expected_langs = {"German", "Italian", "Russian", "Spanish", "French", "Portuguese"}
     assert expected_langs.issubset(set(j.keys())), f"missing langs: {expected_langs - set(j.keys())}"
+    # At least one English-* group must exist
+    assert any(k.startswith("English") for k in j.keys()), f"no English group present; got {list(j.keys())}"
     # Each value must be a non-empty list of translation objects
     for lang, items in j.items():
         assert isinstance(items, list) and len(items) > 0
         for t in items:
             assert "id" in t and "name" in t and "source" in t
-    # Spot check key translations
-    eng_ids = {t["id"] for t in j["English"]}
+    # Spot check key translations (English ids spread across both English-* groups)
+    eng_ids = {t["id"] for k, items in j.items() if k.startswith("English") for t in items}
     assert {"web", "kjv", "bbe", "asv"}.issubset(eng_ids)
     assert "deu_l12" in {t["id"] for t in j["German"]}
     assert "rus_syn" in {t["id"] for t in j["Russian"]}
