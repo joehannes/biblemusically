@@ -36,8 +36,14 @@ export const api = {
   listChannels: () => http.get("/channels").then(r => r.data),
   createChannel: (b) => http.post("/channels", b).then(r => r.data),
   deleteChannel: (id) => http.delete(`/channels/${id}`).then(r => r.data),
-  oauthStart: (id) => http.post(`/channels/${id}/oauth-start`).then(r => r.data),
+  oauthStart: (id, oauth_client_id) => http.post(`/channels/${id}/oauth-start`, oauth_client_id ? { oauth_client_id } : {}).then(r => r.data),
   oauthComplete: (id, b) => http.post(`/channels/${id}/oauth-complete`, b).then(r => r.data),
+  channelPickedClient: (id) => http.get(`/channels/${id}/oauth-client`).then(r => r.data),
+  // oauth clients
+  listOauthClients: () => http.get("/oauth-clients").then(r => r.data),
+  createOauthClient: (b) => http.post("/oauth-clients", b).then(r => r.data),
+  updateOauthClient: (id, b) => http.put(`/oauth-clients/${id}`, b).then(r => r.data),
+  deleteOauthClient: (id) => http.delete(`/oauth-clients/${id}`).then(r => r.data),
   // bible
   bibleTranslations: () => http.get("/bible/translations").then(r => r.data),
   bibleBooks: () => http.get("/bible/books").then(r => r.data),

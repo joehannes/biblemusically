@@ -103,6 +103,27 @@ class Channel(BaseModel):
     connected: bool = False
     avatar: Optional[str] = None
     subscriber_count: int = 0
+    oauth_client_id: Optional[str] = None  # which OAuthClient was used to connect
+
+
+class OAuthClient(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    label: str
+    client_id: str
+    client_secret: str
+    redirect_uri: str
+    languages: List[str] = []  # auto-pick when channel.language is in this list
+    notes: str = ""
+    created_at: str = Field(default_factory=now_iso)
+
+
+class OAuthClientCreate(BaseModel):
+    label: str
+    client_id: str
+    client_secret: str
+    redirect_uri: str
+    languages: List[str] = []
+    notes: str = ""
 
 class ChannelCreate(BaseModel):
     name: str
@@ -301,14 +322,15 @@ async def _real_ffmpeg_compose(song: Dict[str, Any], sections: List[Dict[str, An
 
 
 async def _real_youtube_upload(upload: Dict[str, Any], settings: Dict[str, Any], job_id: str) -> Optional[Dict[str, Any]]:
-    cid = (settings or {}).get("google_client_id"); csec = (settings or {}).get("google_client_secret")
-    if not cid or not csec:
-        await _log(job_id, "youtube: google client creds missing, using mock")
-        return None
     channel = await db.channels.find_one({"id": upload.get("channel_id")}, {"_id": 0})
     if not channel or not channel.get("refresh_token"):
         await _log(job_id, "youtube: channel not connected (no refresh_token), using mock")
         return None
+    client = await _pick_oauth_client(channel, channel.get("oauth_client_id"))
+    if not client:
+        await _log(job_id, "youtube: no oauth client resolvable for channel, using mock")
+        return None
+    cid = client["client_id"]; csec = client["client_secret"]
     try:
         async with httpx.AsyncClient(timeout=60) as c:
             tr = await c.post("https://oauth2.googleapis.com/token", data={
@@ -318,11 +340,7 @@ async def _real_youtube_upload(upload: Dict[str, Any], settings: Dict[str, Any],
                 await _log(job_id, f"youtube token refresh failed: {tr.text[:200]}")
                 return None
             access = tr.json().get("access_token")
-            # NOTE: actual resumable upload of bytes is heavy; we only call insert metadata API to demonstrate auth works.
-            meta = {"snippet": {"title": upload.get("title", ""), "description": upload.get("description", ""),
-                                "tags": upload.get("tags", []), "categoryId": "10"},
-                    "status": {"privacyStatus": upload.get("privacy", "private")}}
-            await _log(job_id, "youtube: auth verified (real video bytes upload requires composed mp4 + resumable session — wire to ffmpeg output in next iteration)")
+            await _log(job_id, f"youtube: auth verified via client '{client.get('label')}' (real video bytes upload requires composed mp4 + resumable session — wire to ffmpeg output in next iteration)")
             return {"youtube_video_id": f"real_{uuid.uuid4().hex[:8]}", "auth_ok": True, "_real": True}
     except Exception as e:
         await _log(job_id, f"youtube error: {e}")
@@ -620,17 +638,23 @@ async def delete_channel(cid: str):
     return {"ok": True}
 
 @api.post("/channels/{cid}/oauth-start")
-async def oauth_start(cid: str):
-    s = await db.settings.find_one({"_id": "singleton"}, {"_id": 0}) or {}
-    cid_g = s.get("google_client_id") or ""
-    redirect = s.get("google_redirect_uri") or "http://localhost/oauth/callback"
-    if not cid_g:
-        return {"url": "", "error": "Configure google_client_id in Settings first."}
+async def oauth_start(cid: str, body: Optional[Dict[str, Any]] = None):
+    channel = await db.channels.find_one({"id": cid}, {"_id": 0})
+    if not channel:
+        raise HTTPException(404, "channel not found")
+    body = body or {}
+    forced_client = body.get("oauth_client_id")
+    client = await _pick_oauth_client(channel, forced_client)
+    if not client:
+        return {"url": "", "error": "No OAuth client configured. Add one in Channel Manager → OAuth Clients, or fill Settings → Google OAuth fields."}
+    cid_g = client["client_id"]; redirect = client["redirect_uri"]
     scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
     url = (f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code"
            f"&client_id={cid_g}&redirect_uri={redirect}&scope={scope.replace(' ', '%20')}"
            f"&access_type=offline&prompt=consent&state={cid}")
-    return {"url": url}
+    # remember which oauth_client_id is "in-flight" for this channel
+    await db.channels.update_one({"id": cid}, {"$set": {"oauth_client_id": client.get("id")}})
+    return {"url": url, "oauth_client_id": client.get("id"), "label": client.get("label", "default")}
 
 @api.post("/channels/{cid}/oauth-complete")
 async def oauth_complete(cid: str, body: Dict[str, Any]):
@@ -647,13 +671,17 @@ async def oauth_complete(cid: str, body: Dict[str, Any]):
 
 @api.get("/oauth/callback")
 async def oauth_callback(code: str = "", state: str = "", error: str = ""):
-    """Real Google OAuth callback. Exchanges code → refresh_token, stores on channel referenced by state."""
+    """Real Google OAuth callback. Exchanges code → refresh_token, stores on channel referenced by state.
+    Uses the channel's assigned oauth_client_id (set during oauth-start), falling back to Settings defaults."""
     if error or not code or not state:
         return HTMLResponse(f"<h3>OAuth error</h3><pre>{error or 'missing code/state'}</pre>", status_code=400)
-    s = await db.settings.find_one({"_id": "singleton"}, {"_id": 0}) or {}
-    cid_g = s.get("google_client_id"); csec = s.get("google_client_secret"); ruri = s.get("google_redirect_uri")
-    if not cid_g or not csec:
-        return HTMLResponse("<h3>Configure Google client_id/secret in Settings first.</h3>", status_code=400)
+    channel = await db.channels.find_one({"id": state}, {"_id": 0})
+    if not channel:
+        return HTMLResponse(f"<h3>Channel {state} not found</h3>", status_code=400)
+    client = await _pick_oauth_client(channel, channel.get("oauth_client_id"))
+    if not client:
+        return HTMLResponse("<h3>No OAuth client configured for this channel.</h3>", status_code=400)
+    cid_g = client["client_id"]; csec = client["client_secret"]; ruri = client["redirect_uri"]
     try:
         async with httpx.AsyncClient(timeout=30) as c:
             tr = await c.post("https://oauth2.googleapis.com/token", data={
@@ -675,17 +703,86 @@ async def oauth_callback(code: str = "", state: str = "", error: str = ""):
                         yt_channel_id = items[0]["id"]
                         chan_title = items[0]["snippet"]["title"]
                         subs = int(items[0].get("statistics", {}).get("subscriberCount", 0))
-            update = {"connected": True, "youtube_channel_id": yt_channel_id, "subscriber_count": subs}
+            update = {"connected": True, "youtube_channel_id": yt_channel_id, "subscriber_count": subs,
+                      "oauth_client_id": client.get("id")}
             if refresh: update["refresh_token"] = refresh
             await db.channels.update_one({"id": state}, {"$set": update})
         return HTMLResponse(f"""
 <!doctype html><html><body style="font-family:system-ui;background:#111;color:#eee;padding:48px">
 <h2 style="color:#f59e0b">✓ Channel connected</h2>
-<p>{chan_title or yt_channel_id or 'Channel'} is now connected to Lightkid AI Studio.</p>
+<p>{chan_title or yt_channel_id or 'Channel'} authorized via <b>{client.get('label','client')}</b>.</p>
 <p style="color:#888">You can close this tab.</p>
 <script>setTimeout(()=>window.close(),2000)</script></body></html>""")
     except Exception as e:
         return HTMLResponse(f"<h3>Error</h3><pre>{e}</pre>", status_code=500)
+
+
+# ---------------- OAuth client pool ----------------
+async def _pick_oauth_client(channel: Dict[str, Any], forced_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Resolve which Google OAuth client to use for a channel.
+    Priority: explicitly forced id → channel.oauth_client_id → first client matching channel.language → Settings legacy fields."""
+    if forced_id:
+        c = await db.oauth_clients.find_one({"id": forced_id}, {"_id": 0})
+        if c: return c
+    if channel.get("oauth_client_id"):
+        c = await db.oauth_clients.find_one({"id": channel["oauth_client_id"]}, {"_id": 0})
+        if c: return c
+    lang = channel.get("language")
+    if lang:
+        c = await db.oauth_clients.find_one({"languages": lang}, {"_id": 0})
+        if c: return c
+    # fallback to legacy settings.google_*
+    s = await db.settings.find_one({"_id": "singleton"}, {"_id": 0}) or {}
+    if s.get("google_client_id") and s.get("google_client_secret"):
+        return {"id": "_legacy", "label": "Settings default",
+                "client_id": s["google_client_id"], "client_secret": s["google_client_secret"],
+                "redirect_uri": s.get("google_redirect_uri", ""), "languages": []}
+    return None
+
+
+def _client_public(c: Dict[str, Any]) -> Dict[str, Any]:
+    """Hide secret in list responses."""
+    safe = dict(c)
+    if safe.get("client_secret"):
+        safe["client_secret"] = "•" * 8 + safe["client_secret"][-4:]
+    return safe
+
+
+@api.get("/oauth-clients")
+async def list_oauth_clients():
+    cs = await db.oauth_clients.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [_client_public(c) for c in cs]
+
+@api.post("/oauth-clients")
+async def create_oauth_client(body: OAuthClientCreate):
+    c = OAuthClient(**body.model_dump())
+    await db.oauth_clients.insert_one(c.model_dump())
+    return _client_public(c.model_dump())
+
+@api.put("/oauth-clients/{oid}")
+async def update_oauth_client(oid: str, body: Dict[str, Any]):
+    body.pop("id", None); body.pop("_id", None); body.pop("created_at", None)
+    # ignore masked secret
+    if isinstance(body.get("client_secret"), str) and body["client_secret"].startswith("•"):
+        body.pop("client_secret")
+    await db.oauth_clients.update_one({"id": oid}, {"$set": body})
+    c = await db.oauth_clients.find_one({"id": oid}, {"_id": 0})
+    if not c: raise HTTPException(404, "missing")
+    return _client_public(c)
+
+@api.delete("/oauth-clients/{oid}")
+async def delete_oauth_client(oid: str):
+    await db.oauth_clients.delete_one({"id": oid})
+    # unset references on channels
+    await db.channels.update_many({"oauth_client_id": oid}, {"$unset": {"oauth_client_id": ""}})
+    return {"ok": True}
+
+@api.get("/channels/{cid}/oauth-client")
+async def channel_picked_client(cid: str):
+    channel = await db.channels.find_one({"id": cid}, {"_id": 0})
+    if not channel: raise HTTPException(404, "channel missing")
+    c = await _pick_oauth_client(channel, channel.get("oauth_client_id"))
+    return {"client": _client_public(c) if c else None}
 
 
 # ---------------- Bible sources ----------------
