@@ -1,15 +1,17 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { useStudio } from "../lib/store";
-import { Music2, LayoutDashboard, FileJson, Mic2, Waves, Scissors, Image as ImageIcon, Film, Tv, UploadCloud, Activity, Settings as Cog, Palette, Sparkles } from "lucide-react";
+import { Music2, LayoutDashboard, BookOpen, Bot, FileJson, Mic2, Waves, Scissors, Image as ImageIcon, Film, Tv, UploadCloud, Activity, Settings as Cog, Palette, Sparkles } from "lucide-react";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
+  { to: "/bible", label: "Bible Sources", icon: BookOpen, testid: "nav-bible" },
+  { to: "/composer", label: "AI Composer", icon: Bot, testid: "nav-composer-ai" },
   { to: "/lyrics", label: "Lyrics Import", icon: FileJson, testid: "nav-lyrics" },
   { to: "/music", label: "Music Gen", icon: Mic2, testid: "nav-music" },
   { to: "/analysis", label: "Audio Analysis", icon: Waves, testid: "nav-analysis" },
   { to: "/sections", label: "Section Editor", icon: Scissors, testid: "nav-sections" },
   { to: "/images", label: "Image Gen", icon: ImageIcon, testid: "nav-images" },
-  { to: "/composer", label: "Video Composer", icon: Film, testid: "nav-composer" },
+  { to: "/video", label: "Video Composer", icon: Film, testid: "nav-video" },
   { to: "/channels", label: "Channel Manager", icon: Tv, testid: "nav-channels" },
   { to: "/upload", label: "Upload", icon: UploadCloud, testid: "nav-upload" },
   { to: "/jobs", label: "Jobs Monitor", icon: Activity, testid: "nav-jobs" },

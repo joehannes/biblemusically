@@ -38,6 +38,14 @@ export const api = {
   deleteChannel: (id) => http.delete(`/channels/${id}`).then(r => r.data),
   oauthStart: (id) => http.post(`/channels/${id}/oauth-start`).then(r => r.data),
   oauthComplete: (id, b) => http.post(`/channels/${id}/oauth-complete`, b).then(r => r.data),
+  // bible
+  bibleTranslations: () => http.get("/bible/translations").then(r => r.data),
+  bibleBooks: () => http.get("/bible/books").then(r => r.data),
+  bibleChapter: (translation, book, chapter) => http.get("/bible/chapter", { params: { translation, book, chapter } }).then(r => r.data),
+  // ai composer
+  getComposeConfig: () => http.get("/ai/compose-config").then(r => r.data),
+  saveComposeConfig: (b) => http.put("/ai/compose-config", b).then(r => r.data),
+  composeLyrics: (b) => http.post("/ai/compose-lyrics", b).then(r => r.data),
   // uploads
   listUploads: () => http.get("/uploads").then(r => r.data),
   createUpload: (b) => http.post("/uploads", b).then(r => r.data),

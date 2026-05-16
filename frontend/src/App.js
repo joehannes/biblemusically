@@ -9,6 +9,8 @@ import Analysis from "./pages/Analysis";
 import SectionEditor from "./pages/SectionEditor";
 import Images from "./pages/Images";
 import Composer from "./pages/Composer";
+import BibleSources from "./pages/BibleSources";
+import AIComposer from "./pages/AIComposer";
 import Channels from "./pages/Channels";
 import Upload from "./pages/Upload";
 import Jobs from "./pages/Jobs";
@@ -22,12 +24,14 @@ export default function App() {
         <Shell>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/bible" element={<BibleSources />} />
+            <Route path="/composer" element={<AIComposer />} />
             <Route path="/lyrics" element={<Lyrics />} />
             <Route path="/music" element={<MusicGen />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/sections" element={<SectionEditor />} />
             <Route path="/images" element={<Images />} />
-            <Route path="/composer" element={<Composer />} />
+            <Route path="/video" element={<Composer />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/upload" element={<Upload />} />
             <Route path="/jobs" element={<Jobs />} />

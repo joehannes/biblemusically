@@ -12,9 +12,29 @@
       "active": true,
       "identifier": "com.lightkid.studio",
       "targets": "all",
-      "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"]
+      "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"],
+      "resources": [],
+      "externalBin": [
+        "binaries/ffmpeg",
+        "binaries/ffprobe",
+        "binaries/python-backend"
+      ]
     },
-    "allowlist": { "all": true, "shell": { "all": true, "open": true }, "fs": { "all": true } },
+    "allowlist": {
+      "all": false,
+      "shell": { "all": false, "open": true, "sidecar": true,
+        "scope": [
+          { "name": "binaries/ffmpeg", "sidecar": true, "args": true },
+          { "name": "binaries/ffprobe", "sidecar": true, "args": true },
+          { "name": "binaries/python-backend", "sidecar": true, "args": true }
+        ]
+      },
+      "fs": { "all": false, "readFile": true, "writeFile": true, "readDir": true,
+        "scope": ["$APPDATA/*", "$DOCUMENT/*", "$DOWNLOAD/*", "$HOME/.lightkid/*"] },
+      "dialog": { "all": true },
+      "notification": { "all": true },
+      "http": { "all": true, "scope": ["https://**", "http://localhost:*"] }
+    },
     "windows": [
       { "title": "Lightkid AI Studio", "width": 1400, "height": 900, "minWidth": 1100, "minHeight": 700, "decorations": true, "transparent": false }
     ],

@@ -35,3 +35,18 @@ Automate AI music-video creation + multi-channel YouTube publishing from a JSON 
 - P1: Resumable YouTube uploads
 - P2: Qwen prompt → effect recommendation feedback loop
 - P2: Tauri build verification
+
+## 2026-02 — Iteration 2
+### New
+- **Bible Sources screen** — hybrid fetcher (bible-api.com for English, helloao.org for German/Italian/Russian/Spanish/French/Portuguese; all public-domain translations safe for monetization)
+- **AI Composer screen** — OpenRouter Qwen integration, localStorage profiles + JSON import/export, layered themes (global/per-language/per-channel), per-field generation toggles, MJ param sliders (ar/v/chaos/stylize/weird), 8 style packs (Biblical Concept, Trash Polka, Iconography, Art Nouveau, Cyberpunk Sacred, Cinematic, Painterly, Photo Real), section authoring from selected chapter text, target list editor, output preview → import to Lyrics
+- **Real Google OAuth callback** at /api/oauth/callback — exchanges code → refresh_token, fetches channel info, marks connected
+- **Real Suno worker** via studio-api.suno.com cookie (graceful mock fallback)
+- **Real MJ worker** via configurable mj_proxy_url (graceful mock fallback)
+- **Real FFmpeg compose** via subprocess (graceful mock when ffmpeg missing — production uses Tauri sidecar)
+- **Real YouTube auth verified** in upload worker (full bytes-resumable upload still mocked)
+
+### Tauri (single installable path)
+- tauri.conf.json with ffmpeg+ffprobe+python-backend sidecars
+- main.rs spawns backend sidecar on launch, exposes ffmpeg_compose Tauri command
+- BUILD.md with PyInstaller + per-platform sidecar instructions
