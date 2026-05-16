@@ -48,6 +48,13 @@ export const api = {
   bibleTranslations: () => http.get("/bible/translations").then(r => r.data),
   bibleBooks: () => http.get("/bible/books").then(r => r.data),
   bibleChapter: (translation, book, chapter) => http.get("/bible/chapter", { params: { translation, book, chapter } }).then(r => r.data),
+  listPasted: () => http.get("/bible/pasted").then(r => r.data),
+  savePasted: (b) => http.post("/bible/pasted", b).then(r => r.data),
+  deletePasted: (id) => http.delete(`/bible/pasted/${id}`).then(r => r.data),
+  // drafts (auto-save)
+  getDraft: (key) => http.get(`/drafts/${key}`).then(r => r.data),
+  putDraft: (key, body) => http.put(`/drafts/${key}`, body).then(r => r.data),
+  delDraft: (key) => http.delete(`/drafts/${key}`).then(r => r.data),
   // ai composer
   getComposeConfig: () => http.get("/ai/compose-config").then(r => r.data),
   saveComposeConfig: (b) => http.put("/ai/compose-config", b).then(r => r.data),

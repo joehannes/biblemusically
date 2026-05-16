@@ -7,12 +7,22 @@ import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import { Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot } from "lucide-react";
 import { toast } from "sonner";
+import { useAutoSave, AutoSaveChip } from "../lib/hooks";
 
 export default function Settings() {
-  const [s, setS] = useState({ suno_cookie:"", mj_cookie:"", mj_discord_token:"", google_client_id:"", google_client_secret:"", google_redirect_uri:"", ffmpeg_path:"ffmpeg", ffprobe_path:"ffprobe", qwen_endpoint:"" });
+  const [s, setS] = useState({ suno_cookie:"", mj_cookie:"", mj_discord_token:"", mj_proxy_url:"", google_client_id:"", google_client_secret:"", google_redirect_uri:"", ffmpeg_path:"ffmpeg", ffprobe_path:"ffprobe", qwen_endpoint:"", openrouter_api_key:"", openrouter_model:"qwen/qwen-2.5-72b-instruct:free" });
   const [status, setStatus] = useState({});
+  const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => { api.getSettings().then(r => setS(prev => ({ ...prev, ...r }))); }, []);
+  useEffect(() => { api.getSettings().then(r => { setS(prev => ({ ...prev, ...r })); setLoaded(true); }); }, []);
+
+  // Auto-save settings (debounced) so casual edits persist without clicking Save
+  const { status: asStatus, lastSaved } = useAutoSave("settings-mirror", s, { delay: 900, enabled: loaded });
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => { api.saveSettings(s).catch(()=>{}); }, 900);
+    return () => clearTimeout(t);
+  }, [s, loaded]);
 
   const save = async () => { await api.saveSettings(s); toast.success("Settings saved"); };
   const testS = async (kind) => {
@@ -37,7 +47,10 @@ export default function Settings() {
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 0</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Settings &amp; Connections</h1>
-        <Button data-testid="settings-save-btn" onClick={save}><Save className="w-4 h-4 mr-2" />Save</Button>
+        <div className="flex items-center gap-3">
+          <AutoSaveChip status={asStatus} lastSaved={lastSaved} />
+          <Button data-testid="settings-save-btn" onClick={save}><Save className="w-4 h-4 mr-2" />Save now</Button>
+        </div>
       </div>
       <p className="text-muted-foreground mb-8 max-w-2xl">All cookies, tokens and binary paths the engine uses live here. Nothing leaves your machine until you trigger an action.</p>
 

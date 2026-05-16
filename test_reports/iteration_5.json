@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 5 backend testing complete. 27/27 NEW iter5 tests PASSED for expanded Bible translations (10 language groups), new literal & original-language translations (live fetches confirmed for ylt, darby, oeb-cw via bible-api.com and grc_byz, eng_lxx, GHT via helloao.org), pasted-chapter CRUD with upsert, generic drafts auto-save (PUT/GET/DELETE /api/drafts/{key} with {}-on-missing contract), and _id leak sweeps. Full suite: 93/94 passed (98.9%). The 1 remaining failure is the pre-existing, documented test_oauth_start_with_client_id (carried since iter3 — fixture needs google_client_secret, NOT introduced by iter5). Also fixed one stale iter2 assertion that hardcoded the old 'English' key (now correctly splits into 'English (modern)' + 'English (literal / original-meaning)').",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/drafts (LIST)", "issue": "GET /api/drafts returns documents with _id projected away — meaning the response is a list of value-only objects with NO key field. A client cannot tell which draft is which from the list alone. Consider projecting the mongodb _id to a non-leaky 'key' field (e.g. db.drafts.aggregate([{$project:{key:'$_id',_id:0,...}}])). Currently the list endpoint is effectively useless for the UI."},
+      {"endpoint": "/api/bible/chapter eng_lxx + NT books", "issue": "Per agent-to-agent note eng_lxx covers OT only — passing book=john returns 502/404 from helloao. Backend re-raises as HTTP 502 with raw provider text. Recommend mapping known-missing books per translation to a 404 with a friendly message (e.g. 'eng_lxx is Septuagint — Old Testament only')."},
+      {"endpoint": "/api/channels/oauth-start (legacy)", "issue": "Still failing iter1 test_oauth_start_with_client_id (pre-existing from iter3/iter4). _pick_oauth_client legacy fallback requires both google_client_id AND google_client_secret. Action: update iter1 fixture to set both, or relax to OR."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/test_reports/pytest/iteration5_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optionally enrich GET /api/drafts to include the draft key so the listing is meaningful (currently returns only {updated_at, value} per row with the _id key stripped).",
+    "Surface a 404 with friendly message when a translation does not cover the requested testament (e.g. eng_lxx + NT book) instead of bubbling helloao's raw 404 as 502.",
+    "Address long-standing test_oauth_start_with_client_id by adding google_client_secret to its fixture or by relaxing _pick_oauth_client to OR-match.",
+    "Carry-over from iter4 (not retested this round): consider adding DELETE /api/uploads/{id} and pagination on /uploads, /jobs, /oauth-clients."
+  ],
+  "critical_code_review_comments": [
+    "server.py:940 GET /api/drafts uses projection {'_id': 0} — since the drafts collection uses key as _id, this strips the only identifier from every row. The list is functionally useless. Use aggregation $project to expose key: '$_id' before excluding _id.",
+    "server.py:948-952 PUT /api/drafts/{key} mutates the caller's body in place (body.pop('_id'), body['updated_at']=...) then returns it. If the caller sends {'value': X}, the response is {'value': X, 'updated_at': ...} — fine, but if they send a non-dict (e.g. a list) FastAPI would 422; safer would be to wrap as {'value': body} and always store under a stable key. Currently `value` is just a convention, not enforced.",
+    "server.py:921 POST /api/bible/pasted accepts arbitrary `translation` strings with no validation against BIBLE_TRANSLATIONS. Per the agent-to-agent note this is intentional, but it should be documented in OpenAPI/response schema so consumers know.",
+    "server.py:907-911 fetch_chapter helloao path re-raises any non-200 as HTTP 502 — including 404 for missing books (e.g. eng_lxx + NT). The original status would be more accurate; consider passing through 404 vs 502 distinction.",
+    "server.py:887-894 bible-api.com path: the `bbe`, `oeb-cw` and similar ids are passed AS the `translation` querystring but bible-api.com's translation param historically accepts a small allowlist (kjv, web, asv, bbe, darby, ylt, oeb-cw, etc.). All currently work, but the code has no allowlist guard — if any of these gets removed upstream the error surfaces as a 502 with bible-api's HTML body (200-char slice). Consider explicit per-id error mapping.",
+    "server.py is now 1287 lines — iter3/iter4 split-into-modules recommendation is overdue. Recommend: bible.py (translations/chapter/pasted/drafts), oauth.py, channels.py, uploads.py, ai.py, jobs.py.",
+    "Drafts collection has no TTL / max-size protection. A misbehaving client could write unbounded drafts. Recommend either a per-key updated_at TTL index (e.g. 90 days) or a max-document-size cap (e.g. 256 KB) before $set."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5.py (new — 27 tests, all PASS)",
+    "/app/backend/tests/test_iteration2.py (fixed stale 'English' key assertion to match iter5's two-group split)"
+  ],
+  "success_rate": {
+    "backend": "98.9% (93/94) — 27/27 new iter5 + all iter2/iter3/iter4 + 21/23 iter1 backend_test. The 1 remaining failure is pre-existing test_oauth_start_with_client_id and NOT caused by iter5 changes.",
+    "frontend": "not tested (per request — backend only)"
+  },
+  "test_credentials": "none required — all bible/pasted/drafts endpoints are unauthenticated. Live external bible fetches against bible-api.com and bible.helloao.org confirmed working from inside the container.",
+  "seed_data_creation": "Tests create transient TEST_iter5_* prefixed pasted-chapter and draft documents in MongoDB. Each test cleans up its own rows via DELETE. No long-lived seed data added.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/ -v --tb=short` for full regression (currently 93/94, ~85s). iter5 tests are in /app/backend/tests/test_iteration5.py (27 tests, all PASS, ~7s). Key contracts to remember: (1) GET /api/drafts/{key} returns {} (NOT 404) when missing — verified by test_get_missing_draft_returns_empty_dict_not_404. (2) Bible translations dict NO LONGER has a key 'English' — it now has 'English (modern)' and 'English (literal / original-meaning)'. (3) eng_lxx is OT-only on helloao — psalms works, john returns 502 (provider 404 re-wrapped). (4) Pasted-chapter translation field accepts ANY string (no allowlist) by design. (5) The single remaining suite failure test_oauth_start_with_client_id is documented from iter3 and is NOT iter5-related.",
+  "rca of the issue": "test_iteration2.py::test_bible_translations_dict_keyed_by_language was failing because iter5 intentionally renamed the 'English' translation group into two more-specific groups ('English (modern)' and 'English (literal / original-meaning)'). Old assertion `{'English', ...}.issubset(keys)` no longer held. Fixed by removing 'English' from the required-langs set and asserting at least one key starts with 'English' instead. The pre-existing test_oauth_start_with_client_id RCA is unchanged from iter3/iter4: _pick_oauth_client legacy fallback requires both google_client_id AND google_client_secret, but the iter1 fixture only seeds client_id."
+}
