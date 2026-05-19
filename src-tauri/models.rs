@@ -159,6 +159,8 @@ pub struct Channel {
     #[serde(default = "english")]
     pub language: String,
     #[serde(default)]
+    pub styles: String,
+    #[serde(default)]
     pub region: String,
     #[serde(default)]
     pub refresh_token: Option<String>,
@@ -181,6 +183,8 @@ pub struct ChannelCreate {
     pub youtube_channel_id: String,
     #[serde(default = "english")]
     pub language: String,
+    #[serde(default)]
+    pub styles: String,
     #[serde(default)]
     pub region: String,
 }

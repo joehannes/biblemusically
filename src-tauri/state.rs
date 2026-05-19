@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Shared application state injected into every Tauri command via `tauri::State`.
+#[derive(Clone)]
 pub struct AppState {
     pub db: Database,
     /// Simple in-memory queue of job IDs that are pending dispatch.
@@ -22,6 +23,9 @@ impl AppState {
 
         let client = Client::with_uri_str(&mongo_url).await?;
         let db = client.database(&db_name);
+        
+        // Ping the database to ensure it's actually running
+        db.run_command(bson::doc! { "ping": 1 }).await?;
 
         Ok(Self {
             db,

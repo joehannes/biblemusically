@@ -8,6 +8,7 @@ import { Checkbox } from "../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Film, Wand } from "lucide-react";
 import { toast } from "sonner";
+import { getStepForPath } from "../lib/pageSteps";
 
 const FORMATS = ["youtube_16x9_1080p", "shorts_9x16_1080p", "tiktok_9x16_1080p"];
 
@@ -30,9 +31,11 @@ export default function Composer() {
 
   const compose = async () => { if (!activeSongId) return; await api.compose(activeSongId); toast.success(`Composing for ${formats.length} format(s)`); };
 
+  const readySongs = songs.filter(s => s.audio_url);
+
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
-      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 7</div>
+      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/video")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Video Composer</h1>
         <Button data-testid="composer-render-btn" onClick={compose} disabled={!activeSongId}><Film className="w-4 h-4 mr-2" />Render</Button>
@@ -40,10 +43,21 @@ export default function Composer() {
       <p className="text-muted-foreground mb-6 max-w-2xl">FFmpeg stitches images to audio, applying mood-matched effects &amp; transitions. Choose target formats.</p>
 
       <Card className="p-5 mb-6 grid md:grid-cols-2 gap-4 items-center">
-        <Select value={activeSongId || ""} onValueChange={selectSong}>
-          <SelectTrigger data-testid="composer-song-select"><SelectValue placeholder="Song" /></SelectTrigger>
-          <SelectContent>{songs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}</SelectContent>
-        </Select>
+        <div className="flex flex-col gap-1.5">
+          <Select value={activeSongId || ""} onValueChange={selectSong}>
+            <SelectTrigger data-testid="composer-song-select">
+              <SelectValue placeholder={readySongs.length ? "Select song" : "No generated songs available"} />
+            </SelectTrigger>
+            <SelectContent>
+              {readySongs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {readySongs.length === 0 && (
+            <span className="text-[11px] text-destructive animate-pulse font-mono pl-1">
+              * Generate song audio in Step 3 first!
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-3">
           {FORMATS.map(f => (
             <label key={f} className="flex items-center gap-2 text-xs text-mono">

@@ -205,15 +205,16 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
         let song = state.db.collection::<Document>("songs")
             .find_one(doc! { "id": song_id }).await.map_err(e)?
             .map(bson_to_value).unwrap_or_default();
-        let ch = u["channel_id"].as_str()
-            .and_then(|cid| {
-                // sync lookup — fire and forget, errors become None
-                futures_util::executor::block_on(
-                    state.db.collection::<Document>("channels")
-                        .find_one(doc! { "id": cid })
-                ).ok().flatten().map(bson_to_value)
-            })
-            .unwrap_or_default();
+        let ch = if let Some(cid) = u["channel_id"].as_str() {
+            state.db.collection::<Document>("channels")
+                .find_one(doc! { "id": cid })
+                .await
+                .map_err(e)?
+                .map(bson_to_value)
+                .unwrap_or_default()
+        } else {
+            Value::default()
+        };
 
         let lang  = song["language"].as_str().unwrap_or("English").to_string();
         let style = song["styles"].as_str().unwrap_or("").to_string();

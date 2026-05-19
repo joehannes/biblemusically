@@ -1,0 +1,214 @@
+use crate::state::AppState;
+use bson::{doc, Document};
+use mongodb::options::UpdateOptions;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tauri::State;
+use regex::Regex;
+
+type Res<T> = Result<T, String>;
+fn e(err: impl std::fmt::Display) -> String { err.to_string() }
+
+fn proj0() -> mongodb::options::FindOneOptions {
+    mongodb::options::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
+}
+
+fn bson_to_value(doc: Document) -> Value {
+    let mut m = serde_json::Map::new();
+    for (k, v) in doc {
+        if k == "_id" { continue; }
+        if let Ok(jv) = bson::from_bson::<Value>(v) { m.insert(k, jv); }
+    }
+    Value::Object(m)
+}
+
+#[tauri::command]
+pub async fn get_compose_config(state: State<'_, AppState>) -> Res<Value> {
+    let doc = state.db.collection::<Document>("compose_configs")
+        .find_one(doc! { "_id": "singleton" })
+        .with_options(proj0())
+        .await.map_err(e)?;
+    Ok(doc.map(bson_to_value).unwrap_or_else(|| serde_json::json!({})))
+}
+
+#[tauri::command]
+pub async fn save_compose_config(state: State<'_, AppState>, payload: Value) -> Res<Value> {
+    let mut body = payload.clone();
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("_id");
+    }
+    let bson = bson::to_document(&body).map_err(e)?;
+    state.db.collection::<Document>("compose_configs")
+        .update_one(doc! { "_id": "singleton" }, doc! { "$set": &bson })
+        .with_options(UpdateOptions::builder().upsert(true).build())
+        .await.map_err(e)?;
+    Ok(body)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComposeRequest {
+    pub chapter_text: String,
+    #[serde(default)]
+    pub sections: Vec<Value>,
+    #[serde(default)]
+    pub targets: Vec<Value>,
+    #[serde(default)]
+    pub themes: Value,
+    #[serde(default)]
+    pub mj_params: String,
+    #[serde(default)]
+    pub style_keywords: Vec<String>,
+    #[serde(default)]
+    pub generate: Value,
+    #[serde(default)]
+    pub title_pattern: String,
+    #[serde(default)]
+    pub artist: String,
+}
+
+#[tauri::command]
+pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest) -> Res<Value> {
+    // 1. Fetch settings to get openrouter_api_key and openrouter_model
+    let settings_doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" })
+        .with_options(proj0())
+        .await.map_err(e)?
+        .map(bson_to_value)
+        .unwrap_or_default();
+    
+    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
+    let model = settings_doc["openrouter_model"].as_str()
+        .unwrap_or("qwen/qwen-2.5-72b-instruct:free")
+        .to_string();
+        
+    if key.is_empty() {
+        return Ok(serde_json::json!({
+            "error": "Configure openrouter_api_key in Settings (get one free at openrouter.ai/keys).",
+            "items": []
+        }));
+    }
+
+    // 2. Build the system and user prompts exactly like the Python server did
+    let sys = "You compose multilingual song lyrics JSON for AI music video production.\n\
+               Return ONLY a valid JSON array — no prose, no markdown fences.\n\
+               Each element MUST have: title (string), language (string), styles (string), lyrics (string), annotations (string), image_styles (string).\n\
+               annotations format: alternating lines — first a bracketed midjourney-style image prompt in square brackets, then the matching lyric line.\n\
+               Translate lyrics into the target language faithfully if it isn't English. Keep section ideas + themes embedded in the bracket prompts.";
+
+    let targets_str = serde_json::to_string(&payload.targets).unwrap_or_default();
+    let sections_str = serde_json::to_string(&payload.sections).unwrap_or_default();
+    let style_kw = payload.style_keywords.join(", ");
+    let image_styles_suffix = format!("{} {}", payload.mj_params, style_kw).trim().to_string();
+    
+    // Extract generate fields and custom lists
+    let gen = payload.generate.clone();
+    let mut gen_fields = Vec::new();
+    let mut keep_list = Vec::new();
+    if let Some(obj) = gen.as_object() {
+        for (k, v) in obj {
+            if v.as_bool().unwrap_or(false) {
+                gen_fields.push(k.clone());
+            } else {
+                keep_list.push(k.clone());
+            }
+        }
+    }
+    
+    let global_theme = payload.themes["global"].as_str().unwrap_or("");
+    let per_lang_themes = serde_json::to_string(&payload.themes["per_language"]).unwrap_or_else(|_| "{}".to_string());
+    let per_chan_themes = serde_json::to_string(&payload.themes["per_channel"]).unwrap_or_else(|_| "{}".to_string());
+
+    let user_prompt = format!(
+        "Source chapter text:\n{}\n\n\
+         User-authored section ideas (apply to bracket prompts when matching lines):\n{}\n\n\
+         Global theme: {}\n\
+         Per-language themes: {}\n\
+         Per-channel themes: {}\n\n\
+         Targets to produce (one JSON element per target):\n{}\n\n\
+         Title pattern: {} (artist={})\n\
+         image_styles must end with: {}\n\
+         Fields the user wants AI to GENERATE: {:?}; KEEP empty/template for: {:?}.\n\
+         Output the JSON array now.",
+        payload.chapter_text,
+        sections_str,
+        global_theme,
+        per_lang_themes,
+        per_chan_themes,
+        targets_str,
+        payload.title_pattern,
+        payload.artist,
+        image_styles_suffix,
+        gen_fields,
+        keep_list
+    );
+
+    // 3. Make HTTP request to OpenRouter
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(e)?;
+
+    let r = http.post("https://openrouter.ai/api/v1/chat/completions")
+        .header("Authorization", format!("Bearer {key}"))
+        .header("HTTP-Referer", "https://lightkid.studio")
+        .header("X-Title", "Lightkid AI Studio")
+        .json(&serde_json::json!({
+            "model": model,
+            "temperature": 0.85,
+            "messages": [
+                { "role": "system", "content": sys },
+                { "role": "user", "content": user_prompt }
+            ]
+        }))
+        .send()
+        .await
+        .map_err(e)?;
+
+    if !r.status().is_success() {
+        let status = r.status();
+        let txt = r.text().await.unwrap_or_default();
+        let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
+        return Ok(serde_json::json!({
+            "error": format!("OpenRouter HTTP {status}: {safe_txt}"),
+            "items": []
+        }));
+    }
+
+    let res_json: Value = r.json().await.map_err(e)?;
+    let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
+
+    // 4. Try to extract first JSON array using regex
+    let re = Regex::new(r"(?s)\[.*\]").map_err(e)?;
+    let m = re.find(&content).ok_or_else(|| {
+        let safe_content = if content.len() > 800 { &content[..800] } else { &content };
+        serde_json::json!({
+            "error": "No JSON array found in AI response",
+            "raw": safe_content,
+            "items": []
+        }).to_string()
+    }).map_err(|s| s)?;
+
+    let items_val: Value = serde_json::from_str(m.as_str()).map_err(|err| {
+        let safe_content = if content.len() > 800 { &content[..800] } else { &content };
+        serde_json::json!({
+            "error": format!("JSON parse failed: {err}"),
+            "raw": safe_content,
+            "items": []
+        }).to_string()
+    })?;
+
+    let items = items_val.as_array().ok_or_else(|| {
+        serde_json::json!({
+            "error": "AI returned non-array",
+            "raw": &content[..content.len().min(400)],
+            "items": []
+        }).to_string()
+    }).map_err(|s| s)?;
+
+    Ok(serde_json::json!({
+        "items": items,
+        "model": model,
+        "count": items.len()
+    }))
+}

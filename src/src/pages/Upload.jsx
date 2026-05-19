@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/
 import { Checkbox } from "../components/ui/checkbox";
 import { UploadCloud, Send, Plus, Lock, Globe, Sparkles, Zap, Wand2, ShieldCheck, Loader2, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
+import { getStepForPath } from "../lib/pageSteps";
 
 const ALL_FORMATS = [
   { id: "youtube", label: "YouTube 16:9" },
@@ -20,6 +21,7 @@ const ALL_FORMATS = [
 
 export default function Upload() {
   const { songs, activeProjectId } = useStudio();
+  const readySongs = songs.filter(s => s.audio_url);
   const [channels, setChannels] = useState([]);
   const [uploads, setUploads] = useState([]);
   const [songId, setSongId] = useState(""); const [chId, setChId] = useState("");
@@ -134,7 +136,7 @@ export default function Upload() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
-      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 9</div>
+      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/upload")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Upload</h1>
         <div className="flex gap-2 flex-wrap">
@@ -154,10 +156,21 @@ export default function Upload() {
       <Card className="p-5 mb-6">
         <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">Manual upload (single)</div>
         <div className="grid md:grid-cols-12 gap-3">
-          <Select value={songId} onValueChange={setSongId}>
-            <SelectTrigger data-testid="upload-song-select" className="md:col-span-3"><SelectValue placeholder="Song" /></SelectTrigger>
-            <SelectContent>{songs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}</SelectContent>
-          </Select>
+          <div className="md:col-span-3 flex flex-col gap-1.5">
+            <Select value={songId} onValueChange={setSongId}>
+              <SelectTrigger data-testid="upload-song-select">
+                <SelectValue placeholder={readySongs.length ? "Select song" : "No generated songs available"} />
+              </SelectTrigger>
+              <SelectContent>
+                {readySongs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {readySongs.length === 0 && (
+              <span className="text-[11px] text-destructive animate-pulse font-mono pl-1">
+                * Generate song audio in Step 3 first!
+              </span>
+            )}
+          </div>
           <Select value={chId} onValueChange={setChId}>
             <SelectTrigger data-testid="upload-channel-select" className="md:col-span-3"><SelectValue placeholder="Channel" /></SelectTrigger>
             <SelectContent>{channels.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>

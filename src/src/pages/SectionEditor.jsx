@@ -8,10 +8,12 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Scissors, Save } from "lucide-react";
+import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
 
 export default function SectionEditor() {
   const { songs, activeSongId, selectSong } = useStudio();
+  const readySongs = songs.filter(s => s.audio_url);
   const [sections, setSections] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({});
@@ -27,15 +29,24 @@ export default function SectionEditor() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
-      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 5</div>
+      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/sections")}</div>
       <h1 className="text-4xl sm:text-5xl font-bold mb-2">Section Editor</h1>
       <p className="text-muted-foreground mb-6 max-w-2xl">Each lyric line → a section: timing, mood, image prompt. Tweak anything — these drive image generation.</p>
 
-      <Card className="p-5 mb-6">
+      <Card className="p-5 mb-6 flex flex-col gap-1.5 self-start">
         <Select value={activeSongId || ""} onValueChange={selectSong}>
-          <SelectTrigger data-testid="sectionedit-song-select" className="w-80"><SelectValue placeholder="Select song" /></SelectTrigger>
-          <SelectContent>{songs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}</SelectContent>
+          <SelectTrigger data-testid="sectionedit-song-select" className="w-80">
+            <SelectValue placeholder={readySongs.length ? "Select song" : "No generated songs available"} />
+          </SelectTrigger>
+          <SelectContent>
+            {readySongs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
+          </SelectContent>
         </Select>
+        {readySongs.length === 0 && (
+          <span className="text-[11px] text-destructive animate-pulse font-mono pl-1">
+            * Generate song audio in Step 3 first!
+          </span>
+        )}
       </Card>
 
       <div className="space-y-3">

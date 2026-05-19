@@ -6,6 +6,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Waves, BrainCircuit } from "lucide-react";
+import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
 
 const MOOD_COLOR = {
@@ -28,19 +29,30 @@ export default function Analysis() {
     setTimeout(load, 3500);
   };
 
+  const readySongs = songs.filter(s => s.audio_url);
+
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
-      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 4</div>
+      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/analysis")}</div>
       <h1 className="text-4xl sm:text-5xl font-bold mb-2">Audio Analysis</h1>
       <p className="text-muted-foreground mb-6 max-w-2xl">FFmpeg + audio analysis CLI tools parse mood &amp; timing per section, feeding the Qwen prompter for FFmpeg effect suggestions.</p>
 
       <Card className="p-5 mb-6 flex flex-wrap items-center gap-3">
         <Select value={activeSongId || ""} onValueChange={selectSong}>
-          <SelectTrigger data-testid="analysis-song-select" className="w-80"><SelectValue placeholder="Select song" /></SelectTrigger>
-          <SelectContent>{songs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}</SelectContent>
+          <SelectTrigger data-testid="analysis-song-select" className="w-80">
+            <SelectValue placeholder={readySongs.length ? "Select song" : "No generated songs available"} />
+          </SelectTrigger>
+          <SelectContent>
+            {readySongs.map(s => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
+          </SelectContent>
         </Select>
         <Button data-testid="analysis-run-btn" onClick={analyze} disabled={!activeSongId}><BrainCircuit className="w-4 h-4 mr-2" />Run analysis</Button>
         {song && <Badge variant="outline" className="text-mono">{song.duration ? `${song.duration.toFixed(1)}s` : "no audio"}</Badge>}
+        {readySongs.length === 0 && (
+          <Badge variant="destructive" className="animate-pulse">
+            Please generate song audio in Step 3 first!
+          </Badge>
+        )}
       </Card>
 
       {sections.length > 0 && (
