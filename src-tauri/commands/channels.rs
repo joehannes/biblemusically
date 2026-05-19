@@ -36,6 +36,7 @@ pub async fn create_channel(state: State<'_, AppState>, body: ChannelCreate) -> 
         name: body.name,
         youtube_channel_id: body.youtube_channel_id,
         language: body.language,
+        styles: body.styles,
         region: body.region,
         refresh_token: None,
         connected: false,

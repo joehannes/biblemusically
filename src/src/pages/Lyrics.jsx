@@ -7,6 +7,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Upload, FileJson, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
+import { getStepForPath } from "../lib/pageSteps";
 
 export default function Lyrics() {
   const { activeProjectId, refreshSongs, songs } = useStudio();
@@ -42,7 +43,7 @@ export default function Lyrics() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
-      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 2</div>
+      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/lyrics")}</div>
       <h1 className="text-4xl sm:text-5xl font-bold mb-2">Lyrics Import</h1>
       <p className="text-muted-foreground mb-8 max-w-2xl">Paste or upload a JSON file holding an array of songs — each with title, language, styles, lyrics, annotations (image prompts) and image_styles.</p>
 

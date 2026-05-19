@@ -7,7 +7,6 @@ pub mod oauth;
 pub mod jobs_cmd;
 pub mod uploads;
 pub mod bible;
-pub mod drafts;
 pub mod ai;
 
 pub use settings::*;
@@ -19,5 +18,4 @@ pub use oauth::*;
 pub use jobs_cmd::*;
 pub use uploads::*;
 pub use bible::*;
-pub use drafts::*;
 pub use ai::*;

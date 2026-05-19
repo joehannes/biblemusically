@@ -7,6 +7,7 @@ import { Progress } from "../components/ui/progress";
 import { Copy, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
+import { getStepForPath } from "../lib/pageSteps";
 
 const KIND_COLOR = { music: "bg-emerald-500/20 text-emerald-300", analysis: "bg-sky-500/20 text-sky-300", image: "bg-fuchsia-500/20 text-fuchsia-300", video: "bg-amber-500/20 text-amber-300", upload: "bg-rose-500/20 text-rose-300" };
 const STATUS_VAR = { queued: "outline", running: "default", done: "secondary", failed: "destructive" };
@@ -21,7 +22,7 @@ export default function Jobs() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
-      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 10</div>
+      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/jobs")}</div>
       <h1 className="text-4xl sm:text-5xl font-bold mb-2">Jobs Monitor</h1>
       <p className="text-muted-foreground mb-6 max-w-2xl">Live queue, logs and retries. All long-running tasks (Suno, MJ, FFmpeg, YT upload) report here.</p>
 

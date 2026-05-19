@@ -8,12 +8,14 @@ import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound } from "lucide-react";
+import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
 
 export default function Channels() {
   const [channels, setChannels] = useState([]);
   const [oauthClients, setOauthClients] = useState([]);
   const [name, setName] = useState(""); const [ytId, setYtId] = useState(""); const [lang, setLang] = useState(""); const [region, setRegion] = useState("");
+  const [styles, setStyles] = useState("");
   const [oauthDialog, setOauthDialog] = useState(null);
   const [refresh, setRefresh] = useState(""); const [yt, setYt] = useState(""); const [subs, setSubs] = useState("");
   const [pickedClient, setPickedClient] = useState({}); // channelId -> client info
@@ -34,8 +36,8 @@ export default function Channels() {
 
   const create = async () => {
     if (!name) return toast.error("Channel name required");
-    await api.createChannel({ name, youtube_channel_id: ytId, language: lang || "English", region });
-    setName(""); setYtId(""); setLang(""); setRegion(""); load(); toast.success("Channel added");
+    await api.createChannel({ name, youtube_channel_id: ytId, language: lang || "English", region, styles });
+    setName(""); setYtId(""); setLang(""); setRegion(""); setStyles(""); load(); toast.success("Channel added");
   };
 
   const startOauth = async (c, forceClientId) => {
@@ -53,13 +55,13 @@ export default function Channels() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
-      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step 8</div>
+      <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/channels")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Channel Manager</h1>
         <Button data-testid="channels-connect-all-btn" onClick={async ()=>{
           const r = await api.connectAllUrls();
           const items = (r.items || []).filter(x => x.url);
-          if (!items.length) return toast.success("All channels already connected");
+                if (!items.length) { load(); return toast.success("All channels already connected"); }
           toast.info(`Opening ${items.length} OAuth popups one at a time…`);
           let i = 0;
           const next = () => {
@@ -87,10 +89,11 @@ export default function Channels() {
       <Card className="p-5 mb-6">
         <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">Add channel</div>
         <div className="grid md:grid-cols-12 gap-3">
-          <Input data-testid="channel-name-input" placeholder="Channel name" value={name} onChange={e=>setName(e.target.value)} className="md:col-span-4" />
-          <Input data-testid="channel-ytid-input" placeholder="YouTube channel id (UC...)" value={ytId} onChange={e=>setYtId(e.target.value)} className="md:col-span-3" />
+          <Input data-testid="channel-name-input" placeholder="Channel name" value={name} onChange={e=>setName(e.target.value)} className="md:col-span-3" />
+          <Input data-testid="channel-ytid-input" placeholder="YouTube channel id (UC...)" value={ytId} onChange={e=>setYtId(e.target.value)} className="md:col-span-2" />
           <Input data-testid="channel-lang-input" placeholder="Language" value={lang} onChange={e=>setLang(e.target.value)} className="md:col-span-2" />
-          <Input data-testid="channel-region-input" placeholder="Region" value={region} onChange={e=>setRegion(e.target.value)} className="md:col-span-2" />
+          <Input data-testid="channel-styles-input" placeholder="Styles (e.g. DnB)" value={styles} onChange={e=>setStyles(e.target.value)} className="md:col-span-3" />
+          <Input data-testid="channel-region-input" placeholder="Region" value={region} onChange={e=>setRegion(e.target.value)} className="md:col-span-1" />
           <Button data-testid="channel-add-btn" onClick={create} className="md:col-span-1"><Plus className="w-4 h-4" /></Button>
         </div>
       </Card>
@@ -109,6 +112,7 @@ export default function Channels() {
               </div>
               <div className="flex flex-wrap gap-2 mb-3">
                 <Badge variant="secondary">{c.language}</Badge>
+                {c.styles && <Badge variant="secondary" className="bg-primary/20 text-primary">{c.styles}</Badge>}
                 {c.region && <Badge variant="outline">{c.region}</Badge>}
                 <Badge variant={c.connected?"default":"outline"} data-testid={`channel-status-${c.id}`}>{c.connected?"connected":"not connected"}</Badge>
               </div>

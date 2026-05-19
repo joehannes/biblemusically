@@ -152,9 +152,10 @@ pub async fn fetch_chapter(translation: String, book: String, chapter: u32) -> R
     }
 
     // helloao path
+    let fallback_book = book.to_uppercase();
     let book_usfm = HELLOAO_BOOK_MAP.get(book.to_lowercase().as_str())
         .copied()
-        .unwrap_or(book.to_uppercase().as_str());
+        .unwrap_or(fallback_book.as_str());
     let url = format!("https://bible.helloao.org/api/{translation}/{book_usfm}/{chapter}.json");
     let r = client.get(&url).send().await.map_err(e)?;
     if !r.status().is_success() {

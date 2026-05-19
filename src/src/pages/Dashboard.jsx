@@ -5,8 +5,10 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Card } from "../components/ui/card";
 import { Switch } from "../components/ui/switch";
-import { Plus, Trash2, FolderOpen, Calendar, Languages, Palette, ChevronRight } from "lucide-react";
+import { Plus, Trash2, FolderOpen, Calendar, Languages, Palette, ChevronRight, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { open } from "@tauri-apps/api/dialog";
+import { readTextFile } from "@tauri-apps/api/fs";
 
 export default function Dashboard() {
   const { projects, refreshProjects, activeProjectId, selectProject } = useStudio();
@@ -24,6 +26,37 @@ export default function Dashboard() {
   const del = async (id) => { await api.deleteProject(id); if (activeProjectId === id) selectProject(null); refreshProjects(); };
   const toggle = async (p, key) => { await api.updateProject(p.id, { [key]: !p[key] }); refreshProjects(); };
 
+  const exportActive = async () => {
+    if (!activeProjectId) return toast.error("Select a project first to export");
+    try {
+      const res = await api.exportProject(activeProjectId);
+      if (res?.export_folder) {
+        toast.success(`Exported project to ${res.export_folder}`);
+      } else {
+        toast.success("Project exported successfully");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Project export cancelled or failed");
+    }
+  };
+
+  const importProject = async () => {
+    try {
+      const selected = await open({ multiple: false, filters: [{ name: "JSON", extensions: ["json"] }] });
+      if (!selected || Array.isArray(selected)) return;
+      const content = await readTextFile(selected);
+      const payload = JSON.parse(content);
+      const sourceDir = selected.replace(/\\/g, "/").replace(/\/[^\/]*$/, "");
+      await api.importProject(payload, sourceDir);
+      await refreshProjects();
+      toast.success("Project imported successfully");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to import project");
+    }
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
       <div className="mb-10">
@@ -33,7 +66,16 @@ export default function Dashboard() {
       </div>
 
       <Card className="p-6 mb-8 glass">
-        <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">New project</div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
+          <div>
+            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">New project</div>
+            <div className="text-sm text-muted-foreground">Create a project and export / import it later with all related data.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={importProject}><Upload className="w-4 h-4 mr-2" />Import project</Button>
+            <Button variant="secondary" onClick={exportActive} disabled={!activeProjectId}><Download className="w-4 h-4 mr-2" />Export active project</Button>
+          </div>
+        </div>
         <div className="grid md:grid-cols-12 gap-3">
           <Input data-testid="project-name-input" placeholder="Project name (e.g. John 1 Multilingual)" value={name} onChange={e=>setName(e.target.value)} className="md:col-span-4" />
           <Input data-testid="project-topic-input" placeholder="Topic / theme" value={topic} onChange={e=>setTopic(e.target.value)} className="md:col-span-4" />
