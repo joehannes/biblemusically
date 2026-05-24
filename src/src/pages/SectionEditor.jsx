@@ -44,7 +44,7 @@ export default function SectionEditor() {
         </Select>
         {readySongs.length === 0 && (
           <span className="text-[11px] text-destructive animate-pulse font-mono pl-1">
-            * Generate song audio in Step 3 first!
+            * Generate song audio in Step {getStepForPath("/sections")} first!
           </span>
         )}
       </Card>

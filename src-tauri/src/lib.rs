@@ -11,7 +11,6 @@ pub mod models;
 #[path = "../state.rs"]
 pub mod state;
 
-use state::AppState;
 use std::sync::Arc;
 
 #[tauri::command]
@@ -50,6 +49,75 @@ pub fn run() {
             
             // Tell AppState to use our sidecar port
             std::env::set_var("MONGO_URL", "mongodb://localhost:27018");
+
+            // Auto-detect and auto-start bundled Midjourney proxy if present in workspace
+            // Search upward from the executable for a folder named `midjourney-proxy` (dev workspace)
+            if let Ok(exe_path) = std::env::current_exe() {
+                let mut p = exe_path.parent().map(|s| s.to_path_buf());
+                let mut found: Option<std::path::PathBuf> = None;
+                for _ in 0..6 {
+                    if let Some(dir) = &p {
+                        let cand = dir.join("midjourney-proxy");
+                        if cand.exists() && cand.is_dir() {
+                            found = Some(cand);
+                            break;
+                        }
+                    }
+                    p = p.and_then(|d| d.parent().map(|s| s.to_path_buf()));
+                }
+
+                if let Some(proxy_dir) = &found {
+                    // Try to start via run_app.sh if present
+                    // proxy repo places runtime scripts under `scripts/run_app.sh`
+                    let run_sh = if proxy_dir.join("run_app.sh").exists() {
+                        proxy_dir.join("run_app.sh")
+                    } else {
+                        proxy_dir.join("scripts").join("run_app.sh")
+                    };
+                    let mut started = false;
+                    if run_sh.exists() {
+                        // Spawn the script in background so it's independent of the GUI thread
+                        let pd = proxy_dir.clone();
+                        std::thread::spawn(move || {
+                            let _ = std::process::Command::new("sh")
+                                .arg("run_app.sh")
+                                .current_dir(pd)
+                                .spawn();
+                        });
+                        started = true;
+                    }
+
+                    // If started, probe common ports for the proxy and set MJ_PROXY_URL env var
+                    if started {
+                        let ports = [8080u16, 8086u16, 8081u16, 8085u16];
+                        for port in ports.iter() {
+                            let url = format!("http://127.0.0.1:{}", port);
+                            let cl = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(2)).build();
+                            if let Ok(client) = cl {
+                                if client.get(format!("{}/info", url.trim_end_matches('/'))).send().is_ok() {
+                                    std::env::set_var("MJ_PROXY_URL", url.clone());
+                                    // persist into settings DB if available later during AppState init
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                // If not found via executable tree, check bundled resources (packaged app)
+                if found.is_none() {
+                    if let Ok(res_dir) = handle.path().resource_dir() {
+                        let cand = res_dir.join("midjourney-proxy");
+                        let run_sh = if cand.join("run_app.sh").exists() {
+                            cand.join("run_app.sh")
+                        } else {
+                            cand.join("scripts").join("run_app.sh")
+                        };
+                        if run_sh.exists() {
+                            found = Some(cand);
+                        }
+                    }
+                }
+            }
             
             let app_state_res = tauri::async_runtime::block_on(async {
                 state::AppState::new().await
@@ -70,6 +138,35 @@ pub fn run() {
                 }
             };
             
+            // If we auto-detected and set MJ_PROXY_URL earlier, persist it into the settings collection
+            if let Ok(proxy) = std::env::var("MJ_PROXY_URL") {
+                if !proxy.trim().is_empty() {
+                    let db_clone = app_state.db.clone();
+                    let proxy_clone = proxy.clone();
+                    // perform update on the runtime to ensure DB is available
+                    let _ = tauri::async_runtime::block_on(async move {
+                        let coll = db_clone.collection::<mongodb::bson::Document>("settings");
+                        let filter = mongodb::bson::doc! { "_id": "singleton" };
+                        let update = mongodb::bson::doc! { "$set": { "mj_proxy_url": proxy_clone } };
+                        let _ = coll.update_one(filter.clone(), update).await;
+                    });
+                }
+            }
+
+            // Persist MJ_DISCORD_TOKEN if provided via environment
+            if let Ok(dtoken) = std::env::var("MJ_DISCORD_TOKEN") {
+                if !dtoken.trim().is_empty() {
+                    let db_clone = app_state.db.clone();
+                    let token_clone = dtoken.clone();
+                    let _ = tauri::async_runtime::block_on(async move {
+                        let coll = db_clone.collection::<mongodb::bson::Document>("settings");
+                        let filter = mongodb::bson::doc! { "_id": "singleton" };
+                        let update = mongodb::bson::doc! { "$set": { "mj_discord_token": token_clone } };
+                            let _ = coll.update_one(filter, update).await;
+                        });
+                    }
+                }
+
             let state_arc = Arc::new(app_state.clone());
             app.manage(app_state);
             app.manage(state_arc);
@@ -100,6 +197,7 @@ pub fn run() {
             commands::test_suno,
             commands::test_mj,
             commands::test_ffmpeg,
+            commands::ensure_mj_autostart,
             // Projects commands
             commands::list_projects,
             commands::create_project,

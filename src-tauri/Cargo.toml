@@ -1,6 +1,6 @@
 [package]
 name = "ai-music-video-studio"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 
 [lib]
@@ -27,7 +27,7 @@ tokio            = { version = "1", features = ["full"] }
 futures-util     = "0.3"
 
 # HTTP client
-reqwest          = { version = "0.12", features = ["json", "multipart"] }
+reqwest          = { version = "0.12", features = ["json", "multipart", "blocking"] }
 
 # Utilities
 uuid             = { version = "1", features = ["v4"] }
@@ -42,6 +42,7 @@ rand             = "0.8"
 log              = "0.4"
 env_logger       = "0.11"
 rfd = "0.17.2"
+dirs             = "5"
 
 [features]
 default          = ["custom-protocol"]

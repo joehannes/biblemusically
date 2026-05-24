@@ -18,8 +18,6 @@ pub struct Settings {
     #[serde(default)]
     pub suno_cookie: String,
     #[serde(default)]
-    pub mj_cookie: String,
-    #[serde(default)]
     pub mj_discord_token: String,
     #[serde(default)]
     pub google_client_id: String,

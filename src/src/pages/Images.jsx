@@ -40,6 +40,16 @@ export default function Images() {
     return () => clearInterval(t); 
   }, [activeSongId]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        await api.ensureMjAutostart();
+      } catch (err) {
+        console.warn("Midjourney autostart failed", err);
+      }
+    })();
+  }, []);
+
   // Poll for job status
   useEffect(() => {
     const pollJobs = async () => {
@@ -134,7 +144,7 @@ export default function Images() {
           </Select>
           {readySongs.length === 0 && (
             <span className="text-[11px] text-destructive animate-pulse font-mono pl-1">
-              * Generate song audio in Step 3 first!
+              * Generate song audio in Step {getStepForPath("/music")} first!
             </span>
           )}
         </div>

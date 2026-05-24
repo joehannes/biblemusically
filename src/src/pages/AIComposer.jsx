@@ -505,7 +505,7 @@ export default function AIComposer() {
       {/* COMPOSER WORKSPACE LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* LEFT COLUMN: CONTROLS & PARAMS */}
-        <Card className="p-5 space-y-5 h-auto lg:sticky lg:top-5">
+        <Card className="p-5 space-y-5 h-fit self-start">
           
           {/* PROFILE / PRESETS SECTION */}
           <div className="space-y-2">

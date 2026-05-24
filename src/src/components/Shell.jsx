@@ -63,7 +63,7 @@ export default function Shell({ children }) {
       <aside className={`${collapsed?"w-16":"w-64"} shrink-0 border-r border-border bg-card/40 flex flex-col sticky top-0 h-screen`}>
         <div className="px-3 py-3 border-b border-border flex items-center gap-2">
           <div className="w-9 h-9 flex items-center justify-center">
-            <img src="/src-tauri/icons/icon.png" alt="Lightkid AI" className="w-9 h-9 object-contain" />
+            <img src="/icon.png" alt="Lightkid AI" className="w-9 h-9 object-contain" />
           </div>
           {!collapsed && (
             <div>

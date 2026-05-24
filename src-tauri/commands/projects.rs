@@ -4,6 +4,7 @@ use crate::{
 };
 use bson::{doc, Document};
 use serde_json::Value;
+use std::env;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
 use uuid::Uuid;
@@ -250,10 +251,15 @@ pub async fn import_project(
     project_obj.remove("_id");
 
     let mut project_doc = bson::to_document(&project_obj).map_err(e)?;
-    state.db.collection::<Document>("projects").insert_one(project_doc, None).await.map_err(e)?;
+    state.db.collection::<Document>("projects").insert_one(project_doc).await.map_err(e)?;
 
     let source_dir_path = source_dir.map(PathBuf::from);
-    let app_data = tauri::api::path::app_data_dir().ok_or_else(|| "Unable to locate app data directory".to_string())?;
+    // Get app data directory using standard approach
+    let app_data = if let Some(config_dir) = dirs::config_dir() {
+        config_dir.join("studio-lightkid").join("app")
+    } else {
+        return Err("Unable to locate app data directory".to_string());
+    };
     let import_media_dir = app_data.join("project_imports").join(&new_project_id).join("media");
     std::fs::create_dir_all(&import_media_dir).map_err(e)?;
 
@@ -283,7 +289,7 @@ pub async fn import_project(
             }
 
             let bson = bson::to_document(&song_obj).map_err(e)?;
-            state.db.collection::<Document>("songs").insert_one(bson, None).await.map_err(e)?;
+            state.db.collection::<Document>("songs").insert_one(bson).await.map_err(e)?;
         }
     }
 
@@ -318,7 +324,7 @@ pub async fn import_project(
             }
 
             let bson = bson::to_document(&section_obj).map_err(e)?;
-            state.db.collection::<Document>("sections").insert_one(bson, None).await.map_err(e)?;
+            state.db.collection::<Document>("sections").insert_one(bson).await.map_err(e)?;
         }
     }
 

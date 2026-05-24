@@ -4,9 +4,8 @@ use crate::{
     state::AppState,
 };
 use bson::{doc, Document};
-use mongodb::options::{FindOneOptions, UpdateOptions};
-use rand::Rng;
 use serde_json::Value;
+use std::env;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -36,10 +35,6 @@ async fn set_progress(db: &mongodb::Database, job_id: &str, p: i32) {
         .await;
 }
 
-fn proj() -> FindOneOptions {
-    FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
-}
-
 // ────────────────────────────────────────────────────────────────
 // Real Suno integration
 // ────────────────────────────────────────────────────────────────
@@ -52,9 +47,12 @@ async fn real_suno(
 ) -> Option<Vec<Value>> {
     let cookie = settings.get("suno_cookie")?.as_str()?.trim().to_string();
     if cookie.is_empty() {
-        db_log(db, job_id, "suno: no cookie configured, using mock").await;
+        db_log(db, job_id, "suno: cookie not configured").await;
         return None;
     }
+    
+    db_log(db, job_id, "suno: submitting music generation request...").await;
+    
     let payload = serde_json::json!({
         "gpt_description_prompt": format!("{} — {}",
             song.get("styles").and_then(|v|v.as_str()).unwrap_or(""),
@@ -70,39 +68,89 @@ async fn real_suno(
         .header("Cookie", &cookie)
         .header("User-Agent", "Mozilla/5.0")
         .json(&payload)
+        .timeout(std::time::Duration::from_secs(30))
         .send()
-        .await
-        .ok()?;
+        .await;
+    
+    let res = match res {
+        Ok(r) => r,
+        Err(e) => {
+            db_log(db, job_id, &format!("suno: request failed: {}", e)).await;
+            return None;
+        }
+    };
+    
     if !res.status().is_success() {
-        db_log(db, job_id, &format!("suno HTTP {}", res.status())).await;
+        let status = res.status();
+        if status == 401 || status == 403 {
+            db_log(db, job_id, "suno: authentication failed - cookie may be expired or invalid").await;
+        } else {
+            db_log(db, job_id, &format!("suno: HTTP {} - service error", status)).await;
+        }
         return None;
     }
-    let data: Value = res.json().await.ok()?;
+    
+    let data: Value = match res.json().await {
+        Ok(d) => d,
+        Err(e) => {
+            db_log(db, job_id, &format!("suno: invalid response format: {}", e)).await;
+            return None;
+        }
+    };
+    
     let ids: Vec<String> = data["clips"]
         .as_array()?
         .iter()
         .filter_map(|c| c["id"].as_str().map(|s| s.to_string()))
         .collect();
+    
     if ids.is_empty() {
-        db_log(db, job_id, "suno: no clip ids").await;
+        db_log(db, job_id, "suno: no clip IDs returned - generation may have failed").await;
         return None;
     }
-    for _ in 0..40 {
+    
+    db_log(db, job_id, &format!("suno: generation submitted, polling for results ({} clips)...", ids.len())).await;
+    
+    // Poll for results (up to 200 seconds)
+    for attempt in 0..40 {
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        
         let fr = client
             .get(format!("https://studio-api.suno.com/api/feed/?ids={}", ids.join(",")))
             .header("Cookie", &cookie)
+            .header("User-Agent", "Mozilla/5.0")
             .send()
-            .await
-            .ok()?;
-        if !fr.status().is_success() { continue; }
-        let clips: Value = fr.json().await.ok()?;
+            .await;
+        
+        let fr = match fr {
+            Ok(f) => f,
+            Err(e) => {
+                db_log(db, job_id, &format!("suno: poll request {}/{} failed: {}", attempt + 1, 40, e)).await;
+                continue;
+            }
+        };
+        
+        if !fr.status().is_success() {
+            db_log(db, job_id, &format!("suno: poll {}/{} returned HTTP {}", attempt + 1, 40, fr.status())).await;
+            continue;
+        }
+        
+        let clips: Value = match fr.json().await {
+            Ok(c) => c,
+            Err(e) => {
+                db_log(db, job_id, &format!("suno: poll {}/{} invalid response: {}", attempt + 1, 40, e)).await;
+                continue;
+            }
+        };
+        
         if let Some(arr) = clips.as_array() {
             let ready: Vec<&Value> = arr.iter()
                 .filter(|x| x["audio_url"].is_string()
                     && matches!(x["status"].as_str(), Some("complete") | Some("streaming")))
                 .collect();
+            
             if !ready.is_empty() {
+                db_log(db, job_id, &format!("suno: generation complete! {} clips ready", ready.len())).await;
                 let mut results = Vec::new();
                 for clip in ready.iter().take(2) {
                     results.push(serde_json::json!({
@@ -113,8 +161,11 @@ async fn real_suno(
                 return Some(results);
             }
         }
+        
+        set_progress(db, job_id, 15 + (attempt as i32 * 70 / 40).min(70)).await;
     }
-    db_log(db, job_id, "suno: timeout").await;
+    
+    db_log(db, job_id, "suno: timeout after 200 seconds - generation did not complete").await;
     None
 }
 
@@ -128,46 +179,136 @@ async fn real_mj(
     job_id: &str,
     db: &mongodb::Database,
 ) -> Option<Vec<String>> {
-    let proxy = settings.get("mj_proxy_url")?.as_str()?.trim().to_string();
+    // Prefer auto-started proxy via env var, fallback to settings
+    let proxy = std::env::var("MJ_PROXY_URL").ok()
+        .or_else(|| settings.get("mj_proxy_url").and_then(|v| v.as_str().map(|s| s.to_string())))
+        .unwrap_or_default();
+    let proxy = proxy.trim();
     if proxy.is_empty() {
-        db_log(db, job_id, "mj: no proxy URL, using mock").await;
+        db_log(db, job_id, "mj: proxy URL not configured").await;
         return None;
     }
-    let token = settings.get("mj_discord_token").and_then(|v|v.as_str()).unwrap_or("").to_string();
+    
+    let token = std::env::var("MJ_DISCORD_TOKEN").ok()
+        .or_else(|| settings.get("mj_discord_token").and_then(|v| v.as_str().map(|s| s.to_string())))
+        .unwrap_or_default();
+    let token = token.trim();
+    if token.is_empty() {
+        db_log(db, job_id, "mj: Discord token not configured").await;
+        return None;
+    }
+    
+    db_log(db, job_id, &format!("mj: submitting imagine request to proxy at {}...", proxy)).await;
+    
     let client = reqwest::Client::new();
-    let mut req = client.post(format!("{}/imagine", proxy.trim_end_matches('/')))
-        .json(&serde_json::json!({ "prompt": prompt }));
-    if !token.is_empty() {
-        req = req.bearer_auth(&token);
-    }
-    let res = req.send().await.ok()?;
+    let res = client.post(format!("{}/imagine", proxy.trim_end_matches('/')))
+        .json(&serde_json::json!({ "prompt": prompt }))
+        .bearer_auth(token)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await;
+    
+    let res = match res {
+        Ok(r) => r,
+        Err(e) => {
+            let detail = if e.is_timeout() {
+                "Timeout connecting to proxy".to_string()
+            } else if e.is_connect() {
+                format!("Cannot connect to proxy at {} - verify URL and proxy is running", proxy)
+            } else {
+                format!("Request error: {}", e)
+            };
+            db_log(db, job_id, &format!("mj: {}", detail)).await;
+            return None;
+        }
+    };
+    
     if !res.status().is_success() {
-        db_log(db, job_id, &format!("mj HTTP {}", res.status())).await;
+        let status = res.status();
+        if status == 401 || status == 403 {
+            db_log(db, job_id, "mj: authentication failed - Discord token may be invalid or expired").await;
+        } else {
+            db_log(db, job_id, &format!("mj: proxy returned HTTP {} - check proxy logs", status)).await;
+        }
         return None;
     }
-    let data: Value = res.json().await.ok()?;
-    let job_id_mj = data["job_id"].as_str().or(data["id"].as_str())?.to_string();
+    
+    let data: Value = match res.json().await {
+        Ok(d) => d,
+        Err(e) => {
+            db_log(db, job_id, &format!("mj: invalid proxy response: {}", e)).await;
+            return None;
+        }
+    };
+    
+    let job_id_mj = data["job_id"].as_str().or(data["id"].as_str())?;
+    db_log(db, job_id, &format!("mj: job {} submitted, polling for completion...", job_id_mj)).await;
 
-    for _ in 0..60 {
+    // Poll for results (up to 300 seconds for Midjourney)
+    for attempt in 0..60 {
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        let pr = client.get(format!("{}/job/{}", proxy.trim_end_matches('/'), job_id_mj)).send().await.ok()?;
-        if !pr.status().is_success() { continue; }
-        let pdata: Value = pr.json().await.ok()?;
-        if pdata["status"].as_str() == Some("completed") {
-            if let Some(upscales) = pdata["upscales"].as_array() {
-                if !upscales.is_empty() {
-                    return Some(upscales.iter()
-                        .take(4)
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect());
+        
+        let pr = client.get(format!("{}/job/{}", proxy.trim_end_matches('/'), job_id_mj))
+            .bearer_auth(token)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+        
+        let pr = match pr {
+            Ok(p) => p,
+            Err(e) => {
+                db_log(db, job_id, &format!("mj: poll {}/{} failed: {}", attempt + 1, 60, e)).await;
+                continue;
+            }
+        };
+        
+        if !pr.status().is_success() {
+            db_log(db, job_id, &format!("mj: poll {}/{} returned HTTP {}", attempt + 1, 60, pr.status())).await;
+            continue;
+        }
+        
+        let pdata: Value = match pr.json().await {
+            Ok(p) => p,
+            Err(e) => {
+                db_log(db, job_id, &format!("mj: poll {}/{} invalid response: {}", attempt + 1, 60, e)).await;
+                continue;
+            }
+        };
+        
+        match pdata["status"].as_str() {
+            Some("completed") => {
+                // Try upscales first, then grid
+                if let Some(upscales) = pdata["upscales"].as_array() {
+                    if !upscales.is_empty() {
+                        db_log(db, job_id, &format!("mj: generation complete with {} upscaled images", upscales.len())).await;
+                        return Some(upscales.iter()
+                            .take(4)
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect());
+                    }
+                }
+                if let Some(grid) = pdata["image_url"].as_str().or(pdata["uri"].as_str()) {
+                    db_log(db, job_id, "mj: generation complete with grid image").await;
+                    return Some(vec![grid.to_string(); 4]);
+                }
+                db_log(db, job_id, "mj: job completed but no images found in response").await;
+                return None;
+            }
+            Some(status) => {
+                // Log progress
+                if attempt % 5 == 0 {
+                    db_log(db, job_id, &format!("mj: status={}, poll {}/{}", status, attempt + 1, 60)).await;
                 }
             }
-            if let Some(grid) = pdata["image_url"].as_str().or(pdata["uri"].as_str()) {
-                return Some(vec![grid.to_string(); 4]);
+            None => {
+                db_log(db, job_id, &format!("mj: poll {}/{} - no status in response", attempt + 1, 60)).await;
             }
         }
+        
+        set_progress(db, job_id, 15 + (attempt as i32 * 70 / 60).min(70)).await;
     }
-    db_log(db, job_id, "mj: timeout").await;
+    
+    db_log(db, job_id, "mj: timeout after 300 seconds - image generation did not complete").await;
     None
 }
 
@@ -186,17 +327,20 @@ async fn real_ffmpeg(
     // Resolve ffmpeg: prefer configured path, then system `which`, then bundled resource
     let mut ff_path = ff.to_string();
     if which::which(&ff_path).is_err() {
-        if let Some(res_dir) = tauri::api::path::resource_dir() {
-            let candidates = [
-                res_dir.join("ffmpeg"),
-                res_dir.join("ffmpeg.exe"),
-                res_dir.join("bin").join("ffmpeg"),
-                res_dir.join("bin").join("ffmpeg.exe"),
-            ];
-            for c in &candidates {
-                if c.exists() && c.is_file() {
-                    ff_path = c.to_string_lossy().to_string();
-                    break;
+        // Try to find ffmpeg in the resource directory next to the executable
+        if let Ok(exe_path) = env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                let candidates = [
+                    parent.join("ffmpeg"),
+                    parent.join("ffmpeg.exe"),
+                    parent.join("bin").join("ffmpeg"),
+                    parent.join("bin").join("ffmpeg.exe"),
+                ];
+                for c in &candidates {
+                    if c.exists() && c.is_file() {
+                        ff_path = c.to_string_lossy().to_string();
+                        break;
+                    }
                 }
             }
         }
@@ -284,27 +428,35 @@ async fn real_ffmpeg(
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .status()
-    }).await.ok().flatten();
+    }).await.ok().and_then(|r| r.ok());
     
     if let Some(status) = compose_result {
         if status.success() && out_file.exists() {
             tokio::spawn(async move {
                 db_log(&db_clone, &job_id_log, "ffmpeg: video composed successfully").await;
             });
+            let local_path_str = out_file.to_str().unwrap_or("").to_string();
+            let video_url = format!("/api/media/video/{song_id}.mp4");
+            let _ = db.collection::<Document>("songs")
+                .update_one(doc! { "id": song_id }, doc! { "$set": {
+                    "video_url": &video_url,
+                    "video_local_path": &local_path_str,
+                    "status": "video_ready"
+                }}).await;
             return Some(serde_json::json!({
-                "video_url": format!("/api/media/video/{song_id}.mp4"),
-                "local_path": out_file.to_str().unwrap_or(""),
+                "video_url": video_url,
+                "local_path": local_path_str,
                 "_real": true,
             }));
         }
     }
-    
+
     db_log(db, job_id, "ffmpeg: compose failed or output file missing").await;
     None
 }
 
 // ────────────────────────────────────────────────────────────────
-// Real YouTube upload (token refresh + stub video upload)
+// Real YouTube upload (token refresh + actual resumable session upload)
 // ────────────────────────────────────────────────────────────────
 
 async fn real_youtube_upload(
@@ -313,6 +465,9 @@ async fn real_youtube_upload(
     job_id: &str,
 ) -> Option<Value> {
     let channel_id = upload["channel_id"].as_str()?;
+    let song_id = upload["song_id"].as_str()?;
+    
+    // Fetch channel
     let channel = db.collection::<Document>("channels")
         .find_one(doc! { "id": channel_id }).await.ok()??.into_iter()
         .fold(serde_json::Map::new(), |mut m, (k, v)| {
@@ -328,6 +483,9 @@ async fn real_youtube_upload(
     let client_secret = oauth["client_secret"].as_str()?;
 
     let http = reqwest::Client::new();
+    
+    // Step 1: Refresh access token
+    db_log(db, job_id, "youtube: refreshing access token...").await;
     let tr = http.post("https://oauth2.googleapis.com/token")
         .form(&[
             ("client_id", client_id),
@@ -337,19 +495,190 @@ async fn real_youtube_upload(
         ])
         .send().await.ok()?;
     if !tr.status().is_success() {
-        db_log(db, job_id, &format!("youtube token refresh failed: {}", tr.status())).await;
+        db_log(db, job_id, &format!("youtube: token refresh failed ({}). Token may be invalid or revoked.", tr.status())).await;
         return None;
     }
-    let label = oauth["label"].as_str().unwrap_or("client");
-    db_log(db, job_id, &format!(
-        "youtube: auth verified via '{}' (real video bytes upload requires composed mp4 + resumable session — wire to ffmpeg output in next iteration)",
-        label
-    )).await;
-    Some(serde_json::json!({
-        "youtube_video_id": format!("real_{}", &Uuid::new_v4().to_string()[..8]),
-        "auth_ok": true,
-        "_real": true,
-    }))
+    let tokens: Value = tr.json().await.ok()?;
+    let access_token = tokens["access_token"].as_str()?;
+    db_log(db, job_id, "youtube: access token refreshed successfully").await;
+
+    // Step 2: Get song to find video file
+    let song_doc = db.collection::<Document>("songs")
+        .find_one(doc! { "id": song_id }).await.ok()??.into_iter()
+        .fold(serde_json::Map::new(), |mut m, (k, v)| {
+            m.insert(k, bson::Bson::try_into(v).unwrap_or(Value::Null));
+            m
+        });
+    let song: Value = Value::Object(song_doc);
+    let video_url = song["video_url"].as_str().unwrap_or("");
+    let video_local_path = song["video_local_path"].as_str().unwrap_or("");
+    
+    let video_bytes = if !video_local_path.is_empty() {
+        db_log(db, job_id, &format!("youtube: using local composed video file {}", video_local_path)).await;
+        match std::fs::read(video_local_path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                db_log(db, job_id, &format!("youtube: failed to read local video file {}: {}", video_local_path, e)).await;
+                return None;
+            }
+        }
+    } else if !video_url.is_empty() && video_url.starts_with("http") {
+        db_log(db, job_id, &format!("youtube: downloading video from {}", video_url)).await;
+        match download_video(video_url, job_id, db).await {
+            Some(bytes) => bytes,
+            None => {
+                db_log(db, job_id, "youtube: failed to download video file").await;
+                return None;
+            }
+        }
+    } else {
+        db_log(db, job_id, "youtube: no valid video source available for upload").await;
+        return None;
+    };
+    
+    db_log(db, job_id, &format!("youtube: video file size: {:.1} MB", video_bytes.len() as f64 / (1024.0 * 1024.0))).await;
+
+    // Step 4: Prepare upload metadata
+    let title = upload["title"].as_str().unwrap_or("Untitled").to_string();
+    let description = upload["description"].as_str().unwrap_or("").to_string();
+    let tags: Vec<String> = upload["tags"].as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let category = upload["category"].as_str().unwrap_or("Music").to_string();
+    let privacy = upload["privacy"].as_str().unwrap_or("private").to_string();
+
+    // Convert privacy string to YouTube API value
+    let privacy_status = match privacy.as_str() {
+        "public" => "public",
+        "unlisted" => "unlisted",
+        _ => "private",
+    };
+
+    let metadata = serde_json::json!({
+        "snippet": {
+            "title": title,
+            "description": description,
+            "tags": tags,
+            "categoryId": match category.as_str() {
+                "Music" => "10",
+                "Entertainment" => "24",
+                "People" => "15",
+                _ => "24",
+            }
+        },
+        "status": {
+            "privacyStatus": privacy_status,
+            "madeForKids": false
+        }
+    });
+
+    // Step 5: Initiate resumable upload session
+    db_log(db, job_id, "youtube: initiating resumable upload session...").await;
+    let session_res = http.post("https://www.googleapis.com/youtube/v3/videos")
+        .query(&[("part", "snippet,status"), ("uploadType", "resumable")])
+        .bearer_auth(access_token)
+        .header("X-Goog-Upload-Protocol", "resumable")
+        .header("X-Goog-Upload-Command", "start")
+        .header("X-Goog-Upload-Content-Type", "video/mp4")
+        .header("X-Goog-Upload-Content-Length", &video_bytes.len().to_string())
+        .json(&metadata)
+        .send().await.ok()?;
+
+    if !session_res.status().is_success() {
+        db_log(db, job_id, &format!("youtube: upload session init failed ({})", session_res.status())).await;
+        return None;
+    }
+
+    let session_uri = session_res.headers().get("location")?.to_str().ok()?;
+    db_log(db, job_id, "youtube: upload session created, starting file transfer...").await;
+
+    // Step 6: Upload video bytes in chunks (resumable protocol)
+    let chunk_size = 262144; // 256KB chunks
+    let total_chunks = (video_bytes.len() + chunk_size - 1) / chunk_size;
+    
+    for (chunk_idx, chunk) in video_bytes.chunks(chunk_size).enumerate() {
+        let start = chunk_idx * chunk_size;
+        let end = start + chunk.len();
+        let is_final = end >= video_bytes.len();
+        
+        let range_header = format!("bytes {}-{}/{}", start, end - 1, video_bytes.len());
+        
+        let mut chunk_req = http.put(session_uri)
+            .header("Content-Type", "video/mp4")
+            .header("Content-Range", &range_header);
+        
+        chunk_req = if is_final {
+            chunk_req
+                .header("X-Goog-Upload-Command", "upload, finalize")
+        } else {
+            chunk_req
+                .header("X-Goog-Upload-Command", "upload")
+        };
+
+        let chunk_res = chunk_req.body(chunk.to_vec()).send().await.ok()?;
+        
+        if is_final {
+            if chunk_res.status().is_success() {
+                if let Ok(result) = chunk_res.json::<Value>().await {
+                    if let Some(video_id) = result["id"].as_str() {
+                        db_log(db, job_id, &format!("youtube: upload complete! Video ID: {}", video_id)).await;
+                        return Some(serde_json::json!({
+                            "youtube_video_id": video_id,
+                            "auth_ok": true,
+                            "_real": true,
+                            "privacy": privacy_status,
+                        }));
+                    }
+                }
+            } else {
+                db_log(db, job_id, &format!("youtube: final upload chunk failed ({})", chunk_res.status())).await;
+                return None;
+            }
+        } else {
+            if !chunk_res.status().is_success() && chunk_res.status().as_u16() != 308 {
+                db_log(db, job_id, &format!("youtube: chunk {} upload failed ({})", chunk_idx + 1, chunk_res.status())).await;
+                return None;
+            }
+            set_progress(db, job_id, 15 + (chunk_idx as i32 * 70 / total_chunks as i32).min(70)).await;
+            db_log(db, job_id, &format!("youtube: uploaded chunk {}/{}", chunk_idx + 1, total_chunks)).await;
+        }
+    }
+    
+    None
+}
+
+async fn download_video(url: &str, job_id: &str, db: &mongodb::Database) -> Option<Vec<u8>> {
+    let client = reqwest::Client::new();
+    
+    let res = client.get(url).send().await.ok()?;
+    if !res.status().is_success() {
+        db_log(db, job_id, &format!("download_video: HTTP {} from {}", res.status(), url)).await;
+        return None;
+    }
+    
+    // If it's a local file:// URL, read from disk instead
+    if url.starts_with("file://") || url.starts_with("/") {
+        let path = if url.starts_with("file://") {
+            url.trim_start_matches("file://")
+        } else {
+            url
+        };
+        match std::fs::read(path) {
+            Ok(bytes) => return Some(bytes),
+            Err(_) => {
+                db_log(db, job_id, &format!("download_video: failed to read local file {}", path)).await;
+                return None;
+            }
+        }
+    }
+    
+    match res.bytes().await {
+        Ok(bytes) => Some(bytes.to_vec()),
+        Err(e) => {
+            db_log(db, job_id, &format!("download_video: failed to read response body: {}", e)).await;
+            None
+        }
+    }
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -486,26 +815,17 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
             "music" => {
                 let song = fetch_doc(db, "songs", "id", tgt).await;
                 let real = real_suno(&song, &settings_doc, job_id, db).await;
-                let is_real = real.is_some();
-                let clips = if let Some(c) = real {
-                    c
-                } else {
-                    let mut rng = rand::thread_rng();
-                    vec![
-                        serde_json::json!({
-                            "audio_url": format!("https://cdn.suno.ai/mock/{}-1.mp3", tgt),
-                            "duration": 92.0 + rng.gen::<f64>() * 30.0,
-                        }),
-                        serde_json::json!({
-                            "audio_url": format!("https://cdn.suno.ai/mock/{}-2.mp3", tgt),
-                            "duration": 92.0 + rng.gen::<f64>() * 30.0,
-                        })
-                    ]
-                };
+                let clips = real.ok_or_else(|| anyhow::anyhow!(
+                    "Suno music generation failed. Check: (1) Cookie validity, (2) Network connectivity, (3) Suno service status. See job logs for details."
+                ))?;
 
                 let primary = &clips[0];
                 let primary_url = primary["audio_url"].as_str().unwrap_or("").to_string();
                 let primary_dur = primary["duration"].as_f64().unwrap_or(120.0);
+
+                if primary_url.is_empty() {
+                    return Err(anyhow::anyhow!("Suno returned empty audio URL"));
+                }
 
                 let (alt_url, alt_dur) = if clips.len() > 1 {
                     let alt = &clips[1];
@@ -527,7 +847,7 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                         "status": "music_ready" 
                     } },
                 ).await?;
-                serde_json::json!({ "audio_url": primary_url, "real": is_real })
+                serde_json::json!({ "audio_url": primary_url, "real": true })
             }
 
             // ── ANALYSIS ───────────────────────────────────────────────
@@ -583,41 +903,25 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                     .or(sec["line"].as_str())
                     .unwrap_or("")
                     .to_string();
-                match real_mj(&prompt, &settings_doc, job_id, db).await {
-                    Some(v) => {
-                        db_log(db, job_id, "mj: real images received").await;
-                        db.collection::<Document>("sections").update_one(
-                            doc! { "id": tgt },
-                            doc! { "$set": {
-                                "image_url": &v[0],
-                                "image_variants": v.iter().map(|s| bson::Bson::String(s.clone())).collect::<Vec<_>>()
-                            }},
-                        ).await?;
-                        serde_json::json!({ "variants": 4, "real": true })
-                    }
-                    None => {
-                        db_log(db, job_id, "mj: failed - no real images generated. Check proxy/token configuration and firewall.").await;
-                        // Mark section with error instead of using placeholders
-                        db.collection::<Document>("sections").update_one(
-                            doc! { "id": tgt },
-                            doc! { "$set": { 
-                                "image_status": "error",
-                                "image_error": "Midjourney generation failed. Verify proxy URL, auth token, and firewall settings."
-                            }},
-                        ).await?;
-                        serde_json::json!({ "variants": 0, "real": false, "error": "Image generation failed" })
-                    }
-                }
+                let v = real_mj(&prompt, &settings_doc, job_id, db).await
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "Midjourney image generation failed. Verify: (1) Proxy URL is set and accessible, (2) Discord token is valid, (3) Firewall allows outbound HTTPS. See logs for details."
+                    ))?;
+                
+                db_log(db, job_id, &format!("mj: received {} image variants", v.len())).await;
+                db.collection::<Document>("sections").update_one(
+                    doc! { "id": tgt },
+                    doc! { "$set": {
+                        "image_url": &v[0],
+                        "image_variants": v.iter().map(|s| bson::Bson::String(s.clone())).collect::<Vec<_>>()
+                    }},
+                ).await?;
+                serde_json::json!({ "variants": v.len(), "real": true })
             }
 
             // ── VIDEO ──────────────────────────────────────────────────
             "video" => {
                 let song = fetch_doc(db, "songs", "id", tgt).await;
-                let secs_docs: Vec<Value> = db.collection::<Document>("sections")
-                    .find(doc! { "song_id": tgt }).await?
-                    .deserialize_current().ok()
-                    .map(|_| vec![])
-                    .unwrap_or_default();
                 // Proper cursor iteration
                 let mut cursor = db.collection::<Document>("sections")
                     .find(doc! { "song_id": tgt }).await?;
@@ -642,18 +946,23 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
             // ── UPLOAD ─────────────────────────────────────────────────
             "upload" => {
                 let upload = fetch_doc(db, "uploads", "id", tgt).await;
-                let real = real_youtube_upload(&upload, db, job_id).await;
-                let yt_id = real.as_ref()
-                    .and_then(|r| r["youtube_video_id"].as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("yt_{}", &Uuid::new_v4().to_string().replace('-', "")[..11]));
-                let is_real = real.is_some();
+                let yt_id = real_youtube_upload(&upload, db, job_id).await
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "YouTube upload failed. Verify: (1) Channel has valid refresh token, (2) Video file exists, (3) OAuth credentials are active. See logs for details."
+                    ))?
+                    .get("youtube_video_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("YouTube API did not return video ID"))?
+                    .to_string();
+                
                 let ts = now_iso();
                 db.collection::<Document>("uploads").update_one(
                     doc! { "id": tgt },
                     doc! { "$set": { "status": "published", "youtube_video_id": &yt_id, "published_at": &ts } },
                 ).await?;
-                serde_json::json!({ "youtube_video_id": yt_id, "url": format!("https://youtu.be/{yt_id}"), "real": is_real })
+                
+                db_log(db, job_id, &format!("upload: completed! YouTube URL: https://youtu.be/{}", yt_id)).await;
+                serde_json::json!({ "youtube_video_id": yt_id, "url": format!("https://youtu.be/{yt_id}"), "real": true })
             }
 
             _ => serde_json::json!({}),

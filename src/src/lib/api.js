@@ -47,6 +47,7 @@ export const api = {
   saveSettings: (s) => invokeCommand("update_settings", { payload: s }),
   testSuno: () => invokeCommand("test_suno"),
   testMj: () => invokeCommand("test_mj"),
+  ensureMjAutostart: () => invokeCommand("ensure_mj_autostart"),
   testFfmpeg: () => invokeCommand("test_ffmpeg"),
   putDraft: async (key, payload) => {
     if (!hasLocalStorage) return null;
