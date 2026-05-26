@@ -715,8 +715,11 @@ pub async fn pick_oauth_client(
             m
         });
     let s = Value::Object(s);
+    // Accept legacy fallback when `google_client_id` is present. The client
+    // secret may be empty (UI can supply it later); building the consent URL
+    // only requires the client_id.
     let cid = s["google_client_id"].as_str().filter(|s| !s.is_empty())?;
-    let csec = s["google_client_secret"].as_str().filter(|s| !s.is_empty())?;
+    let csec = s["google_client_secret"].as_str().filter(|s| !s.is_empty()).unwrap_or("");
     Some(serde_json::json!({
         "id": "_legacy",
         "label": "Settings default",
