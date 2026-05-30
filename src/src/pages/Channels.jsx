@@ -41,10 +41,19 @@ export default function Channels() {
   };
 
   const startOauth = async (c, forceClientId) => {
+    const popup = window.open("", "_blank", "width=720,height=820");
+    if (!popup) {
+      return toast.error("Popup blocked. Please allow popups for this app and try again.");
+    }
+
     const r = await api.oauthStart(c.id, forceClientId);
-    if (r.error) return toast.error(r.error);
+    if (r.error) {
+      popup.close();
+      return toast.error(r.error);
+    }
+
     setOauthDialog(c);
-    window.open(r.url, "_blank");
+    popup.location.href = r.url;
   };
 
   const completeOauth = async () => {

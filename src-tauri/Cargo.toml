@@ -1,6 +1,6 @@
 [package]
 name = "ai-music-video-studio"
-version = "0.6.3"
+version = "0.7.1"
 edition = "2021"
 
 [lib]
@@ -28,6 +28,9 @@ futures-util     = "0.3"
 
 # HTTP client
 reqwest          = { version = "0.12", features = ["json", "multipart", "blocking"] }
+
+# Lightweight local callback server used to receive proxy login notifications
+warp = "0.3"
 
 # Utilities
 uuid             = { version = "1", features = ["v4"] }

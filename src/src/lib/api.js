@@ -48,6 +48,7 @@ export const api = {
   testSuno: () => invokeCommand("test_suno"),
   testMj: () => invokeCommand("test_mj"),
   ensureMjAutostart: () => invokeCommand("ensure_mj_autostart"),
+  mjAutoLogin: (account, password, twofa) => invokeCommand("mj_auto_login", { login_account: account, login_password: password, login_2fa: twofa }),
   testFfmpeg: () => invokeCommand("test_ffmpeg"),
   putDraft: async (key, payload) => {
     if (!hasLocalStorage) return null;

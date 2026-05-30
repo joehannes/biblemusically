@@ -26,6 +26,9 @@ export default function Settings() {
   const [status, setStatus] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [oauthClients, setOauthClients] = useState([]);
+  const [mjLogin, setMjLogin] = useState({ account: "", password: "", twofa: "" });
+  const [mjLoginStatus, setMjLoginStatus] = useState({});
+  const [loginInProgress, setLoginInProgress] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -101,6 +104,32 @@ export default function Settings() {
     }
     toast.success("Settings saved");
   };
+
+  const autoLogin = async () => {
+    if (!mjLogin.account || !mjLogin.password || !mjLogin.twofa) {
+      toast.error("Discord email, password and 2FA are required for auto-login.");
+      return;
+    }
+    setLoginInProgress(true);
+    try {
+      const r = await api.mjAutoLogin(mjLogin.account, mjLogin.password, mjLogin.twofa);
+      setMjLoginStatus(r || {});
+      if (r.ok) {
+        toast.success("Discord login succeeded and token has been stored.");
+        const refreshed = await api.getSettings();
+        setS(prev => ({ ...prev, ...refreshed }));
+        setMjLogin({ account: "", password: "", twofa: "" });
+      } else {
+        toast.error(r.detail || r.error || "Discord auto-login failed.");
+      }
+    } catch (err) {
+      console.error("Auto-login failed", err);
+      toast.error("Discord auto-login failed. See console for details.");
+    } finally {
+      setLoginInProgress(false);
+    }
+  };
+
   const testS = async (kind) => {
     const r = kind === "suno" ? await api.testSuno() : kind === "mj" ? await api.testMj() : await api.testFfmpeg();
     setStatus(p => ({ ...p, [kind]: r }));
@@ -136,6 +165,13 @@ export default function Settings() {
     <div className="space-y-1">
       <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</Label>
       <Input data-testid={testid} type={type} value={s[k] || ""} onChange={e=>setS({...s, [k]: e.target.value})} placeholder={placeholder} />
+    </div>
+  );
+
+  const AuthField = ({ label, placeholder, type="text", value, onChange }) => (
+    <div className="space-y-1">
+      <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</Label>
+      <Input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
     </div>
   );
 
@@ -215,6 +251,29 @@ export default function Settings() {
           <Field k="mj_cookie" label="midjourney.com session cookie" placeholder="cookie string..." testid="settings-mj-cookie" />
           <Field k="mj_discord_token" label="Discord wrapper token (optional fallback)" placeholder="bot/user token" testid="settings-mj-discord" />
           <Field k="mj_proxy_url" label="MJ proxy URL (e.g. self-hosted midjourney-proxy)" placeholder="https://your-mj-proxy/api" testid="settings-mj-proxy" />
+        </div>
+        <div className="mt-4 rounded-xl border border-muted/50 bg-slate-950/10 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-1">
+              <div className="text-sm font-semibold">Automated Discord login</div>
+              <p className="text-xs text-muted-foreground">Use the configured Midjourney proxy to log in with Discord credentials and persist the wrapper token automatically.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {mjLoginStatus.ok === true && <Badge variant="default">Success</Badge>}
+              {mjLoginStatus.ok === false && <Badge variant="destructive">Failed</Badge>}
+              <Button size="sm" variant="secondary" onClick={autoLogin} disabled={loginInProgress || !s.mj_proxy_url}>
+                <Bot className="w-3 h-3 mr-2" />{loginInProgress ? "Working..." : "Auto-login"}
+              </Button>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-3 gap-3 mt-4">
+            <AuthField label="Discord email" placeholder="email@example.com" value={mjLogin.account} onChange={(value) => setMjLogin({ ...mjLogin, account: value })} />
+            <AuthField label="Discord password" placeholder="Discord password" type="password" value={mjLogin.password} onChange={(value) => setMjLogin({ ...mjLogin, password: value })} />
+            <AuthField label="Discord 2FA code" placeholder="6-digit code" value={mjLogin.twofa} onChange={(value) => setMjLogin({ ...mjLogin, twofa: value })} />
+          </div>
+          {mjLoginStatus.detail && (
+            <div className="mt-3 text-sm text-muted-foreground">{typeof mjLoginStatus.detail === 'string' ? mjLoginStatus.detail : JSON.stringify(mjLoginStatus.detail)}</div>
+          )}
         </div>
         <Button size="sm" variant="secondary" data-testid="settings-test-mj" className="mt-3" onClick={()=>testS("mj")}><Cookie className="w-3 h-3 mr-2" />Test</Button>
       </Card>

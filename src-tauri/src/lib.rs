@@ -153,6 +153,20 @@ pub fn run() {
                 }
             }
 
+            // Persist Suno cookie from environment to settings if provided.
+            if let Ok(suno_cookie) = std::env::var("SUNO_COOKIE") {
+                if !suno_cookie.trim().is_empty() {
+                    let db_clone = app_state.db.clone();
+                    let cookie_clone = suno_cookie.clone();
+                    let _ = tauri::async_runtime::block_on(async move {
+                        let coll = db_clone.collection::<mongodb::bson::Document>("settings");
+                        let filter = mongodb::bson::doc! { "_id": "singleton" };
+                        let update = mongodb::bson::doc! { "$set": { "suno_cookie": cookie_clone } };
+                        let _ = coll.update_one(filter.clone(), update).await;
+                    });
+                }
+            }
+
             // Persist MJ_DISCORD_TOKEN if provided via environment
             if let Ok(dtoken) = std::env::var("MJ_DISCORD_TOKEN") {
                 if !dtoken.trim().is_empty() {
@@ -167,9 +181,52 @@ pub fn run() {
                     }
                 }
 
+            // Attempt to auto-start the Midjourney proxy on app startup.
+            {
+                let db_clone = app_state.db.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = commands::ensure_mj_autostart_internal(&db_clone).await;
+                });
+            }
+
+            let db_clone = app_state.db.clone();
             let state_arc = Arc::new(app_state.clone());
             app.manage(app_state);
-            app.manage(state_arc);
+            app.manage(state_arc.clone());
+
+            // Start background token validation and periodic refresh checks.
+            {
+                let db_clone = db_clone.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut auth_interval = tokio::time::interval(std::time::Duration::from_secs(900));
+                    let mut refresh_interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+                    auth_interval.tick().await;
+                    refresh_interval.tick().await;
+                    loop {
+                        tokio::select! {
+                            _ = auth_interval.tick() => {
+                                if let Err(err) = commands::validate_suno_cookie_internal(&db_clone).await {
+                                    eprintln!("Token maintenance: Suno cookie check failed: {}", err);
+                                }
+                                if let Err(err) = commands::validate_mj_token_internal(&db_clone).await {
+                                    eprintln!("Token maintenance: MJ proxy/auth check failed: {}", err);
+                                }
+                            }
+                            _ = refresh_interval.tick() => {
+                                match commands::validate_google_refresh_tokens_internal(&db_clone).await {
+                                    Ok(invalidated) if !invalidated.is_empty() => {
+                                        eprintln!("Token maintenance: invalidated YouTube refresh tokens for channels: {:?}", invalidated);
+                                    }
+                                    Err(err) => {
+                                        eprintln!("Token maintenance: Google refresh validation failed: {}", err);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             // Check for FFmpeg and show a warning dialog if missing
             if which::which("ffmpeg").is_err() {
@@ -198,6 +255,7 @@ pub fn run() {
             commands::test_mj,
             commands::test_ffmpeg,
             commands::ensure_mj_autostart,
+            commands::mj_auto_login,
             // Projects commands
             commands::list_projects,
             commands::create_project,

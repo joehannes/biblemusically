@@ -50,6 +50,29 @@ async fn real_suno(
         db_log(db, job_id, "suno: cookie not configured").await;
         return None;
     }
+
+    // Pre-check cookie validity before attempting generation
+    let precheck_client = reqwest::Client::new();
+    let precheck = precheck_client
+        .get("https://studio-api.suno.com/api/user/")
+        .header("Cookie", &cookie)
+        .header("User-Agent", "Mozilla/5.0")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await;
+    match precheck {
+        Ok(r) if r.status() == 200 => { /* cookie is valid */ }
+        Ok(r) if r.status() == 401 || r.status() == 403 => {
+            db_log(db, job_id, "suno: cookie has expired or is invalid. Please renew it in Settings (F12 → Cookies → studio.suno.ai → copy studio-api_key). Generation cancelled.").await;
+            return None;
+        }
+        Ok(_) => {
+            db_log(db, job_id, "suno: pre-check HTTP error — cookie may still be valid, proceeding anyway.").await;
+        }
+        Err(e) => {
+            db_log(db, job_id, &format!("suno: pre-check connection error ({}), proceeding anyway.", e)).await;
+        }
+    }
     
     db_log(db, job_id, "suno: submitting music generation request...").await;
     
