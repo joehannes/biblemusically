@@ -43,8 +43,17 @@ pub fn run() {
             } else {
                 eprintln!("Failed to find mongod sidecar configuration.");
             }
+            // Attempt to start a bundled Browsh CLI browser sidecar (text/TTY browser)
+            if let Ok(sidecar) = handle.shell().sidecar("browsh") {
+                match sidecar.spawn() {
+                    Ok(_) => println!("browsh sidecar started"),
+                    Err(e) => eprintln!("Failed to start browsh sidecar: {}", e),
+                }
+            } else {
+                eprintln!("Browsh sidecar not configured or binary missing.");
+            }
             
-            // Give mongod a second to bind
+            // Give mongod and any sidecars a second to bind
             std::thread::sleep(std::time::Duration::from_millis(1500));
             
             // Tell AppState to use our sidecar port

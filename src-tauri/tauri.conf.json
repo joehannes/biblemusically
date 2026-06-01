@@ -32,11 +32,13 @@
     "active": true,
     "targets": "all",
       "externalBin": [
-        "binaries/mongod"
+        "binaries/mongod",
+        "binaries/browsh"
       ],
       "resources": [
         "../midjourney-proxy/scripts",
-        "../src-tauri/packaging"
+        "../src-tauri/packaging",
+        "../browsh"
       ],
     "icon": [
       "icons/32x32.png",
