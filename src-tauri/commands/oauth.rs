@@ -7,6 +7,10 @@ use bson::{doc, Document};
 use serde_json::Value;
 use tauri::State;
 use uuid::Uuid;
+use std::collections::HashMap;
+use tokio::sync::mpsc;
+use url::Url;
+use open;
 
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
@@ -230,4 +234,124 @@ pub async fn oauth_callback(
         "youtube_channel_id": yt_channel_id,
         "label": client["label"],
     }))
+}
+
+// ────────────────────────────────────────────────────────────────
+// OAuth start using a local loopback server — opens system browser
+// and performs the code exchange, then persists tokens into settings
+// ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn oauth_start_loopback(
+    state: State<'_, AppState>,
+    oauth_client_db_id: String,
+    scope: Option<String>,
+) -> Res<Value> {
+    // Delegate to shared helper that operates on a Database handle so startup code can reuse it
+    crate::commands::oauth::perform_oauth_loopback(&state.db, &oauth_client_db_id, scope).await
+}
+
+/// Perform loopback OAuth flow using a raw Database handle. This is a reusable helper
+/// so the flow can be invoked from startup tasks as well as from the UI.
+pub async fn perform_oauth_loopback(db: &mongodb::Database, oauth_client_db_id: &str, scope: Option<String>) -> Res<Value> {
+    // Find OAuth client by DB id
+    let client_doc = db.collection::<Document>("oauth_clients")
+        .find_one(doc! { "id": oauth_client_db_id }).await.map_err(e)?
+        .ok_or_else(|| "OAuth client not found".to_string())?;
+    let client = bson_to_value(client_doc);
+    let cid = client["client_id"].as_str().unwrap_or("").to_string();
+    let csec = client["client_secret"].as_str().unwrap_or("").to_string();
+    let redirect = client["redirect_uri"].as_str().unwrap_or("").to_string();
+
+    if cid.is_empty() || csec.is_empty() || redirect.is_empty() {
+        return Err("OAuth client missing client_id/client_secret/redirect_uri".into());
+    }
+
+    // parse redirect URI — only allow localhost/127.0.0.1 loopback flows
+    let parsed = Url::parse(&redirect).map_err(e)?;
+    let host = parsed.host_str().unwrap_or("");
+    if host != "127.0.0.1" && host != "localhost" {
+        return Err("OAuth client redirect_uri must be a loopback address (127.0.0.1 or localhost)".into());
+    }
+
+    // Channel to receive the query params from the callback
+    let (tx, mut rx) = mpsc::channel::<HashMap<String, String>>(1);
+    let tx_filter = warp::any().map(move || tx.clone());
+
+    // Accept any path on the local server and capture query params
+    let callback_route = warp::get()
+        .and(warp::path::full())
+        .and(warp::query::<HashMap<String, String>>())
+        .and(tx_filter.clone())
+        .and_then(|_full: warp::path::FullPath, qs: HashMap<String, String>, tx: mpsc::Sender<HashMap<String, String>>| async move {
+            let _ = tx.try_send(qs);
+            let body = "<html><body><h2>Authentication complete — you can close this window.</h2></body></html>";
+            Ok::<_, std::convert::Infallible>(warp::reply::html(body))
+        });
+
+    // Determine port to bind: use port from redirect if present, otherwise let OS pick one
+    let port = parsed.port().unwrap_or(0);
+    let (addr, server) = warp::serve(callback_route).bind_ephemeral(([127, 0, 0, 1], port));
+    tokio::task::spawn(server);
+    let bound_port = addr.port();
+
+    // Reconstruct redirect URI to use for this auth request (in case port was 0)
+    let mut redirect_used = parsed.clone();
+    redirect_used.set_port(Some(bound_port)).ok();
+    let redirect_used_str = redirect_used.to_string();
+
+    let scope = scope.unwrap_or_else(|| "openid email profile".to_string());
+    let state_param = Uuid::new_v4().to_string();
+    let auth_url = format!(
+        "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state={}",
+        cid,
+        urlencoding::encode(&redirect_used_str),
+        urlencoding::encode(&scope),
+        state_param
+    );
+
+    // Open system browser
+    let _ = open::that(auth_url.clone());
+
+    // Wait for the callback (120s)
+    match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
+        Ok(Some(qs)) => {
+            if let Some(err) = qs.get("error") {
+                return Err(format!("OAuth error: {}", err));
+            }
+            let code = qs.get("code").cloned().unwrap_or_default();
+            let returned_state = qs.get("state").cloned().unwrap_or_default();
+            if code.is_empty() || returned_state != state_param {
+                return Err("Missing code or invalid state in callback".into());
+            }
+
+            // Exchange code for tokens
+            let http = reqwest::Client::new();
+            let tr = http.post("https://oauth2.googleapis.com/token")
+                .form(&[
+                    ("code", code.as_str()),
+                    ("client_id", cid.as_str()),
+                    ("client_secret", csec.as_str()),
+                    ("redirect_uri", redirect_used_str.as_str()),
+                    ("grant_type", "authorization_code"),
+                ])
+                .send().await.map_err(e)?;
+            if !tr.status().is_success() {
+                return Err(format!("Token exchange failed: {}", tr.text().await.unwrap_or_default()));
+            }
+            let tokens: Value = tr.json().await.map_err(e)?;
+
+            // Persist refresh token (if present) into settings for later use
+            let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
+            let access = tokens["access_token"].as_str().unwrap_or("").to_string();
+            if !refresh.is_empty() {
+                let coll = db.collection::<Document>("settings");
+                let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "suno_google_refresh_token": refresh.clone(), "suno_google_access_token": access.clone() } }).await;
+            }
+
+            Ok(tokens)
+        }
+        Ok(None) => Err("Callback receiver closed".into()),
+        Err(_) => Err("Timed out waiting for OAuth callback".into()),
+    }
 }

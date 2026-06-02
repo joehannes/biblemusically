@@ -45,7 +45,9 @@ pub fn run() {
             }
             // Attempt to start a bundled Browsh CLI browser sidecar (text/TTY browser)
             if let Ok(sidecar) = handle.shell().sidecar("browsh") {
-                match sidecar.spawn() {
+                // Auto-launch Browsh pointing at Suno and request GUI Firefox so user can
+                // perform interactive logins (captcha/2FA) when needed.
+                match sidecar.args(["--startup-url", "https://studio.suno.ai", "--firefox.with-gui=true"]).spawn() {
                     Ok(_) => println!("browsh sidecar started"),
                     Err(e) => eprintln!("Failed to start browsh sidecar: {}", e),
                 }
@@ -203,6 +205,92 @@ pub fn run() {
             app.manage(app_state);
             app.manage(state_arc.clone());
 
+            // Autotrigger authentication helpers at startup:
+            // - If Suno cookie missing, ensure Browsh is running (started above) to capture cookies.
+            // - If Google OAuth client exists and no stored Google refresh token for Suno, perform loopback OAuth.
+            {
+                let db_start = db_clone.clone();
+                tauri::async_runtime::spawn(async move {
+                    // Small delay to allow sidecars and DB to be ready
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+                    // Check settings for existing Suno cookie and Google refresh token
+                    let settings_coll = db_start.collection::<mongodb::bson::Document>("settings");
+                    let sdoc = settings_coll.find_one(mongodb::bson::doc! { "_id": "singleton" }, None).await.ok().flatten();
+                    let mut has_suno_cookie = false;
+                    let mut has_google_refresh = false;
+                    if let Some(doc) = sdoc {
+                        if let Some(v) = doc.get_str("suno_cookie").ok() {
+                            has_suno_cookie = !v.trim().is_empty();
+                        }
+                        if let Some(v) = doc.get_str("suno_google_refresh_token").ok() {
+                            has_google_refresh = !v.trim().is_empty();
+                        }
+                    }
+
+                    // If no Suno cookie, Browsh was started above with startup-url to capture cookies.
+                    if !has_suno_cookie {
+                        eprintln!("Suno cookie missing: awaiting Browsh-assisted capture (startup web page)");
+                    }
+
+                    // If no Google refresh token, try performing loopback OAuth using first available OAuth client
+                    if !has_google_refresh {
+                        let ocoll = db_start.collection::<mongodb::bson::Document>("oauth_clients");
+                        if let Ok(doc_opt) = ocoll.find_one(None, None).await {
+                            if let Some(doc) = doc_opt {
+                                if let Ok(oid) = doc.get_str("id") {
+                                    // spawn the loopback OAuth flow (opens system browser)
+                                    let oid_str = oid.to_string();
+                                    tokio::spawn(async move {
+                                        match crate::commands::oauth::perform_oauth_loopback(&db_start, &oid_str, None).await {
+                                            Ok(tokens) => {
+                                                eprintln!("Loopback OAuth completed on startup: tokens stored");
+                                            }
+                                            Err(err) => {
+                                                eprintln!("Loopback OAuth on startup failed: {}", err);
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Start a small local HTTP endpoint so the Browsh CLI/extension can POST
+            // detected Suno cookies to the backend for persistence.
+            {
+                let db_for_server = db_clone.clone();
+                tauri::async_runtime::spawn(async move {
+                    use warp::Filter;
+
+                    #[derive(serde::Deserialize)]
+                    struct CookiePayload {
+                        cookie: String,
+                    }
+
+                    let db_filter = warp::any().map(move || db_for_server.clone());
+
+                    let route = warp::post()
+                        .and(warp::path("auth")).and(warp::path("suno"))
+                        .and(warp::body::json())
+                        .and(db_filter)
+                        .and_then(|payload: CookiePayload, db: mongodb::Database| async move {
+                            let coll = db.collection::<mongodb::bson::Document>("settings");
+                            let filter = mongodb::bson::doc! { "_id": "singleton" };
+                            let update = mongodb::bson::doc! { "$set": { "suno_cookie": payload.cookie.clone() } };
+                            let _ = coll.update_one(filter, update, None).await;
+                            Ok::<_, std::convert::Infallible>(warp::reply::with_status(
+                                "OK",
+                                warp::http::StatusCode::OK,
+                            ))
+                        });
+
+                    warp::serve(route).run(([127, 0, 0, 1], 3335)).await;
+                });
+            }
+
             // Start background token validation and periodic refresh checks.
             {
                 let db_clone = db_clone.clone();
@@ -303,6 +391,7 @@ pub fn run() {
             commands::delete_oauth_client,
             commands::channel_picked_client,
             commands::oauth_start,
+            commands::oauth_start_loopback,
             commands::oauth_callback,
             // Jobs commands
             commands::list_jobs,

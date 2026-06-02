@@ -1,6 +1,6 @@
 [package]
 name = "ai-music-video-studio"
-version = "0.7.1"
+version = "0.8.1"
 edition = "2021"
 
 [lib]
@@ -46,6 +46,9 @@ log              = "0.4"
 env_logger       = "0.11"
 rfd = "0.17.2"
 dirs             = "5"
+url = "2"
+open = "3"
+urlencoding = "2"
 
 [features]
 default          = ["custom-protocol"]
