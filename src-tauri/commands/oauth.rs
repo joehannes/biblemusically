@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use url::Url;
 use open;
+use warp::Filter;
 
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }

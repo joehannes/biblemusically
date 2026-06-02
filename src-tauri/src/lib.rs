@@ -216,7 +216,7 @@ pub fn run() {
 
                     // Check settings for existing Suno cookie and Google refresh token
                     let settings_coll = db_start.collection::<mongodb::bson::Document>("settings");
-                    let sdoc = settings_coll.find_one(mongodb::bson::doc! { "_id": "singleton" }, None).await.ok().flatten();
+                    let sdoc = settings_coll.find_one(mongodb::bson::doc! { "_id": "singleton" }).await.ok().flatten();
                     let mut has_suno_cookie = false;
                     let mut has_google_refresh = false;
                     if let Some(doc) = sdoc {
@@ -236,7 +236,7 @@ pub fn run() {
                     // If no Google refresh token, try performing loopback OAuth using first available OAuth client
                     if !has_google_refresh {
                         let ocoll = db_start.collection::<mongodb::bson::Document>("oauth_clients");
-                        if let Ok(doc_opt) = ocoll.find_one(None, None).await {
+                        if let Ok(doc_opt) = ocoll.find_one(mongodb::bson::doc! {}).await {
                             if let Some(doc) = doc_opt {
                                 if let Ok(oid) = doc.get_str("id") {
                                     // spawn the loopback OAuth flow (opens system browser)
@@ -280,7 +280,7 @@ pub fn run() {
                             let coll = db.collection::<mongodb::bson::Document>("settings");
                             let filter = mongodb::bson::doc! { "_id": "singleton" };
                             let update = mongodb::bson::doc! { "$set": { "suno_cookie": payload.cookie.clone() } };
-                            let _ = coll.update_one(filter, update, None).await;
+                            let _ = coll.update_one(filter, update).await;
                             Ok::<_, std::convert::Infallible>(warp::reply::with_status(
                                 "OK",
                                 warp::http::StatusCode::OK,
