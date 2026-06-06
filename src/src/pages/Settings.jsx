@@ -138,6 +138,47 @@ const SettingsComponent = () => {
     r.ok ? toast.success(r.detail || "ok") : toast.error(r.detail || "fail");
   };
 
+  const openSunoLogin = async () => {
+    try {
+      const r = await api.openSunoLogin();
+      setStatus(p => ({ ...p, sunoLogin: r }));
+      toast.success("Suno login page opened. Complete login in the browser and then test the cookie.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Unable to open Suno login page.");
+    }
+  };
+
+  const openMjLogin = async () => {
+    try {
+      const r = await api.openMjLogin();
+      setStatus(p => ({ ...p, mjLoginPage: r }));
+      toast.success("Midjourney login page opened in a visible browser.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Unable to open Midjourney login page.");
+    }
+  };
+
+  const captureMjSession = async () => {
+    setLoginInProgress(true);
+    try {
+      const r = await api.captureMjSession();
+      setStatus(p => ({ ...p, mj: r }));
+      if (r.ok && r.cookie) {
+        setS(prev => ({ ...prev, mj_cookie: r.cookie }));
+        toast.success("Midjourney session cookie captured and stored.");
+      } else {
+        toast.error(r.detail || r.error || "Midjourney session capture failed.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Midjourney session capture failed. See console for details.");
+    } finally {
+      setLoginInProgress(false);
+    }
+  };
+
   // Auto-sync first OAuth client when the legacy settings fields change (debounced)
   useEffect(() => {
     if (!loaded) return;
@@ -212,7 +253,11 @@ const SettingsComponent = () => {
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Music2 className="w-4 h-4 text-primary" /><h2 className="font-semibold">Suno (unofficial)</h2><StatusPill k="suno" /></div>
         <Field k="suno_cookie" label="studio-api.suno.com session cookie" placeholder="cookie string..." testid="settings-suno-cookie" />
-        <Button size="sm" variant="secondary" data-testid="settings-test-suno" className="mt-3" onClick={()=>testS("suno")}><Cookie className="w-3 h-3 mr-2" />Test</Button>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Button size="sm" variant="secondary" onClick={openSunoLogin}><Cookie className="w-3 h-3 mr-2" />Open Suno login</Button>
+          <Button size="sm" variant="secondary" data-testid="settings-test-suno" onClick={()=>testS("suno")}><Cookie className="w-3 h-3 mr-2" />Test</Button>
+        </div>
+        <div className="mt-3 text-xs text-muted-foreground">After you log in to Suno, use the browser capture flow to persist the <code>studio-api_key</code> cookie to Settings.</div>
       </Card>
 
       <Card className="p-6 mb-5">
@@ -267,9 +312,14 @@ const SettingsComponent = () => {
         <div className="flex items-center gap-2 mb-4"><Img className="w-4 h-4 text-primary" /><h2 className="font-semibold">Midjourney</h2><StatusPill k="mj" /></div>
         <div className="space-y-3">
           <Field k="mj_cookie" label="midjourney.com session cookie" placeholder="cookie string..." testid="settings-mj-cookie" />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={openMjLogin}><Bot className="w-3 h-3 mr-2" />Open Midjourney login</Button>
+            <Button size="sm" variant="secondary" onClick={captureMjSession} disabled={loginInProgress}><Bot className="w-3 h-3 mr-2" />{loginInProgress ? "Capturing..." : "Capture session"}</Button>
+          </div>
           <Field k="mj_discord_token" label="Discord wrapper token (optional fallback)" placeholder="bot/user token" testid="settings-mj-discord" />
           <Field k="mj_proxy_url" label="MJ proxy URL (e.g. self-hosted midjourney-proxy)" placeholder="https://your-mj-proxy/api" testid="settings-mj-proxy" />
         </div>
+        <div className="mt-3 text-xs text-muted-foreground">Use the visible Midjourney browser flow to capture your site session cookie automatically. The legacy proxy/Discord token path remains as a fallback.</div>
         <div className="mt-4 rounded-xl border border-muted/50 bg-slate-950/10 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="space-y-1">

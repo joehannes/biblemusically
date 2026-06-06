@@ -1,14 +1,15 @@
 {
   "name": "biblemusically",
   "private": true,
-  "version": "0.8.4",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:deb": "npm run tauri -- build"
+    "build:deb": "npm run tauri -- build",
+    "mj-capture": "node ./src-tauri/packaging/midjourney-session-capture.js"
   },
   "pretauri": "node ./scripts/pretauri.js",
   "dependencies": {
@@ -17,7 +18,8 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "playwright": "^1.50.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

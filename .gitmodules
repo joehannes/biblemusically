@@ -1,7 +1,0 @@
-[submodule "midjourney-proxy"]
-	path = midjourney-proxy
-	url = https://github.com/trueai-org/midjourney-proxy.git
-
-[submodule "browsh"]
-	path = browsh
-	url = https://github.com/browsh-org/browsh.git

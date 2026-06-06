@@ -9,16 +9,6 @@ if [ ! -d .git ]; then
   exit 1
 fi
 
-echo "Removing local midjourney-proxy folder (if exists) to prepare for submodule add..."
-rm -rf midjourney-proxy
-
-echo "Adding midjourney-proxy submodule..."
-git submodule add https://github.com/trueai-org/midjourney-proxy.git midjourney-proxy || true
-
-echo "Adding browsh submodule..."
-git submodule add https://github.com/browsh-org/browsh.git browsh || true
-
-echo "Initializing and updating submodules..."
-git submodule update --init --recursive
-
-echo "Done. You may want to run scripts/setup_sidecars.sh next to build or install binaries."
+echo "Submodule management for midjourney-proxy and browsh has been removed."
+echo "The project now uses a Playwright-driven visible browser flow for Midjourney operations."
+echo "If you still need external projects, add them manually to your repository."

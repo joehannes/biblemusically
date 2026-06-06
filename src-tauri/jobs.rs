@@ -202,137 +202,91 @@ async fn real_mj(
     job_id: &str,
     db: &mongodb::Database,
 ) -> Option<Vec<String>> {
-    // Prefer auto-started proxy via env var, fallback to settings
-    let proxy = std::env::var("MJ_PROXY_URL").ok()
-        .or_else(|| settings.get("mj_proxy_url").and_then(|v| v.as_str().map(|s| s.to_string())))
-        .unwrap_or_default();
-    let proxy = proxy.trim();
-    if proxy.is_empty() {
-        db_log(db, job_id, "mj: proxy URL not configured").await;
+    // New Playwright-driven flow: spawn a Node helper which controls a visible
+    // browser to submit the prompt and download resulting images. The helper
+    // will print a JSON array of saved image paths to stdout on success.
+    let mj_cookie = settings.get("mj_cookie").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    if mj_cookie.is_empty() {
+        db_log(db, job_id, "mj: mj_cookie not configured - open Settings → Capture session").await;
         return None;
     }
-    
-    let token = std::env::var("MJ_DISCORD_TOKEN").ok()
-        .or_else(|| settings.get("mj_discord_token").and_then(|v| v.as_str().map(|s| s.to_string())))
-        .unwrap_or_default();
-    let token = token.trim();
-    if token.is_empty() {
-        db_log(db, job_id, "mj: Discord token not configured").await;
-        return None;
-    }
-    
-    db_log(db, job_id, &format!("mj: submitting imagine request to proxy at {}...", proxy)).await;
-    
-    let client = reqwest::Client::new();
-    let res = client.post(format!("{}/imagine", proxy.trim_end_matches('/')))
-        .json(&serde_json::json!({ "prompt": prompt }))
-        .bearer_auth(token)
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await;
-    
-    let res = match res {
-        Ok(r) => r,
-        Err(e) => {
-            let detail = if e.is_timeout() {
-                "Timeout connecting to proxy".to_string()
-            } else if e.is_connect() {
-                format!("Cannot connect to proxy at {} - verify URL and proxy is running", proxy)
-            } else {
-                format!("Request error: {}", e)
-            };
-            db_log(db, job_id, &format!("mj: {}", detail)).await;
-            return None;
-        }
-    };
-    
-    if !res.status().is_success() {
-        let status = res.status();
-        if status == 401 || status == 403 {
-            db_log(db, job_id, "mj: authentication failed - Discord token may be invalid or expired").await;
-        } else {
-            db_log(db, job_id, &format!("mj: proxy returned HTTP {} - check proxy logs", status)).await;
-        }
-        return None;
-    }
-    
-    let data: Value = match res.json().await {
-        Ok(d) => d,
-        Err(e) => {
-            db_log(db, job_id, &format!("mj: invalid proxy response: {}", e)).await;
-            return None;
-        }
-    };
-    
-    let job_id_mj = data["job_id"].as_str().or(data["id"].as_str())?;
-    db_log(db, job_id, &format!("mj: job {} submitted, polling for completion...", job_id_mj)).await;
 
-    // Poll for results (up to 300 seconds for Midjourney)
-    for attempt in 0..60 {
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        
-        let pr = client.get(format!("{}/job/{}", proxy.trim_end_matches('/'), job_id_mj))
-            .bearer_auth(token)
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .await;
-        
-        let pr = match pr {
-            Ok(p) => p,
-            Err(e) => {
-                db_log(db, job_id, &format!("mj: poll {}/{} failed: {}", attempt + 1, 60, e)).await;
-                continue;
-            }
-        };
-        
-        if !pr.status().is_success() {
-            db_log(db, job_id, &format!("mj: poll {}/{} returned HTTP {}", attempt + 1, 60, pr.status())).await;
-            continue;
+    db_log(db, job_id, "mj: launching Playwright generator (visible browser)...").await;
+
+    let out_dir = format!("/tmp/studio_mj_{}", Uuid::new_v4());
+    let _ = tokio::fs::create_dir_all(&out_dir).await;
+
+    let node = which::which("node").ok();
+    let node = match node {
+        Some(p) => p.to_string_lossy().to_string(),
+        None => {
+            db_log(db, job_id, "mj: 'node' runtime not found in PATH").await;
+            return None;
         }
-        
-        let pdata: Value = match pr.json().await {
-            Ok(p) => p,
-            Err(e) => {
-                db_log(db, job_id, &format!("mj: poll {}/{} invalid response: {}", attempt + 1, 60, e)).await;
-                continue;
-            }
-        };
-        
-        match pdata["status"].as_str() {
-            Some("completed") => {
-                // Try upscales first, then grid
-                if let Some(upscales) = pdata["upscales"].as_array() {
-                    if !upscales.is_empty() {
-                        db_log(db, job_id, &format!("mj: generation complete with {} upscaled images", upscales.len())).await;
-                        return Some(upscales.iter()
-                            .take(4)
-                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                            .collect());
-                    }
-                }
-                if let Some(grid) = pdata["image_url"].as_str().or(pdata["uri"].as_str()) {
-                    db_log(db, job_id, "mj: generation complete with grid image").await;
-                    return Some(vec![grid.to_string(); 4]);
-                }
-                db_log(db, job_id, "mj: job completed but no images found in response").await;
+    };
+
+    let script = std::path::Path::new("src-tauri").join("packaging").join("midjourney-generator.js");
+    if !script.exists() {
+        db_log(db, job_id, "mj: generator script missing").await;
+        return None;
+    }
+
+    let mut cmd = tokio::process::Command::new(node);
+    cmd.arg(script.to_string_lossy().to_string())
+        .arg("--prompt")
+        .arg(prompt.to_string())
+        .arg("--cookie")
+        .arg(mj_cookie.clone())
+        .arg("--outdir")
+        .arg(out_dir.clone())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            db_log(db, job_id, &format!("mj: failed to spawn generator: {}", e)).await;
+            return None;
+        }
+    };
+
+    // Wait for generator with a 6 minute timeout
+    let timeout = tokio::time::Duration::from_secs(360);
+    let wait = tokio::time::timeout(timeout, child.wait_with_output());
+    match wait.await {
+        Ok(Ok(output)) => {
+            if !output.status.success() {
+                let err = String::from_utf8_lossy(&output.stderr);
+                db_log(db, job_id, &format!("mj: generator failed: {}", err)).await;
                 return None;
             }
-            Some(status) => {
-                // Log progress
-                if attempt % 5 == 0 {
-                    db_log(db, job_id, &format!("mj: status={}, poll {}/{}", status, attempt + 1, 60)).await;
+            let out = String::from_utf8_lossy(&output.stdout).to_string();
+            let parsed: Result<Vec<String>, _> = serde_json::from_str(&out);
+            match parsed {
+                Ok(v) if !v.is_empty() => {
+                    db_log(db, job_id, &format!("mj: generator returned {} images", v.len())).await;
+                    return Some(v);
+                }
+                Ok(_) => {
+                    db_log(db, job_id, "mj: generator returned no images").await;
+                    return None;
+                }
+                Err(e) => {
+                    db_log(db, job_id, &format!("mj: failed parsing generator output: {}", e)).await;
+                    return None;
                 }
             }
-            None => {
-                db_log(db, job_id, &format!("mj: poll {}/{} - no status in response", attempt + 1, 60)).await;
-            }
         }
-        
-        set_progress(db, job_id, 15 + (attempt as i32 * 70 / 60).min(70)).await;
+        Ok(Err(e)) => {
+            db_log(db, job_id, &format!("mj: generator process error: {}", e)).await;
+            return None;
+        }
+        Err(_) => {
+            db_log(db, job_id, "mj: generator timed out").await;
+            let _ = child.kill().await;
+            return None;
+        }
     }
-    
-    db_log(db, job_id, "mj: timeout after 300 seconds - image generation did not complete").await;
-    None
 }
 
 // ────────────────────────────────────────────────────────────────

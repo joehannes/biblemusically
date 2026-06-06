@@ -3,6 +3,8 @@ use bson::{doc, Document};
 use serde_json::Value;
 use tauri::State;
 use std::env;
+use std::path::PathBuf;
+use tokio::fs;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 use uuid::Uuid;
@@ -22,6 +24,40 @@ fn bson_to_value(doc: Document) -> Value {
         if let Ok(jv) = bson::from_bson::<Value>(v) { m.insert(k, jv); }
     }
     Value::Object(m)
+}
+
+fn locate_resource_file(name: &str) -> Option<PathBuf> {
+    if let Ok(rd) = env::var("TAURI_RESOURCE_DIR") {
+        let p = PathBuf::from(rd).join(name);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(cwd) = env::current_dir() {
+        let p = cwd.join("src-tauri").join("packaging").join(name);
+        if p.exists() {
+            return Some(p);
+        }
+        let p2 = cwd.join("src-tauri").join(name);
+        if p2.exists() {
+            return Some(p2);
+        }
+    }
+    if let Ok(exe) = env::current_exe() {
+        let mut path = exe.parent();
+        while let Some(dir) = path {
+            let p = dir.join("src-tauri").join("packaging").join(name);
+            if p.exists() {
+                return Some(p);
+            }
+            let p2 = dir.join("packaging").join(name);
+            if p2.exists() {
+                return Some(p2);
+            }
+            path = dir.parent();
+        }
+    }
+    None
 }
 
 async fn probe_midjourney_proxy() -> Option<String> {
@@ -85,6 +121,31 @@ pub async fn validate_suno_cookie_internal(db: &mongodb::Database) -> Result<(),
 
 pub async fn validate_mj_token_internal(db: &mongodb::Database) -> Result<(), String> {
     let s = get_settings_doc(db).await?;
+    let cookie_env = std::env::var("MJ_COOKIE").ok();
+    let cookie = cookie_env.as_deref().unwrap_or_else(|| s["mj_cookie"].as_str().unwrap_or("")).trim();
+    if !cookie.is_empty() {
+        let client = reqwest::Client::new();
+        let res = client.get("https://www.midjourney.com/api/app/users/@me/")
+            .header("Cookie", cookie)
+            .header("Accept", "application/json")
+            .header("User-Agent", "Mozilla/5.0")
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|err| format!("Midjourney cookie validation failed: {}", err))?;
+        if res.status().is_success() {
+            let _ = db.collection::<Document>("settings")
+                .update_one(doc! { "_id": "singleton" }, doc! { "$set": { "mj_cookie_valid": true, "mj_cookie_status": "valid", "mj_cookie_checked_at": chrono::Utc::now().to_rfc3339() } })
+                .await;
+            return Ok(());
+        }
+        let status_str = if res.status() == 401 || res.status() == 403 { "expired" } else { "api_error" };
+        let _ = db.collection::<Document>("settings")
+            .update_one(doc! { "_id": "singleton" }, doc! { "$set": { "mj_cookie_valid": false, "mj_cookie_status": status_str, "mj_cookie_checked_at": chrono::Utc::now().to_rfc3339() } })
+            .await;
+        return Err(format!("Midjourney cookie validation failed: HTTP {}", res.status()));
+    }
+
     let proxy_env = std::env::var("MJ_PROXY_URL").ok();
     let proxy = proxy_env.as_deref().unwrap_or_else(|| s["mj_proxy_url"].as_str().unwrap_or("")).trim();
     let token_env = std::env::var("MJ_DISCORD_TOKEN").ok();
@@ -163,88 +224,11 @@ pub async fn validate_google_refresh_tokens_internal(db: &mongodb::Database) -> 
 }
 
 pub async fn ensure_mj_autostart_internal(db: &mongodb::Database) -> Res<Value> {
-    let coll = db.collection::<Document>("settings");
-    let sdoc = coll.find_one(doc! { "_id": "singleton" }).await.map_err(e)?.unwrap_or_default();
-    let s = bson_to_value(sdoc);
-    if s["mj_autostart_installed"].as_bool().unwrap_or(false) {
-        return Ok(serde_json::json!({ "ok": true, "installed": true }));
-    }
-
-    let resource_dir = if let Ok(rd) = std::env::var("TAURI_RESOURCE_DIR") {
-        std::path::PathBuf::from(rd)
-    } else if let Ok(exe) = std::env::current_exe() {
-        exe.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
-    } else {
-        std::path::PathBuf::from(".")
-    };
-
-    let mut scripts_dir = resource_dir.join("midjourney-proxy").join("scripts");
-    if !scripts_dir.exists() {
-        scripts_dir = resource_dir.join("scripts");
-    }
-    let packaging_dir = resource_dir.join("packaging");
-    if !scripts_dir.exists() && !packaging_dir.exists() {
-        return Ok(serde_json::json!({ "ok": false, "error": "scripts_missing", "path": resource_dir.to_string_lossy() }));
-    }
-
-    let os = std::env::consts::OS;
-    let mut result = serde_json::Map::new();
-    if os == "linux" {
-        let install_sh = packaging_dir.join("install_midjourney_service.sh");
-        let fallback_sh = scripts_dir.join("linux_install.sh");
-        let run_sh = scripts_dir.join("run_app.sh");
-        if install_sh.exists() {
-            let _ = std::process::Command::new("sh").arg(install_sh.to_string_lossy().to_string()).arg(resource_dir.to_string_lossy().to_string()).spawn();
-            result.insert("action".into(), "started_packaging_install_sh".into());
-        } else if fallback_sh.exists() {
-            let _ = std::process::Command::new("sh").arg(fallback_sh.to_string_lossy().to_string()).spawn();
-            result.insert("action".into(), "started_fallback_linux_install".into());
-        } else if run_sh.exists() {
-            let _ = std::process::Command::new("sh").arg(run_sh.to_string_lossy().to_string()).spawn();
-            result.insert("action".into(), "started_run_sh".into());
-        } else {
-            result.insert("error".into(), "no_script_found".into());
-        }
-    } else if os == "macos" {
-        let install_sh = packaging_dir.join("install_midjourney_service.sh");
-        let fallback_sh = scripts_dir.join("run_app_osx.sh");
-        if install_sh.exists() {
-            let _ = std::process::Command::new("sh").arg(install_sh.to_string_lossy().to_string()).arg(resource_dir.to_string_lossy().to_string()).spawn();
-            result.insert("action".into(), "started_packaging_install_sh_mac".into());
-        } else if fallback_sh.exists() {
-            let _ = std::process::Command::new("sh").arg(fallback_sh.to_string_lossy().to_string()).spawn();
-            result.insert("action".into(), "started_fallback_run_sh_mac".into());
-        } else {
-            result.insert("error".into(), "no_script_found".into());
-        }
-    } else if os == "windows" {
-        let ps = packaging_dir.join("install_midjourney_service.ps1");
-        if ps.exists() {
-            let _ = std::process::Command::new("powershell").args(&["-ExecutionPolicy", "Bypass", "-File", &ps.to_string_lossy()]).spawn();
-            result.insert("action".into(), "started_powershell".into());
-        } else {
-            result.insert("error".into(), "no_ps_found".into());
-        }
-    } else {
-        result.insert("error".into(), "unsupported_os".into());
-    }
-
-    if result.get("action").is_some() {
-        if let Some(url) = probe_midjourney_proxy().await {
-            let _ = std::env::set_var("MJ_PROXY_URL", url.clone());
-            let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "mj_proxy_url": &url } }).await;
-            result.insert("proxy_url".into(), url.into());
-        }
-    }
-
-    let installed = !result.contains_key("error");
-    if installed {
-        let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "mj_autostart_installed": true } }).await;
-    }
-
-    let mut out = serde_json::json!({ "ok": installed });
-    if !result.is_empty() { out.as_object_mut().unwrap().extend(result); }
-    Ok(out)
+    // Midjourney proxy autostart is deprecated. Use the visible Playwright
+    // driven workflow and the Settings → Capture session flow to obtain a
+    // `mj_cookie`. This function remains for API compatibility and no
+    // service is installed.
+    Ok(serde_json::json!({ "ok": true, "installed": false, "note": "midjourney-proxy autostart removed; use Playwright-based flow" }))
 }
 
 #[tauri::command]
@@ -347,84 +331,63 @@ pub async fn test_mj(state: State<'_, AppState>) -> Res<Value> {
     let doc = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or_default();
-    
-    // Prefer auto-started proxy via env var
-    let proxy_env = std::env::var("MJ_PROXY_URL").ok();
-    let proxy = proxy_env.as_deref().unwrap_or_else(|| doc["mj_proxy_url"].as_str().unwrap_or("")).trim();
-    let token_env = std::env::var("MJ_DISCORD_TOKEN").ok();
-    let token = token_env.as_deref().unwrap_or_else(|| doc["mj_discord_token"].as_str().unwrap_or("")).trim();
-    
-    if proxy.is_empty() {
-        return Ok(serde_json::json!({
-            "ok": false,
-            "status": "not_configured",
-            "detail": "Midjourney proxy URL not configured. Required for image generation.",
-            "next_step": "Enter Midjourney proxy URL in Settings (e.g., http://localhost:8086)",
-            "setup_guide": "https://github.com/trueai-org/midjourney-proxy/blob/main/docs/install.md"
-        }));
-    }
-    
-    if token.is_empty() {
-        return Ok(serde_json::json!({
-            "ok": false,
-            "status": "token_missing",
-            "detail": "Midjourney proxy URL is set but Discord token is missing.",
-            "next_step": "Add Discord user token in Settings",
-            "info": "Token is used to authenticate with Discord (obtained from browser console)"
-        }));
-    }
-    
-    // Test actual connectivity to proxy
-    let client = reqwest::Client::new();
-    let mut req = client.get(format!("{}/info", proxy.trim_end_matches('/')))
-        .timeout(std::time::Duration::from_secs(10));
-    req = req.bearer_auth(token);
-    
-    match req.send().await {
-        Ok(res) => {
-            match res.status().as_u16() {
-                200 => {
-                    Ok(serde_json::json!({
-                        "ok": true,
-                        "status": "connected",
-                        "detail": "Midjourney proxy is reachable and authenticated",
-                        "proxy_url": proxy,
-                        "note": "If the app auto-started the bundled proxy, it sets MJ_PROXY_URL. Obtain a Discord user token per the proxy docs (open browser DevTools, inspect websocket auth, or follow the proxy README)"
-                    }))
-                }
-                401 | 403 => {
-                    Ok(serde_json::json!({
-                        "ok": false,
-                        "status": "auth_failed",
-                        "detail": format!("Proxy returned HTTP {} - Discord token is invalid or expired", res.status()),
-                        "next_step": "Verify Discord user token is correct and still valid"
-                    }))
-                }
-                _ => {
-                    Ok(serde_json::json!({
-                        "ok": false,
-                        "status": "proxy_error",
-                        "detail": format!("Proxy returned HTTP {} - check proxy logs", res.status())
-                    }))
-                }
+
+    let cookie_env = std::env::var("MJ_COOKIE").ok();
+    let cookie = cookie_env.as_deref().unwrap_or_else(|| doc["mj_cookie"].as_str().unwrap_or("")).trim();
+    if !cookie.is_empty() {
+        let client = reqwest::Client::new();
+        let res = client.get("https://www.midjourney.com/api/app/users/@me/")
+            .header("Cookie", cookie)
+            .header("Accept", "application/json")
+            .header("User-Agent", "Mozilla/5.0")
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+
+        match res {
+            Ok(res) if res.status().is_success() => {
+                let coll = state.db.collection::<Document>("settings");
+                let now_rfc = chrono::Utc::now().to_rfc3339();
+                let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "mj_cookie_valid": true, "mj_cookie_status": "valid", "mj_cookie_checked_at": &now_rfc } }).await;
+                return Ok(serde_json::json!({
+                    "ok": true,
+                    "status": "connected",
+                    "detail": "Midjourney session cookie is valid.",
+                    "method": "cookie"
+                }));
+            }
+            Ok(res) => {
+                let coll = state.db.collection::<Document>("settings");
+                let now_rfc = chrono::Utc::now().to_rfc3339();
+                let status = if res.status() == 401 || res.status() == 403 { "expired" } else { "api_error" };
+                let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "mj_cookie_valid": false, "mj_cookie_status": status, "mj_cookie_checked_at": &now_rfc } }).await;
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "status": "cookie_invalid",
+                    "detail": format!("Midjourney cookie validation failed: HTTP {}", res.status()),
+                    "next_step": "Use the browser capture button to refresh the Midjourney session cookie."
+                }));
+            }
+            Err(err) => {
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "status": "connection_error",
+                    "detail": format!("Connection error validating Midjourney cookie: {}", err),
+                    "next_step": "Check your network connectivity and try again."
+                }));
             }
         }
-        Err(err) => {
-            let detail = if err.is_timeout() {
-                format!("Connection timeout (10s) - proxy at {} is unreachable or too slow", proxy)
-            } else if err.is_connect() {
-                format!("Cannot connect to proxy at {} - check: (1) URL is correct, (2) proxy is running, (3) firewall allows connection", proxy)
-            } else {
-                format!("Connection error: {} - check network and proxy status", err)
-            };
-            Ok(serde_json::json!({
-                "ok": false,
-                "status": "connection_error",
-                "detail": detail,
-                "proxy_url": proxy
-            }))
-        }
     }
+
+    // Legacy midjourney-proxy support removed. If no `mj_cookie` configured
+    // instruct the user to capture a session via the Settings UI.
+    return Ok(serde_json::json!({
+        "ok": false,
+        "status": "not_configured",
+        "detail": "Midjourney session cookie is not configured.",
+        "next_step": "Use the browser capture button to open Midjourney and store the session cookie.",
+        "setup_guide": "https://www.midjourney.com/app/"
+    }));
 }
 
 #[tauri::command]
@@ -455,6 +418,59 @@ pub async fn test_ffmpeg(state: State<'_, AppState>) -> Res<Value> {
         }
     }
     Ok(serde_json::json!({ "ok": resolved.is_some(), "path": resolved.unwrap_or(path) }))
+}
+
+#[tauri::command]
+pub async fn open_suno_login() -> Res<Value> {
+    let url = "https://studio.suno.ai";
+    open::that(url).map_err(|err| format!("Failed to open browser for Suno login: {}", err))?;
+    Ok(serde_json::json!({ "ok": true, "url": url }))
+}
+
+#[tauri::command]
+pub async fn open_midjourney_login() -> Res<Value> {
+    let url = "https://www.midjourney.com/app/";
+    open::that(url).map_err(|err| format!("Failed to open browser for Midjourney login: {}", err))?;
+    Ok(serde_json::json!({ "ok": true, "url": url }))
+}
+
+#[tauri::command]
+pub async fn capture_midjourney_session(state: State<'_, AppState>) -> Res<Value> {
+    let script = locate_resource_file("midjourney-session-capture.js")
+        .ok_or_else(|| "Midjourney capture script not found in resources".to_string())?;
+    let node = which::which("node").map_err(|_| "Node.js is required for Midjourney session automation. Install Node.js and npm.".to_string())?;
+    let profile_dir = env::temp_dir().join("biblemusically-midjourney-playwright-profile");
+    fs::create_dir_all(&profile_dir).await.map_err(e)?;
+
+    let output = tokio::process::Command::new(node)
+        .arg(script.clone())
+        .arg(profile_dir.to_string_lossy().to_string())
+        .arg("300")
+        .output()
+        .await
+        .map_err(|err| format!("Failed to launch Midjourney browser automation: {}", err))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if !output.status.success() {
+        let detail = if !stderr.is_empty() { stderr } else { stdout };
+        return Err(format!("Midjourney session capture failed: {}", detail));
+    }
+
+    let result: Value = serde_json::from_str(&stdout)
+        .map_err(|err| format!("Failed to parse Midjourney capture output: {}\nstdout={}\nstderr={}", err, stdout, stderr))?;
+    if !result["ok"].as_bool().unwrap_or(false) {
+        let detail = result["detail"].as_str().unwrap_or("Midjourney capture failed");
+        return Err(detail.to_string());
+    }
+
+    if let Some(cookie) = result["cookie"].as_str() {
+        let coll = state.db.collection::<Document>("settings");
+        let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "mj_cookie": cookie.to_string() } }).await;
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
