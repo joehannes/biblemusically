@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, memo } from "react";
 import { api } from "../lib/api";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -21,12 +21,19 @@ const FREE_MODELS = [
 ];
 
 
-export default function Settings() {
+const SettingsComponent = () => {
   const [s, setS] = useState({ suno_cookie:"", mj_cookie:"", mj_discord_token:"", mj_proxy_url:"", google_client_id:"", google_client_secret:"", google_redirect_uri:"", ffmpeg_path:"ffmpeg", ffprobe_path:"ffprobe", qwen_endpoint:"", openrouter_api_key:"", openrouter_model:"qwen/qwen-2.5-72b-instruct:free" });
+  
+  const updateS = useCallback((updates) => {
+    setS(prev => ({ ...prev, ...updates }));
+  }, []);
   const [status, setStatus] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [oauthClients, setOauthClients] = useState([]);
   const [mjLogin, setMjLogin] = useState({ account: "", password: "", twofa: "" });
+  const updateMjLogin = useCallback((updates) => {
+    setMjLogin(prev => ({ ...prev, ...updates }));
+  }, []);
   const [mjLoginStatus, setMjLoginStatus] = useState({});
   const [loginInProgress, setLoginInProgress] = useState(false);
 
@@ -64,11 +71,6 @@ export default function Settings() {
 
   // Auto-save settings (debounced) so casual edits persist without clicking Save
   const { status: asStatus, lastSaved } = useAutoSave("settings-mirror", s, { delay: 900, enabled: loaded });
-  useEffect(() => {
-    if (!loaded) return;
-    const t = setTimeout(() => { api.saveSettings(s).catch(()=>{}); }, 900);
-    return () => clearTimeout(t);
-  }, [s, loaded]);
 
   const save = async () => {
     await api.saveSettings(s);
@@ -161,19 +163,35 @@ export default function Settings() {
     return () => clearTimeout(timer);
   }, [s.google_client_id, s.google_redirect_uri, s.google_client_secret, oauthClients, loaded]);
 
-  const Field = ({ k, label, placeholder, type="text", testid }) => (
-    <div className="space-y-1">
-      <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</Label>
-      <Input data-testid={testid} type={type} value={s[k] || ""} onChange={e=>setS({...s, [k]: e.target.value})} placeholder={placeholder} />
-    </div>
-  );
+  const Field = memo(({ k, label, placeholder, type="text", testid }) => {
+    const handleChange = useCallback((e) => {
+      updateS({ [k]: e.target.value });
+    }, [k, updateS]);
+    
+    return (
+      <div className="space-y-1">
+        <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</Label>
+        <Input data-testid={testid} type={type} value={s[k] || ""} onChange={handleChange} placeholder={placeholder} />
+      </div>
+    );
+  });
 
-  const AuthField = ({ label, placeholder, type="text", value, onChange }) => (
-    <div className="space-y-1">
-      <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</Label>
-      <Input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
-    </div>
-  );
+  Field.displayName = 'Field';
+
+  const AuthField = memo(({ label, placeholder, type="text", value, onChange }) => {
+    const handleChange = useCallback((e) => {
+      onChange(e.target.value);
+    }, [onChange]);
+    
+    return (
+      <div className="space-y-1">
+        <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</Label>
+        <Input type={type} value={value} onChange={handleChange} placeholder={placeholder} />
+      </div>
+    );
+  });
+
+  AuthField.displayName = 'AuthField';
 
   const StatusPill = ({ k }) => status[k] ? (
     <Badge variant={status[k].ok?"default":"destructive"} className="ml-2">{status[k].ok?<CheckCircle2 className="w-3 h-3 mr-1" />:<XCircle className="w-3 h-3 mr-1" />}{status[k].ok?"connected":"fail"}</Badge>
@@ -267,9 +285,9 @@ export default function Settings() {
             </div>
           </div>
           <div className="grid md:grid-cols-3 gap-3 mt-4">
-            <AuthField label="Discord email" placeholder="email@example.com" value={mjLogin.account} onChange={(value) => setMjLogin({ ...mjLogin, account: value })} />
-            <AuthField label="Discord password" placeholder="Discord password" type="password" value={mjLogin.password} onChange={(value) => setMjLogin({ ...mjLogin, password: value })} />
-            <AuthField label="Discord 2FA code" placeholder="6-digit code" value={mjLogin.twofa} onChange={(value) => setMjLogin({ ...mjLogin, twofa: value })} />
+            <AuthField label="Discord email" placeholder="email@example.com" value={mjLogin.account} onChange={(value) => updateMjLogin({ account: value })} />
+            <AuthField label="Discord password" placeholder="Discord password" type="password" value={mjLogin.password} onChange={(value) => updateMjLogin({ password: value })} />
+            <AuthField label="Discord 2FA code" placeholder="6-digit code" value={mjLogin.twofa} onChange={(value) => updateMjLogin({ twofa: value })} />
           </div>
           {mjLoginStatus.detail && (
             <div className="mt-3 text-sm text-muted-foreground">{typeof mjLoginStatus.detail === 'string' ? mjLoginStatus.detail : JSON.stringify(mjLoginStatus.detail)}</div>
@@ -301,4 +319,6 @@ export default function Settings() {
       </Card>
     </div>
   );
-}
+};
+
+export default memo(SettingsComponent);

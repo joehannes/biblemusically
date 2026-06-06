@@ -52,3 +52,28 @@ export function AutoSaveChip({ status, lastSaved }) {
   const color = status === "error" ? "text-destructive" : status === "saved" ? "text-primary" : "text-muted-foreground";
   return <span className={`text-mono text-[10px] uppercase tracking-widest ${color}`}>{txt}</span>;
 }
+
+/** useFocusLock - Prevents focus from being lost during re-renders for specific input elements */
+export function useFocusLock() {
+  const activeRef = useRef(null);
+  const lastFocusedRef = useRef(null);
+  
+  useEffect(() => {
+    // Store the currently focused element
+    lastFocusedRef.current = document.activeElement;
+    
+    // Restore focus to our ref if it was previously focused
+    if (activeRef.current && document.activeElement !== activeRef.current) {
+      const wasFocused = lastFocusedRef.current === activeRef.current;
+      if (wasFocused) {
+        activeRef.current.focus();
+      }
+    }
+  });
+  
+  const setRef = (element) => {
+    activeRef.current = element;
+  };
+  
+  return { setRef };
+}
