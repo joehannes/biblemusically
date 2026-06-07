@@ -54,8 +54,25 @@ const AuthField = memo(({ label, placeholder, type="text", value, onChange }) =>
 AuthField.displayName = 'AuthField';
 
 
+const initialSettings = {
+  suno_cookie: "",
+  mj_profile_dir: "",
+  mj_discord_token: "",
+  google_client_id: "",
+  google_client_secret: "",
+  google_redirect_uri: "",
+  ffmpeg_path: "ffmpeg",
+  ffprobe_path: "ffprobe",
+  theme: "obsidian",
+  qwen_endpoint: "",
+  openrouter_api_key: "",
+  openrouter_email: "",
+  openrouter_model: "qwen/qwen3-next-80b-a3b-instruct:free",
+  mj_proxy_url: "",
+};
+
 const SettingsComponent = () => {
-  const [s, setS] = useState({ suno_cookie:"", mj_profile_dir:"", google_client_id:"", google_client_secret:"", google_redirect_uri:"", ffmpeg_path:"ffmpeg", ffprobe_path:"ffprobe", qwen_endpoint:"", openrouter_api_key:"", openrouter_email:"", openrouter_model:"qwen/qwen3-next-80b-a3b-instruct:free" });
+  const [s, setS] = useState(initialSettings);
   const appVersion = appPkg.version || "0.6.1";
   
   const updateS = useCallback((updates) => {
@@ -77,33 +94,38 @@ const SettingsComponent = () => {
 
   useEffect(() => {
     (async () => {
-      const settings = await api.getSettings();
-      setS(prev => ({ ...prev, ...settings }));
+      try {
+        const settings = await api.getSettings();
+        setS(prev => ({ ...prev, ...initialSettings, ...settings }));
 
-      let clients = await api.listOauthClients();
-      setOauthClients(clients || []);
+        let clients = await api.listOauthClients();
+        setOauthClients(clients || []);
 
-      // If no oauth clients exist but legacy settings contain credentials, migrate into a new oauth client
-      if ((!clients || clients.length === 0) && settings.google_client_id) {
-        try {
-          await api.createOauthClient({
-            label: "Settings: default",
-            client_id: settings.google_client_id,
-            client_secret: settings.google_client_secret || "",
-            redirect_uri: settings.google_redirect_uri || "",
-            languages: [],
-          });
-          clients = await api.listOauthClients();
-          setOauthClients(clients || []);
-        } catch (e) {
-          console.error("Failed to migrate settings into oauth client", e);
+        // If no oauth clients exist but legacy settings contain credentials, migrate into a new oauth client
+        if ((!clients || clients.length === 0) && settings.google_client_id) {
+          try {
+            await api.createOauthClient({
+              label: "Settings: default",
+              client_id: settings.google_client_id,
+              client_secret: settings.google_client_secret || "",
+              redirect_uri: settings.google_redirect_uri || "",
+              languages: [],
+            });
+            clients = await api.listOauthClients();
+            setOauthClients(clients || []);
+          } catch (e) {
+            console.error("Failed to migrate settings into oauth client", e);
+          }
+        } else if (clients && clients.length > 0) {
+          // Mirror first client into settings (no secret auto-populated)
+          setS(prev => ({ ...prev, google_client_id: clients[0].client_id || prev.google_client_id, google_redirect_uri: clients[0].redirect_uri || prev.google_redirect_uri }));
         }
-      } else if (clients && clients.length > 0) {
-        // Mirror first client into settings (no secret auto-populated)
-        setS(prev => ({ ...prev, google_client_id: clients[0].client_id || prev.google_client_id, google_redirect_uri: clients[0].redirect_uri || prev.google_redirect_uri }));
+      } catch (error) {
+        console.error("Failed to load settings", error);
+        toast.error("Unable to load settings. Please restart the app.");
+      } finally {
+        setLoaded(true);
       }
-
-      setLoaded(true);
     })();
   }, []);
 
@@ -111,38 +133,43 @@ const SettingsComponent = () => {
   const { status: asStatus, lastSaved } = useAutoSave("settings-mirror", s, { delay: 900, enabled: loaded });
 
   const save = async () => {
-    await api.saveSettings(s);
     try {
-      const clients = await api.listOauthClients();
-      if (!clients || clients.length === 0) {
-        if (s.google_client_id) {
-          await api.createOauthClient({
-            label: "Settings: default",
-            client_id: s.google_client_id,
-            client_secret: s.google_client_secret || "",
-            redirect_uri: s.google_redirect_uri || "",
-            languages: [],
-          });
+      await api.saveSettings(s);
+      try {
+        const clients = await api.listOauthClients();
+        if (!clients || clients.length === 0) {
+          if (s.google_client_id) {
+            await api.createOauthClient({
+              label: "Settings: default",
+              client_id: s.google_client_id,
+              client_secret: s.google_client_secret || "",
+              redirect_uri: s.google_redirect_uri || "",
+              languages: [],
+            });
+          }
+        } else {
+          // update first client so settings reflect the same data source
+          const first = clients[0];
+          const payload = {
+            label: first.label || "Settings: default",
+            client_id: s.google_client_id || first.client_id,
+            redirect_uri: s.google_redirect_uri || first.redirect_uri,
+            languages: first.languages || [],
+            notes: first.notes || "",
+          };
+          if (s.google_client_secret) payload.client_secret = s.google_client_secret;
+          await api.updateOauthClient(first.id, payload);
         }
-      } else {
-        // update first client so settings reflect the same data source
-        const first = clients[0];
-        const payload = {
-          label: first.label || "Settings: default",
-          client_id: s.google_client_id || first.client_id,
-          redirect_uri: s.google_redirect_uri || first.redirect_uri,
-          languages: first.languages || [],
-          notes: first.notes || "",
-        };
-        if (s.google_client_secret) payload.client_secret = s.google_client_secret;
-        await api.updateOauthClient(first.id, payload);
+        const refreshed = await api.listOauthClients();
+        setOauthClients(refreshed || []);
+      } catch (e) {
+        console.error("Failed to sync settings to oauth pool", e);
       }
-      const refreshed = await api.listOauthClients();
-      setOauthClients(refreshed || []);
-    } catch (e) {
-      console.error("Failed to sync settings to oauth pool", e);
+      toast.success("Settings saved");
+    } catch (err) {
+      console.error("Failed to save settings", err);
+      toast.error(err?.message || "Settings save failed.");
     }
-    toast.success("Settings saved");
   };
 
   const autoLogin = async () => {
