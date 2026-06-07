@@ -63,7 +63,7 @@ async fn real_suno(
     match precheck {
         Ok(r) if r.status() == 200 => { /* cookie is valid */ }
         Ok(r) if r.status() == 401 || r.status() == 403 => {
-            db_log(db, job_id, "suno: cookie has expired or is invalid. Please renew it in Settings (F12 → Cookies → studio.suno.ai → copy studio-api_key). Generation cancelled.").await;
+            db_log(db, job_id, "suno: cookie has expired or is invalid. Please renew it in Settings (F12 → Cookies → suno.com → copy studio-api_key). Generation cancelled.").await;
             return None;
         }
         Ok(_) => {
@@ -205,9 +205,10 @@ async fn real_mj(
     // New Playwright-driven flow: spawn a Node helper which controls a visible
     // browser to submit the prompt and download resulting images. The helper
     // will print a JSON array of saved image paths to stdout on success.
-    let mj_cookie = settings.get("mj_cookie").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-    if mj_cookie.is_empty() {
-        db_log(db, job_id, "mj: mj_cookie not configured - open Settings → Capture session").await;
+    // Prefer a persistent Playwright profile captured earlier instead of cookies
+    let mj_profile = settings.get("mj_profile_dir").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    if mj_profile.is_empty() {
+        db_log(db, job_id, "mj: mj_profile_dir not configured - open Settings → Capture session").await;
         return None;
     }
 
@@ -235,8 +236,8 @@ async fn real_mj(
     cmd.arg(script.to_string_lossy().to_string())
         .arg("--prompt")
         .arg(prompt.to_string())
-        .arg("--cookie")
-        .arg(mj_cookie.clone())
+        .arg("--profile")
+        .arg(mj_profile.clone())
         .arg("--outdir")
         .arg(out_dir.clone())
         .stdout(std::process::Stdio::piped())
@@ -249,6 +250,9 @@ async fn real_mj(
             return None;
         }
     };
+
+    // Capture PID before moving `child` into wait_with_output
+    let child_pid = child.id();
 
     // Wait for generator with a 6 minute timeout
     let timeout = tokio::time::Duration::from_secs(360);
@@ -283,7 +287,10 @@ async fn real_mj(
         }
         Err(_) => {
             db_log(db, job_id, "mj: generator timed out").await;
-            let _ = child.kill().await;
+            // Try to kill by pid if available
+            if let Some(pid) = child_pid {
+                let _ = std::process::Command::new("kill").arg("-9").arg(pid.to_string()).spawn();
+            }
             return None;
         }
     }

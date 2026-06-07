@@ -47,9 +47,11 @@ export const api = {
   saveSettings: (s) => invokeCommand("update_settings", { payload: s }),
   testSuno: () => invokeCommand("test_suno"),
   openSunoLogin: () => invokeCommand("open_suno_login"),
+  captureSunoSession: () => invokeCommand("capture_suno_session"),
   testMj: () => invokeCommand("test_mj"),
   openMjLogin: () => invokeCommand("open_midjourney_login"),
   captureMjSession: () => invokeCommand("capture_midjourney_session"),
+  generateMjNow: (prompt) => invokeCommand("generate_mj_now", { prompt }),
   ensureMjAutostart: () => invokeCommand("ensure_mj_autostart"),
   mjAutoLogin: (account, password, twofa) => invokeCommand("mj_auto_login", { login_account: account, login_password: password, login_2fa: twofa }),
   testFfmpeg: () => invokeCommand("test_ffmpeg"),
@@ -97,6 +99,7 @@ export const api = {
   updateSection: (id, b) => invokeCommand("update_section", { secid: id, body: b }),
   genImage: (id) => invokeCommand("generate_section_image", { secid: id }),
   batchImages: (sid) => invokeCommand("batch_generate_images", { sid }),
+  bulkGenerateAll: () => invokeCommand("bulk_generate_all_songs"),
 
   // ============ Video / Effects ============
   effectsPresets: () => invokeCommand("get_effects_presets"),

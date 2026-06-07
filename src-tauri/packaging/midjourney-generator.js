@@ -12,6 +12,7 @@ function parseArgs() {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--prompt') { out.prompt = args[++i]; }
     else if (args[i] === '--cookie') { out.cookie = args[++i]; }
+    else if (args[i] === '--profile') { out.profile = args[++i]; }
     else if (args[i] === '--outdir') { out.outdir = args[++i]; }
   }
   return out;
@@ -26,16 +27,27 @@ function parseArgs() {
 
   if (!fs.existsSync(outdir)) fs.mkdirSync(outdir, { recursive: true });
 
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  let browser;
+  let context;
+  let page;
+
+  if (profile) {
+    // Reuse an existing Playwright profile so the logged-in Midjourney session is available
+    context = await chromium.launchPersistentContext(profile, { headless: false, viewport: null, args: ['--start-maximized'] });
+    const pages = context.pages();
+    page = pages.length ? pages[0] : await context.newPage();
+  } else {
+    browser = await chromium.launch({ headless: false });
+    context = await browser.newContext();
+    page = await context.newPage();
+  }
 
   try {
     // Navigate to the app
     await page.goto('https://www.midjourney.com/app/', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    // If cookie is provided, inject it and reload
-    if (cookie) {
+    // If cookie is provided and no profile is used, inject it and reload
+    if (cookie && !profile) {
       try {
         await page.evaluate((c) => { document.cookie = c; }, cookie);
         await page.reload({ waitUntil: 'networkidle', timeout: 60000 });
@@ -118,7 +130,8 @@ function parseArgs() {
       }
     }
 
-    await browser.close();
+    try { if (browser) await browser.close(); } catch (_) {}
+    try { if (context && context.close) await context.close(); } catch (_) {}
 
     if (saved.length === 0) {
       console.error('Failed to download images.');

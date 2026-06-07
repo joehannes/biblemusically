@@ -54,8 +54,8 @@ pub fn run() {
             std::env::set_var("MONGO_URL", "mongodb://localhost:27018");
 
             // Midjourney proxy auto-detection removed. Use direct Playwright
-            // driven automation which uses the stored `mj_cookie` or a
-            // Playwright profile to interact with midjourney.com.
+            // driven automation which uses a Playwright profile (stored as `mj_profile_dir`)
+            // to interact with midjourney.com.
             
             let app_state_res = tauri::async_runtime::block_on(async {
                 state::AppState::new().await
@@ -280,7 +280,9 @@ pub fn run() {
             commands::test_ffmpeg,
             commands::open_suno_login,
             commands::open_midjourney_login,
+            commands::capture_suno_session,
             commands::capture_midjourney_session,
+            commands::generate_mj_now,
             commands::ensure_mj_autostart,
             commands::mj_auto_login,
             // Projects commands
@@ -307,6 +309,7 @@ pub fn run() {
             commands::update_section,
             commands::generate_section_image,
             commands::batch_generate_images,
+            commands::bulk_generate_all_songs,
             commands::get_effects_presets,
             // Channels commands
             commands::list_channels,

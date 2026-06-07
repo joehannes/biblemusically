@@ -85,6 +85,33 @@ pub async fn batch_generate_images(
     Ok(serde_json::json!({ "queued": jobs.len(), "jobs": jobs }))
 }
 
+
+#[tauri::command]
+pub async fn bulk_generate_all_songs(
+    state: State<'_, AppState>,
+    state_arc: State<'_, Arc<AppState>>,
+) -> Res<Value> {
+    use futures_util::StreamExt;
+    // Ensure Playwright profile configured
+    let sdoc = state.db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.map_err(e)?.ok_or_else(|| "settings not found".to_string())?;
+    let s = bson_to_value(sdoc);
+    let profile = s["mj_profile_dir"].as_str().unwrap_or("").trim().to_string();
+    if profile.is_empty() {
+        return Err("mj_profile_dir is not configured. Capture a Playwright profile first.".to_string());
+    }
+
+    let mut cursor = state.db.collection::<Document>("sections").find(doc! {}).await.map_err(e)?;
+    let mut jobs = Vec::new();
+    while let Some(Ok(d)) = cursor.next().await {
+        if let Ok(sec_id) = d.get_str("id") {
+            if let Ok(job) = enqueue("image", sec_id, &state_arc).await {
+                jobs.push(serde_json::to_value(job).map_err(e)?);
+            }
+        }
+    }
+    Ok(serde_json::json!({ "queued": jobs.len(), "jobs": jobs }))
+}
+
 #[tauri::command]
 pub async fn get_effects_presets() -> Res<Value> {
     Ok(serde_json::to_value(EFFECT_PRESETS.iter().collect::<Vec<_>>()).map_err(e)?)

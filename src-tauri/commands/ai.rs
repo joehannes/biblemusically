@@ -78,7 +78,7 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     
     let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
     let model = settings_doc["openrouter_model"].as_str()
-        .unwrap_or("qwen/qwen-2.5-72b-instruct:free")
+        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
         .to_string();
         
     if key.is_empty() {
@@ -149,11 +149,19 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
         .build()
         .map_err(e)?;
 
-    let r = http.post("https://openrouter.ai/api/v1/chat/completions")
+    // Get user email from settings for X-User-Email header (helps OpenRouter attribute usage)
+    let user_email = settings_doc["openrouter_email"].as_str().unwrap_or("").trim().to_string();
+
+    let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")
         .header("Authorization", format!("Bearer {key}"))
         .header("HTTP-Referer", "https://lightkid.studio")
-        .header("X-Title", "Lightkid AI Studio")
-        .json(&serde_json::json!({
+        .header("X-Title", "Lightkid AI Studio");
+
+    if !user_email.is_empty() {
+        req_builder = req_builder.header("X-User-Email", &user_email);
+    }
+
+    let r = req_builder.json(&serde_json::json!({
             "model": model,
             "temperature": 0.85,
             "messages": [
