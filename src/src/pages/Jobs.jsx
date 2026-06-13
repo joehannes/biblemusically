@@ -4,7 +4,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Progress } from "../components/ui/progress";
-import { Copy, RotateCw, X } from "lucide-react";
+import { Copy, RotateCw, X, Download } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 import { getStepForPath } from "../lib/pageSteps";
@@ -19,6 +19,19 @@ export default function Jobs() {
   const retry = async (id) => { await api.retryJob(id); toast.success("Retrying"); refreshJobs(); };
   const cancel = async (id) => { await api.cancelJob(id); refreshJobs(); };
   const copy = async (j) => { await navigator.clipboard.writeText(JSON.stringify(j, null, 2)); toast.success("Job JSON copied"); };
+  const downloadLogs = (j) => {
+    const content = (j.logs || []).join('\n') + (j.error?`\n\nERROR: ${j.error}`:"\n");
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `job-${j.id}.log`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Logs downloaded');
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
@@ -36,11 +49,20 @@ export default function Jobs() {
               <Badge variant={STATUS_VAR[j.status] || "outline"} data-testid={`job-status-${j.id}`}>{j.status} {j.attempts ? `(retry ${j.attempts})` : ""}</Badge>
               <Button size="sm" variant="ghost" onClick={()=>setOpen(o=>({...o,[j.id]:!o[j.id]}))}>{open[j.id]?"hide":"logs"}</Button>
               <Button size="sm" variant="ghost" data-testid={`job-copy-${j.id}`} onClick={()=>copy(j)}><Copy className="w-3 h-3" /></Button>
+              <Button size="sm" variant="ghost" data-testid={`job-download-${j.id}`} onClick={()=>downloadLogs(j)}><Download className="w-3 h-3" /></Button>
               {j.status === "failed" && <Button size="sm" data-testid={`job-retry-${j.id}`} onClick={()=>retry(j.id)}><RotateCw className="w-3 h-3" /></Button>}
               <Button size="sm" variant="ghost" data-testid={`job-cancel-${j.id}`} onClick={()=>cancel(j.id)}><X className="w-3 h-3" /></Button>
             </div>
             {open[j.id] && (
-              <pre className="mt-3 bg-muted/40 rounded-md p-3 text-mono text-[11px] overflow-auto max-h-64 scroll-thin">{(j.logs || []).join("\n") || "no logs"}{j.error?`\n\nERROR: ${j.error}`:""}</pre>
+              <div className="mt-3">
+                <div className="text-xs text-muted-foreground mb-2">
+                  {j.created_at && <span className="mr-3">Created: {j.created_at}</span>}
+                  {j.started_at && <span className="mr-3">Started: {j.started_at}</span>}
+                  {j.finished_at && <span className="mr-3">Finished: {j.finished_at}</span>}
+                  {j.worker && <span className="mr-3">Worker: {j.worker}</span>}
+                </div>
+                <pre className="bg-muted/40 rounded-md p-3 text-mono text-[11px] overflow-auto max-h-64 scroll-thin">{(j.logs || []).join("\n") || "no logs"}{j.error?`\n\nERROR: ${j.error}`:""}</pre>
+              </div>
             )}
           </Card>
         ))}

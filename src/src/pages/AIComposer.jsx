@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { useAutoSave, AutoSaveChip } from "../lib/hooks";
+import { useAutoSave, AutoSaveChip, useBackgroundSave, restore } from "../lib/hooks";
 
 const STYLE_PACKS = {
   "Biblical Concept": ["cinematic biblical concept art", "sacred celestial symbolism", "radiant divine light", "visionary spiritual realism", "majestic ancient atmosphere"],
@@ -84,21 +84,6 @@ const SUNO_GENRES = {
   "Color Gospel Joy": "Christian Pop EDM, Bright Modern Production, Energetic Hooks, Radio Friendly Worship, Happy Dance Energy, Youthful Christian Atmosphere, Catchy Chorus, Positive Faith Message, Female/Male Harmony, Uplifting Emotion, Viral Friendly Sound, Modern Worship Excitement, Bright Emotional Energy"
 };
 
-const MIDJOURNEY_IMAGE_STYLES = {
-  "Divine Conceptualism": "concept art, spiritual symbolism, metaphorical christian imagery, layered meaning, meaningful visual integration, sacred geometry, emotional storytelling, divine atmosphere, symbolic realism, heavenly lighting, interconnected spiritual ideas, elegant complexity, visual theology, ultra detailed, meaningful composition, transcendent beauty",
-  "Chaos Into Redemption": "trash polka christian art, black ink textures, selective red accents, realism mixed with abstraction, fragmented symbolism, emotional contrast, scripture inspired imagery, symbolic chaos becoming divine order, dramatic composition, layered storytelling, distressed textures, meaningful visual collision, spiritual transformation",
-  "The Kingdom Illustrated": "christian comic universe, graphic novel aesthetic, cinematic framing, dynamic storytelling, heroic biblical atmosphere, expressive characters, hopeful emotional tone, stylized realism, vibrant spiritual emotion, modern comic rendering, divine adventure feeling, uplifting visual storytelling",
-  "The Sacred Epic": "biblical fantasy concept art, cinematic spiritual landscapes, heavenly atmosphere, divine scale, majestic biblical scenery, sacred realism, epic environmental storytelling, painterly concept design, spiritual grandeur, emotional depth, holy atmosphere, ancient world immersion, divine cinematic lighting",
-  "Joyful Gospel Pop": "christian pop art, vibrant sacred colors, uplifting symbolism, joyful faith energy, stylized composition, playful spirituality, modern gospel visuals, bright emotional storytelling, contemporary christian design language, graphic symbolism, hopeful atmosphere, expressive color explosion",
-  "The Hidden Meaning": "spiritual realism, metaphorical christian storytelling, hidden symbolism, layered visual meaning, interconnected ideas, philosophical spirituality, emotional atmosphere, subtle divine references, elegant composition, meaningful complexity, poetic realism, visual metaphor integration",
-  "Windows Of Heaven": "modern stained glass aesthetic, luminous sacred colors, glowing divine light, christian symbolism, heavenly atmosphere, holy visual harmony, radiant composition, transcendent beauty, spiritual illumination, neo sacred design, cathedral inspired elegance, luminous storytelling",
-  "Dreams Of Eternity": "christian surrealism, dreamlike spiritual atmosphere, floating symbolism, poetic visual theology, heavenly clouds, divine imagination, soft mystical textures, luminous spirituality, surreal biblical metaphor, emotional dreamscape, peaceful transcendence, spiritual wonder",
-  "Ancient Gospel Manuscript": "vintage christian illustration, historical biblical artwork, engraved textures, warm sacred atmosphere, painterly realism, nostalgic spiritual mood, ancient storytelling aesthetic, parchment inspired textures, detailed linework, timeless christian imagery, classic biblical feeling",
-  "The Joyful Kingdom": "stylized christian cartoon world, family friendly atmosphere, playful biblical storytelling, cheerful emotional tone, colorful spiritual landscapes, expressive characters, uplifting energy, modern animation feeling, joyful worship atmosphere, warm positivity, childlike wonder",
-  "The New Jerusalem Protocol": "christian science fiction concept art, heavenly technology, sacred futurism, cosmic spirituality, celestial symbolism, divine futuristic architecture, biblical sci fi atmosphere, meaningful cosmic storytelling, holy universe aesthetic, epic scale, transcendent future vision",
-  "The Alpine Gospel": "alpine christian folklore, austrian german visual influence, mountain spirituality, pastoral sacred realism, joyful countryside atmosphere, ziehharmonika folk feeling, wholesome biblical energy, warm sunlight, sacred european village mood, joyful rustic christian imagery, peaceful mountain kingdom"
-};
-
 const LANGUAGES = ["English", "German", "Hebrew", "Spanish", "Portuguese", "French", "Italian", "Russian"];
 
 const DEFAULT_CFG = {
@@ -133,11 +118,43 @@ export default function AIComposer() {
   const [chapterNum, setChapterNum] = useState(1);
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState([]);
+  const [restoredItems, setRestoredItems] = useState(false);
   const [selStart, setSelStart] = useState(0); const [selEnd, setSelEnd] = useState(0);
   const [sectionIdea, setSectionIdea] = useState("");
   const [customKw, setCustomKw] = useState("");
   const importRef = useRef();
   const taRef = useRef();
+
+  useEffect(() => {
+    const stored = localStorage.getItem("studio:composer-generated-items");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length) {
+          setItems(parsed);
+          setRestoredItems(true);
+        }
+      } catch (error) {
+        console.warn("Failed to restore composer generated items", error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!items.length) {
+      localStorage.removeItem("studio:composer-generated-items");
+      setRestoredItems(false);
+      return;
+    }
+    localStorage.setItem("studio:composer-generated-items", JSON.stringify(items));
+  }, [items]);
+
+  const clearGenerated = () => {
+    setItems([]);
+    setRestoredItems(false);
+    localStorage.removeItem("studio:composer-generated-items");
+    toast.success("Cleared generated lyrics results");
+  };
 
   // New states for the custom theme preset CRUD
   const [customThemePresets, setCustomThemePresets] = useState(() => {
@@ -159,9 +176,16 @@ export default function AIComposer() {
   const composerState = { cfg, chapterRef, chapterText, chapterLang, chapterBook, chapterNum };
   const { status: asStatus, lastSaved, restore: restoreDraft } = useAutoSave("ai-composer", composerState, { delay: 800 });
 
+  // Silent background save of the full cfg (targets, sections, etc.) on every change
+  // This ensures that tab-switches never lose state — restored from localStorage + backend
+  useBackgroundSave("ai-composer-cfg", cfg, { delay: 600, enabled: true });
+
   // Load bible selection if pushed from BibleSources screen + restore auto-saved composer draft
   useEffect(() => {
     (async () => {
+      // 1. Try restoring the full cfg draft (includes targets, sections, etc.)
+      const savedCfg = await restore("ai-composer-cfg");
+      
       let restoredCfg = null;
       const draft = await restoreDraft();
       if (draft) {
@@ -181,12 +205,20 @@ export default function AIComposer() {
         } catch {}
         localStorage.removeItem("studio:bible-selection");
       }
+      
+      // 2. Prefer saved cfg (includes targets) over server config over defaults
+      if (savedCfg && Object.keys(savedCfg).length > 1) {
+        // If savedCfg has targets, prefer it — this preserves user-added channel blocks across tab switches
+        setCfg(prev => ({ ...DEFAULT_CFG, ...savedCfg }));
+        return;
+      }
+      
       const d = await api.getComposeConfig();
       let finalCfg = { ...DEFAULT_CFG };
-      if (d && Object.keys(d).length && !draft) {
-        finalCfg = { ...finalCfg, ...d };
-      } else if (restoredCfg) {
+      if (restoredCfg) {
         finalCfg = { ...finalCfg, ...restoredCfg };
+      } else if (d && Object.keys(d).length > 0) {
+        finalCfg = { ...finalCfg, ...d };
       }
 
       try {
@@ -458,6 +490,7 @@ export default function AIComposer() {
       if (r.error) return toast.error(r.error);
       if (r.items?.length) {
         setItems(r.items);
+        setRestoredItems(false);
         toast.success(`Generated ${r.count} song variants via ${r.model}`);
       } else {
         toast.error("No lyrics were generated.");
@@ -543,7 +576,7 @@ export default function AIComposer() {
           {/* PREMIUM THEMES SECTION (FULLY GUI CONTROLLED) */}
           <div className="border-t border-border/50 pt-4 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Settings className="w-3.5 h-3.5 text-primary" /> Image &amp; Lyrics Flavor Themes</div>
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Settings className="w-3.5 h-3.5 text-primary" /> Image & Lyrics Flavor Themes</div>
               <Badge variant="outline" className="text-[9px]">GUI Mode</Badge>
             </div>
 
@@ -715,9 +748,9 @@ export default function AIComposer() {
           <div className="border-t border-border/50 pt-4 space-y-4">
             <div className="flex items-center justify-between">
               <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-                <Film className="w-3.5 h-3.5 text-primary" /> Image &amp; Video Options
+                <Film className="w-3.5 h-3.5 text-primary" /> Image & Video Options
               </div>
-              <Badge variant="secondary" className="text-[9px]">v7 &amp; v8.1 Ready</Badge>
+              <Badge variant="secondary" className="text-[9px]">v7 & v8.1 Ready</Badge>
             </div>
 
             {/* Mode Toggle: Image vs Video */}
@@ -839,7 +872,7 @@ export default function AIComposer() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Chaos: <span className="font-semibold text-primary">{cfg.mj_chaos}</span></span>
-                  <span className="text-[9px] text-muted-foreground italic">Variety &amp; surprise</span>
+                  <span className="text-[9px] text-muted-foreground italic">Variety & surprise</span>
                 </div>
                 <Slider value={[cfg.mj_chaos]} onValueChange={(v) => setCfg({ ...cfg, mj_chaos: v[0] })} max={100} step={1} className="py-1" />
               </div>
@@ -855,7 +888,7 @@ export default function AIComposer() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Weird: <span className="font-semibold text-primary">{cfg.mj_weird}</span></span>
-                  <span className="text-[9px] text-muted-foreground italic">Quirky &amp; unusual</span>
+                  <span className="text-[9px] text-muted-foreground italic">Quirky & unusual</span>
                 </div>
                 <Slider value={[cfg.mj_weird]} onValueChange={(v) => setCfg({ ...cfg, mj_weird: v[0] })} max={3000} step={50} className="py-1" />
               </div>
@@ -884,7 +917,7 @@ export default function AIComposer() {
           {/* STYLE KEYWORDS & STYLE PACKS */}
           <div className="border-t border-border/50 pt-4 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Style Keywords &amp; Packs</div>
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Style Keywords & Packs</div>
               <button onClick={clearKw} className="text-[9px] font-mono text-muted-foreground hover:text-destructive flex items-center gap-0.5"><X className="w-2.5 h-2.5" /> Clear All</button>
             </div>
             
@@ -1086,9 +1119,12 @@ export default function AIComposer() {
 
           {/* GENERATED RESULTS WORKSPACE */}
           <Card className="p-5">
-            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3 flex items-center justify-between">
+            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3 flex items-center justify-between gap-3">
               <span>Generated Results ({items.length})</span>
-              {items.length > 0 && <span className="text-[9px] text-emerald-500 font-mono">Ready to import</span>}
+              <div className="flex items-center gap-2">
+                {restoredItems && <Badge variant="outline" className="text-[9px] text-foreground">Restored from previous session</Badge>}
+                {items.length > 0 && <span className="text-[9px] text-emerald-500 font-mono">Ready to import</span>}
+              </div>
             </div>
             {items.length > 0 ? (
               <div className="space-y-4">
@@ -1101,11 +1137,13 @@ export default function AIComposer() {
                       </div>
                       {item.styles && <div className="text-muted-foreground italic text-[10px]">Style: {item.styles}</div>}
                       <div className="max-h-24 overflow-y-auto bg-background/50 border border-border/30 rounded p-1.5 text-mono font-mono text-[9px] leading-relaxed scroll-thin">
-                        {(item.lyrics || []).map((l, lIdx) => (
+                        {Array.isArray(item.lyrics) ? item.lyrics.map((l, lIdx) => (
                           <div key={lIdx} className="mb-1">
                             <span className="text-primary/75 font-semibold">[{l.section}]</span> {l.lines}
                           </div>
-                        ))}
+                        )) : (
+                          <div className="text-muted-foreground italic">{String(item.lyrics || "")}</div>
+                        )}
                       </div>
                       {item.image_prompt && (
                         <div className="p-1.5 bg-background border border-border/30 rounded text-[9px] font-mono break-all text-muted-foreground">
@@ -1118,6 +1156,7 @@ export default function AIComposer() {
 
                 <div className="flex flex-wrap gap-2 justify-end">
                   <Button size="sm" variant="ghost" onClick={downloadJson}><Download className="w-3.5 h-3.5 mr-2" />Save as JSON file</Button>
+                  <Button size="sm" variant="secondary" onClick={clearGenerated}><X className="w-3.5 h-3.5 mr-2" />Clear results</Button>
                   <Button size="sm" onClick={sendToLyrics}><ArrowRight className="w-3.5 h-3.5 mr-2" />Send to Studio Lyrics Editor</Button>
                 </div>
               </div>

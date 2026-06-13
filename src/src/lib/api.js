@@ -55,6 +55,7 @@ export const api = {
   ensureMjAutostart: () => invokeCommand("ensure_mj_autostart"),
   mjAutoLogin: (account, password, twofa) => invokeCommand("mj_auto_login", { login_account: account, login_password: password, login_2fa: twofa }),
   testFfmpeg: () => invokeCommand("test_ffmpeg"),
+  getNodePath: () => invokeCommand("probe_node"),
   putDraft: async (key, payload) => {
     if (!hasLocalStorage) return null;
     try {

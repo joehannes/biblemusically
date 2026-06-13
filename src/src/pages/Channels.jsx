@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 export default function Channels() {
   const [channels, setChannels] = useState([]);
@@ -41,19 +42,21 @@ export default function Channels() {
   };
 
   const startOauth = async (c, forceClientId) => {
-    const popup = window.open("", "_blank", "width=720,height=820");
-    if (!popup) {
-      return toast.error("Popup blocked. Please allow popups for this app and try again.");
-    }
-
     const r = await api.oauthStart(c.id, forceClientId);
     if (r.error) {
-      popup.close();
       return toast.error(r.error);
     }
 
     setOauthDialog(c);
-    popup.location.href = r.url;
+
+    // Open the consent URL in the system browser (Tauri blocks window.open popups).
+    // The warp loopback server in the Rust backend will catch the callback.
+    try {
+      await openUrl(r.url);
+    } catch (err) {
+      // fallback: if opener fails, show the URL to the user
+      toast.error("Could not open browser. Copy the URL manually if needed.");
+    }
   };
 
   const completeOauth = async () => {
@@ -71,19 +74,24 @@ export default function Channels() {
           const r = await api.connectAllUrls();
           const items = (r.items || []).filter(x => x.url);
                 if (!items.length) { load(); return toast.success("All channels already connected"); }
-          toast.info(`Opening ${items.length} OAuth popups one at a time…`);
+          toast.info(`Opening ${items.length} OAuth URLs in browser one at a time…`);
           let i = 0;
-          const next = () => {
+          const next = async () => {
             if (i >= items.length) { toast.success("Done"); return; }
             const it = items[i++];
-            const win = window.open(it.url, "_blank", "width=720,height=820");
+            // Open each consent URL in the system browser sequentially
+            try {
+              await openUrl(it.url);
+            } catch (err) {
+              toast.error("Could not open browser for " + (it.label || it.channel_id));
+            }
             let attempts = 0;
             const poll = setInterval(async () => {
               attempts++;
               const all = await api.listChannels();
               const ch = all.find(x => x.id === it.channel_id);
-              if ((ch && ch.connected) || (win && win.closed) || attempts > 120) {
-                clearInterval(poll); try { win && !win.closed && win.close(); } catch {}
+              if ((ch && ch.connected) || attempts > 120) {
+                clearInterval(poll);
                 load(); setTimeout(next, 300);
               }
             }, 1500);
@@ -152,7 +160,7 @@ export default function Channels() {
       <Dialog open={!!oauthDialog} onOpenChange={(v)=>!v && setOauthDialog(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Complete OAuth for {oauthDialog?.name}</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">After authorizing in the opened tab, the callback updates this channel automatically. If your redirect_uri doesn't return here, paste the refresh token manually below.</p>
+          <p className="text-sm text-muted-foreground">After authorizing in your system browser, the callback updates this channel automatically via the local server. If your redirect_uri doesn't return here, paste the refresh token manually below.</p>
           <Input data-testid="oauth-refresh-input" placeholder="refresh_token (manual fallback)" value={refresh} onChange={e=>setRefresh(e.target.value)} />
           <Input data-testid="oauth-ytid-input" placeholder="youtube channel id" value={yt} onChange={e=>setYt(e.target.value)} />
           <Input data-testid="oauth-subs-input" placeholder="subscriber count" value={subs} onChange={e=>setSubs(e.target.value)} />
@@ -162,4 +170,3 @@ export default function Channels() {
     </div>
   );
 }
-

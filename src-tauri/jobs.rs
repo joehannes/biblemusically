@@ -1,5 +1,5 @@
 use crate::{
-    helpers::{derive_mood, parse_annotations, suggest_effects},
+    helpers::{derive_mood, parse_annotations, resolve_node_executable, suggest_effects},
     models::{now_iso, Job, Section},
     state::AppState,
 };
@@ -39,23 +39,53 @@ async fn set_progress(db: &mongodb::Database, job_id: &str, p: i32) {
 // Real Suno integration
 // ────────────────────────────────────────────────────────────────
 
+fn normalize_suno_cookie(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let raw = if raw.to_ascii_lowercase().starts_with("cookie:") {
+        raw[7..].trim()
+    } else {
+        raw
+    };
+    let cookie = raw
+        .split(';')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let cookie = cookie.trim();
+    if cookie.is_empty() {
+        return None;
+    }
+    if !cookie.contains('=') {
+        return Some(format!("studio-api_key={cookie}"));
+    }
+    Some(cookie.to_string())
+}
+
 async fn real_suno(
     song: &Value,
     settings: &Value,
     job_id: &str,
     db: &mongodb::Database,
 ) -> Option<Vec<Value>> {
-    let cookie = settings.get("suno_cookie")?.as_str()?.trim().to_string();
-    if cookie.is_empty() {
-        db_log(db, job_id, "suno: cookie not configured").await;
-        return None;
-    }
+    let raw_cookie = settings.get("suno_cookie")?.as_str()?.trim();
+    let cookie = match normalize_suno_cookie(raw_cookie) {
+        Some(c) => c,
+        None => {
+            db_log(db, job_id, "suno: cookie not configured").await;
+            return None;
+        }
+    };
 
     // Pre-check cookie validity before attempting generation
     let precheck_client = reqwest::Client::new();
     let precheck = precheck_client
         .get("https://studio-api.suno.com/api/user/")
         .header("Cookie", &cookie)
+        .header("Accept", "application/json, text/plain, */*")
         .header("User-Agent", "Mozilla/5.0")
         .timeout(std::time::Duration::from_secs(10))
         .send()
@@ -89,6 +119,7 @@ async fn real_suno(
     let res = client
         .post("https://studio-api.suno.com/api/generate/v2/")
         .header("Cookie", &cookie)
+        .header("Accept", "application/json, text/plain, */*")
         .header("User-Agent", "Mozilla/5.0")
         .json(&payload)
         .timeout(std::time::Duration::from_secs(30))
@@ -141,6 +172,7 @@ async fn real_suno(
         let fr = client
             .get(format!("https://studio-api.suno.com/api/feed/?ids={}", ids.join(",")))
             .header("Cookie", &cookie)
+            .header("Accept", "application/json, text/plain, */*")
             .header("User-Agent", "Mozilla/5.0")
             .send()
             .await;
@@ -217,11 +249,11 @@ async fn real_mj(
     let out_dir = format!("/tmp/studio_mj_{}", Uuid::new_v4());
     let _ = tokio::fs::create_dir_all(&out_dir).await;
 
-    let node = which::which("node").ok();
+    let node = resolve_node_executable();
     let node = match node {
-        Some(p) => p.to_string_lossy().to_string(),
+        Some(p) => p,
         None => {
-            db_log(db, job_id, "mj: 'node' runtime not found in PATH").await;
+            db_log(db, job_id, "mj: 'node' runtime not found in PATH or bundled resources").await;
             return None;
         }
     };

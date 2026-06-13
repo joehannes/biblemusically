@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
+import appPkg from "../../package.json";
 import { Music2, LayoutDashboard, BookOpen, Bot, FileJson, Mic2, Waves, Scissors, Image as ImageIcon, Film, Tv, UploadCloud, Activity, Settings as Cog, Palette, Sparkles, Menu, ChevronLeft, ChevronRight } from "lucide-react";
 
 const NAV = [
@@ -68,7 +69,7 @@ export default function Shell({ children }) {
           {!collapsed && (
             <div>
               <div className="text-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Studio</div>
-              <div className="font-semibold text-base leading-tight">Lightkid AI</div>
+              <div className="font-semibold text-base leading-tight flex items-baseline gap-2">Lightkid AI <span className="text-xs text-muted-foreground">v{appPkg.version}</span></div>
             </div>
           )}
         </div>

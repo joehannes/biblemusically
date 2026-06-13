@@ -1,4 +1,4 @@
-use crate::{models::Settings, state::AppState};
+use crate::{helpers::resolve_node_executable, models::Settings, state::AppState};
 use bson::{doc, Document};
 use serde_json::Value;
 use tauri::State;
@@ -101,21 +101,50 @@ async fn get_settings_doc(db: &mongodb::Database) -> Result<Value, String> {
     Ok(doc)
 }
 
+fn normalize_suno_cookie(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let raw = if raw.to_ascii_lowercase().starts_with("cookie:") {
+        raw[7..].trim()
+    } else {
+        raw
+    };
+    let cookie = raw
+        .split(';')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let cookie = cookie.trim();
+    if cookie.is_empty() {
+        return None;
+    }
+    if !cookie.contains('=') {
+        return Some(format!("studio-api_key={cookie}"));
+    }
+    Some(cookie.to_string())
+}
+
 pub async fn validate_suno_cookie_internal(db: &mongodb::Database) -> Result<(), String> {
     let s = get_settings_doc(db).await?;
     let cookie_env = std::env::var("SUNO_COOKIE").ok();
-    let cookie = cookie_env.as_deref().unwrap_or_else(|| s["suno_cookie"].as_str().unwrap_or("")).trim();
-    if cookie.is_empty() {
-        // Persist invalid status
-        let _ = db.collection::<Document>("settings")
-            .update_one(doc! { "_id": "singleton" }, doc! { "$set": { "suno_cookie_valid": false, "suno_cookie_status": "not_configured", "suno_cookie_checked_at": chrono::Utc::now().to_rfc3339() } })
-            .await;
-        return Err("Suno cookie not configured".into());
-    }
+    let raw_cookie = cookie_env.as_deref().unwrap_or_else(|| s["suno_cookie"].as_str().unwrap_or(""));
+    let cookie = match normalize_suno_cookie(raw_cookie) {
+        Some(c) => c,
+        None => {
+            let _ = db.collection::<Document>("settings")
+                .update_one(doc! { "_id": "singleton" }, doc! { "$set": { "suno_cookie_valid": false, "suno_cookie_status": "not_configured", "suno_cookie_checked_at": chrono::Utc::now().to_rfc3339() } })
+                .await;
+            return Err("Suno cookie not configured".into());
+        }
+    };
     let client = reqwest::Client::new();
     let res = client
         .get("https://studio-api.suno.com/api/user/")
         .header("Cookie", cookie)
+        .header("Accept", "application/json, text/plain, */*")
         .header("User-Agent", "Mozilla/5.0")
         .timeout(Duration::from_secs(10))
         .send()
@@ -263,23 +292,26 @@ pub async fn test_suno(state: State<'_, AppState>) -> Res<Value> {
     let doc = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or_default();
-    let cookie = doc["suno_cookie"].as_str().unwrap_or("").trim();
-    
-    if cookie.is_empty() {
-        return Ok(serde_json::json!({
-            "ok": false,
-            "status": "not_configured",
-            "detail": "Suno session cookie not configured.",
-            "next_step": "1. Go to https://suno.com 2. Open DevTools (F12) 3. Cookies → suno.com → Copy 'studio-api_key' cookie 4. Paste in Settings",
-            "expires": "Cookie expires after ~24 hours of inactivity"
-        }));
-    }
+    let raw_cookie = doc["suno_cookie"].as_str().unwrap_or("");
+    let cookie = match normalize_suno_cookie(raw_cookie) {
+        Some(c) => c,
+        None => {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "status": "not_configured",
+                "detail": "Suno session cookie not configured.",
+                "next_step": "1. Go to https://suno.com 2. Open DevTools (F12) 3. Cookies → suno.com → copy studio-api_key, studio-api_key_local, __session, or session_id 4. Paste the cookie string in Settings",
+                "expires": "Cookie expires after ~24 hours of inactivity"
+            }));
+        }
+    };
     
     // Test cookie validity with a lightweight API call
     let client = reqwest::Client::new();
     let test_res = client
         .get("https://studio-api.suno.com/api/user/")
         .header("Cookie", cookie)
+        .header("Accept", "application/json, text/plain, */*")
         .header("User-Agent", "Mozilla/5.0")
         .timeout(std::time::Duration::from_secs(10))
         .send()
@@ -416,7 +448,7 @@ pub async fn open_midjourney_login() -> Res<Value> {
     let url = "https://www.midjourney.com";
     // Prefer launching the bundled Playwright-based visible browser flow when available
     if let Some(script) = locate_resource_file("midjourney-session-capture.js") {
-        if let Ok(node) = which::which("node") {
+        if let Some(node) = resolve_node_executable() {
             let profile_dir = env::temp_dir().join("biblemusically-midjourney-playwright-profile");
             let _ = fs::create_dir_all(&profile_dir).await;
             let mut cmd = tokio::process::Command::new(node);
@@ -441,7 +473,7 @@ pub async fn open_midjourney_login() -> Res<Value> {
 pub async fn capture_midjourney_session(state: State<'_, AppState>) -> Res<Value> {
     let script = locate_resource_file("midjourney-session-capture.js")
         .ok_or_else(|| "Midjourney capture script not found in resources".to_string())?;
-    let node = which::which("node").map_err(|_| "Node.js is required for Midjourney session automation. Install Node.js and npm.".to_string())?;
+    let node = resolve_node_executable().ok_or_else(|| "Node.js is required for Midjourney session automation. Install Node.js and npm.".to_string())?;
     let profile_dir = env::temp_dir().join("biblemusically-midjourney-playwright-profile");
     fs::create_dir_all(&profile_dir).await.map_err(e)?;
 
@@ -481,7 +513,7 @@ pub async fn capture_midjourney_session(state: State<'_, AppState>) -> Res<Value
 pub async fn capture_suno_session(state: State<'_, AppState>) -> Res<Value> {
     let script = locate_resource_file("suno-session-capture.js")
         .ok_or_else(|| "Suno capture script not found in resources".to_string())?;
-    let node = which::which("node").map_err(|_| "Node.js is required for Suno session automation. Install Node.js and npm.".to_string())?;
+    let node = resolve_node_executable().ok_or_else(|| "Node.js is required for Suno session automation. Install Node.js and npm.".to_string())?;
     let output = tokio::process::Command::new(node)
         .arg(script.clone())
         .arg("--timeout")
@@ -513,12 +545,20 @@ pub async fn capture_suno_session(state: State<'_, AppState>) -> Res<Value> {
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn probe_node() -> Res<Value> {
+    // Return the resolved node executable path if found
+    if let Some(p) = resolve_node_executable() {
+        return Ok(serde_json::json!({ "ok": true, "path": p }));
+    }
+    Ok(serde_json::json!({ "ok": false, "error": "Node.js not found" }))
+}
 
 #[tauri::command]
 pub async fn generate_mj_now(state: State<'_, AppState>, prompt: String) -> Res<Value> {
     // Immediate generation via Playwright generator script. Returns saved image paths.
     let script = locate_resource_file("midjourney-generator.js").ok_or_else(|| "Generator script not found".to_string())?;
-    let node = which::which("node").map_err(|_| "Node.js is required to run generator".to_string())?;
+    let node = resolve_node_executable().ok_or_else(|| "Node.js is required to run generator".to_string())?;
 
     // Read mj_profile_dir from settings (use Playwright persistent profile)
     let coll = state.db.collection::<Document>("settings");

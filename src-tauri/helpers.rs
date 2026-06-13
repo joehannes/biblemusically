@@ -1,6 +1,8 @@
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env;
+use std::path::{Path, PathBuf};
 
 // ────────────────────────────────────────────────────────────────
 // Mood keywords DB
@@ -89,6 +91,62 @@ pub fn parse_annotations(annotations: &str, lyrics: &str) -> Vec<AnnotationPair>
         }
     }
     pairs
+}
+
+pub fn resolve_node_executable() -> Option<String> {
+    // Prefer a bundled node binary in known Tauri resource locations.
+    let mut candidates = Vec::new();
+    if let Some(rd) = env::var_os("TAURI_RESOURCE_DIR") {
+        let rd = PathBuf::from(rd);
+        candidates.extend([
+            rd.join("node"),
+            rd.join("bin").join("node"),
+            rd.join("node.exe"),
+            rd.join("bin").join("node.exe"),
+        ]);
+    }
+
+    if let Ok(cwd) = env::current_dir() {
+        candidates.extend([
+            cwd.join("src-tauri").join("packaging").join("node"),
+            cwd.join("src-tauri").join("packaging").join("bin").join("node"),
+            cwd.join("src-tauri").join("packaging").join("node.exe"),
+            cwd.join("src-tauri").join("packaging").join("bin").join("node.exe"),
+            cwd.join("binaries").join("node"),
+            cwd.join("binaries").join("bin").join("node"),
+        ]);
+    }
+
+    for candidate in candidates {
+        if candidate.exists() && candidate.is_file() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    if let Ok(path) = which::which("node") {
+        return Some(path.to_string_lossy().to_string());
+    }
+
+    for cand in ["/usr/bin/node", "/usr/local/bin/node", "/bin/node", "/snap/bin/node"] {
+        let path = Path::new(cand);
+        if path.exists() && path.is_file() {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    if cfg!(target_os = "windows") {
+        for cand in [
+            "C:\\Program Files\\nodejs\\node.exe",
+            "C:\\Program Files (x86)\\nodejs\\node.exe",
+        ] {
+            let path = Path::new(cand);
+            if path.exists() && path.is_file() {
+                return Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    None
 }
 
 // ────────────────────────────────────────────────────────────────

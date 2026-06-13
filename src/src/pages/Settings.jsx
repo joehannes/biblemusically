@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, memo } from "react";
+import { useEffect, useState, useCallback, memo, useRef } from "react";
 import appPkg from "../../package.json";
 import { api } from "../lib/api";
+import { useBackgroundSave } from "../lib/hooks";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -80,6 +81,7 @@ const SettingsComponent = () => {
   }, []);
   const [status, setStatus] = useState({});
   const [loaded, setLoaded] = useState(false);
+  const [nodeInfo, setNodeInfo] = useState(null);
   const [oauthClients, setOauthClients] = useState([]);
   const [mjLogin, setMjLogin] = useState({ account: "", password: "", twofa: "" });
   const updateMjLogin = useCallback((updates) => {
@@ -336,7 +338,7 @@ const SettingsComponent = () => {
 
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Music2 className="w-4 h-4 text-primary" /><h2 className="font-semibold">Suno (unofficial)</h2><StatusPill k="suno" /></div>
-        <Field k="suno_cookie" label="studio-api.suno.com session cookie" placeholder="cookie string..." testid="settings-suno-cookie" value={s.suno_cookie} onValueChange={updateS} />
+        <Field k="suno_cookie" label="Suno session cookie (studio-api_key / __session / session_id)" placeholder="cookie string..." testid="settings-suno-cookie" value={s.suno_cookie} onValueChange={updateS} />
         <div className="flex flex-wrap gap-2 mt-3">
           <Button size="sm" variant="secondary" onClick={openSunoLogin}><Cookie className="w-3 h-3 mr-2" />Open Suno login</Button>
           <Button size="sm" variant="secondary" data-testid="settings-test-suno" onClick={()=>testS("suno")}><Cookie className="w-3 h-3 mr-2" />Test</Button>
@@ -355,7 +357,7 @@ const SettingsComponent = () => {
             }
           }}><Cookie className="w-3 h-3 mr-2" />Capture session</Button>
         </div>
-        <div className="mt-3 text-xs text-muted-foreground">After you log in to Suno, use the browser capture flow to persist the <code>studio-api_key</code> cookie to Settings.</div>
+        <div className="mt-3 text-xs text-muted-foreground">After you log in to Suno, use the browser capture flow to persist the <code>studio-api_key</code>, <code>studio-api_key_local</code>, <code>__session</code> or <code>session_id</code> cookie to Settings. If you paste a bare token, it will be normalized to <code>studio-api_key=...</code>.</div>
       </Card>
 
       <Card className="p-6 mb-5">
@@ -472,7 +474,23 @@ const SettingsComponent = () => {
           <Field k="ffprobe_path" label="ffprobe binary path" placeholder="ffprobe" testid="settings-ffprobe-path" value={s.ffprobe_path} onValueChange={updateS} />
           <Field k="qwen_endpoint" label="Qwen prompt endpoint (effect suggestions)" placeholder="http://localhost:11434/api/generate" testid="settings-qwen" value={s.qwen_endpoint} onValueChange={updateS} />
         </div>
-        <Button size="sm" variant="secondary" data-testid="settings-test-ffmpeg" className="mt-3" onClick={()=>testS("ffmpeg")}><Film className="w-3 h-3 mr-2" />Probe</Button>
+        <div className="flex items-center gap-2 mt-3">
+          <Button size="sm" variant="secondary" data-testid="settings-test-ffmpeg" onClick={()=>testS("ffmpeg")}><Film className="w-3 h-3 mr-2" />Probe</Button>
+          <Button size="sm" variant="secondary" onClick={async ()=>{
+            try {
+              const r = await api.getNodePath();
+              setNodeInfo(r);
+              if (r.ok) toast.success(`Node found: ${r.path}`);
+              else toast.error(r.error || 'Node not found');
+            } catch (e) {
+              console.error(e);
+              toast.error('Node probe failed');
+            }
+          }}><Bot className="w-3 h-3 mr-2" />Check Node</Button>
+        </div>
+        {nodeInfo && (
+          <div className="mt-3 text-xs text-muted-foreground">Node probe: {nodeInfo.ok ? nodeInfo.path : (nodeInfo.error || 'not found')}</div>
+        )}
       </Card>
 
       <Card className="p-6">

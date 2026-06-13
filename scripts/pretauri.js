@@ -6,6 +6,7 @@ const pkgPath = path.join(root, 'package.json');
 const pkgLockPath = path.join(root, 'package-lock.json');
 const tauriConfPath = path.join(root, 'src-tauri', 'tauri.conf.json');
 const cargoPath = path.join(root, 'src-tauri', 'Cargo.toml');
+const srcPkgPath = path.join(root, 'src', 'package.json');
 
 function bumpVersion(version) {
   const parts = version.split('.').map((n) => parseInt(n, 10));
@@ -54,5 +55,10 @@ if (cargoUpdated === cargo) {
 } else {
   fs.writeFileSync(cargoPath, cargoUpdated, 'utf8');
 }
+
+// Also bump the frontend sub-project package.json so the GUI always shows the correct version
+const srcPkg = readJson(srcPkgPath);
+srcPkg.version = newVersion;
+writeJson(srcPkgPath, srcPkg);
 
 console.log(`Auto-version bump: ${oldVersion} -> ${newVersion}`);

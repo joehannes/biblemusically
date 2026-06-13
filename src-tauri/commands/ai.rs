@@ -91,7 +91,8 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     // 2. Build the system and user prompts exactly like the Python server did
     let sys = "You compose multilingual song lyrics JSON for AI music video production.\n\
                Return ONLY a valid JSON array — no prose, no markdown fences.\n\
-               Each element MUST have: title (string), language (string), styles (string), lyrics (string), annotations (string), image_styles (string).\n\
+               Each element MUST have: title (string), language (string), styles (string), lyrics (array of {section(string), lines(string)}), annotations (string), image_styles (string).\n\
+               Example lyrics: [{section: verse1, lines: The Lord is my shepherd}].\n\
                annotations format: alternating lines — first a bracketed midjourney-style image prompt in square brackets, then the matching lyric line.\n\
                Translate lyrics into the target language faithfully if it isn't English. Keep section ideas + themes embedded in the bracket prompts.";
 
@@ -186,37 +187,91 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     let res_json: Value = r.json().await.map_err(e)?;
     let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
 
-    // 4. Try to extract first JSON array using regex
+    // 4. Try to extract and parse the JSON array, handling truncated responses
     let re = Regex::new(r"(?s)\[.*\]").map_err(e)?;
-    let m = re.find(&content).ok_or_else(|| {
-        let safe_content = if content.len() > 800 { &content[..800] } else { &content };
-        serde_json::json!({
-            "error": "No JSON array found in AI response",
-            "raw": safe_content,
-            "items": []
-        }).to_string()
-    }).map_err(|s| s)?;
+    let m = re.find(&content);
 
-    let items_val: Value = serde_json::from_str(m.as_str()).map_err(|err| {
-        let safe_content = if content.len() > 800 { &content[..800] } else { &content };
-        serde_json::json!({
-            "error": format!("JSON parse failed: {err}"),
-            "raw": safe_content,
-            "items": []
-        }).to_string()
-    })?;
+    // Helper: attempt to parse, and if it fails, try to fix truncated JSON
+    fn parse_with_repair(json_str: &str) -> Result<Value, String> {
+        // Try direct parse first
+        if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+            return Ok(v);
+        }
+        // If parse fails, try to repair truncated JSON by balancing brackets
+        let trimmed = json_str.trim_end();
+        let mut repaired = trimmed.to_string();
+        // Track bracket depth
+        let mut depth: i64 = 0;
+        for ch in repaired.chars() {
+            match ch {
+                '{' | '[' => depth += 1,
+                '}' | ']' => depth -= 1,
+                _ => {}
+            }
+        }
+        // Close any unclosed brackets/braces
+        for _ in 0..depth {
+            repaired.push('}');
+        }
+        // Also close array if needed
+        let open_arrays = repaired.matches('[').count() as i64;
+        let close_arrays = repaired.matches(']').count() as i64;
+        for _ in 0..(open_arrays - close_arrays) {
+            repaired.push(']');
+        }
+        // Remove trailing commas before closing brackets
+        let re_trailing = Regex::new(r",(\s*[}\]])").map_err(|e| e.to_string())?;
+        let cleaned = re_trailing.replace_all(&repaired, |caps: &regex::Captures| format!("{}", &caps[1]));
+        if let Some(last_comma) = cleaned.rfind(',') {
+            let after_comma = &cleaned[last_comma + 1..].trim();
+            if *after_comma == "]" || *after_comma == "}" || after_comma.starts_with(']') || after_comma.starts_with('}') {
+                let fixed = format!("{}{}", &cleaned[..last_comma], &cleaned[last_comma + 1..]);
+                if let Ok(v) = serde_json::from_str::<Value>(&fixed) {
+                    return Ok(v);
+                }
+            }
+        }
+        // Try the repaired version
+        serde_json::from_str::<Value>(&repaired).map_err(|e| e.to_string())
+    }
 
-    let items = items_val.as_array().ok_or_else(|| {
-        serde_json::json!({
-            "error": "AI returned non-array",
-            "raw": &content[..content.len().min(400)],
-            "items": []
-        }).to_string()
-    }).map_err(|s| s)?;
+    let raw_preview = |content: &str| -> String {
+        if content.len() > 800 { content[..800].to_string() } else { content.to_string() }
+    };
 
-    Ok(serde_json::json!({
-        "items": items,
-        "model": model,
-        "count": items.len()
-    }))
+    match m {
+        Some(mat) => {
+            let json_str = mat.as_str();
+            match parse_with_repair(json_str) {
+                Ok(Value::Array(items)) => {
+                    return Ok(serde_json::json!({
+                        "items": items,
+                        "model": model,
+                        "count": items.len()
+                    }));
+                }
+                Ok(_) => {
+                    return Ok(serde_json::json!({
+                        "error": "AI returned non-array JSON",
+                        "raw": raw_preview(json_str),
+                        "items": []
+                    }));
+                }
+                Err(err) => {
+                    return Ok(serde_json::json!({
+                        "error": format!("JSON parse failed: {err}"),
+                        "raw": raw_preview(json_str),
+                        "items": []
+                    }));
+                }
+            }
+        }
+        None => {
+            return Ok(serde_json::json!({
+                "error": "No JSON array found in AI response",
+                "raw": raw_preview(&content),
+                "items": []
+            }));
+        }
+    }
 }

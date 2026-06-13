@@ -43,6 +43,46 @@ export function useAutoSave(key, value, { delay = 700, enabled = true } = {}) {
   return { status, lastSaved, restore };
 }
 
+/** useBackgroundSave — silent debounced save with no UI feedback.
+ *  Saves to localStorage + backend on every change.
+ *  Designed for silent persistence of arbitrary state. */
+export function useBackgroundSave(key, value, { delay = 600, enabled = true } = {}, onSaved) {
+  const timerRef = useRef();
+  const firstRef = useRef(true);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (firstRef.current) { firstRef.current = false; return; }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      try {
+        localStorage.setItem(`draft:${key}`, JSON.stringify({ value: valueRef.current, t: Date.now() }));
+        await api.putDraft(key, { value: valueRef.current });
+        if (onSaved) onSaved();
+      } catch (e) {
+        // silent — background saves don't annoy the user
+      }
+    }, delay);
+    return () => timerRef.current && clearTimeout(timerRef.current);
+  }, [key, value, delay, enabled]);
+}
+
+/** Restore a previously saved draft (same key as useBackgroundSave).
+ *  Returns the saved value or null. */
+export async function restore(key) {
+  try {
+    const d = await api.getDraft(key);
+    if (d && Object.keys(d).length > 0 && d.value !== undefined) return d.value;
+  } catch {}
+  try {
+    const local = localStorage.getItem(`draft:${key}`);
+    if (local) { const p = JSON.parse(local); return p.value; }
+  } catch {}
+  return null;
+}
+
 /** Tiny indicator chip used in headers. */
 export function AutoSaveChip({ status, lastSaved }) {
   const txt = status === "saving" ? "saving…"
