@@ -153,6 +153,9 @@ export default function Dashboard() {
                 ))}
               </SelectContent>
             </Select>
+            {localPresets.find(p => p.id === template)?.description && (
+              <p className="mt-2 text-xs text-muted-foreground">{localPresets.find(p => p.id === template)?.description}</p>
+            )}
           </div>
           <div className="md:col-span-1 flex items-end">
             <TemplatesManager onChange={(ps)=>setLocalPresets(ps)} />

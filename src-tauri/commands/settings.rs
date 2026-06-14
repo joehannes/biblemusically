@@ -1,7 +1,7 @@
 use crate::{helpers::resolve_node_executable, models::Settings, state::AppState};
 use bson::{doc, Document};
 use serde_json::Value;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use std::env;
 use std::path::PathBuf;
 use tokio::fs;
@@ -27,14 +27,14 @@ fn bson_to_value(doc: Document) -> Value {
 }
 
 fn locate_resource_file(name: &str) -> Option<PathBuf> {
-    // 1. Tauri resource directory (used in built/release app)
-    //    Resources are bundled under "packaging/" or directly.
+    // 1. TAURI_RESOURCE_DIR env var (used in dev / older Tauri versions)
     if let Ok(rd) = env::var("TAURI_RESOURCE_DIR") {
         let p = PathBuf::from(&rd).join(name);
         if p.exists() { return Some(p); }
         let p2 = PathBuf::from(&rd).join("packaging").join(name);
         if p2.exists() { return Some(p2); }
     }
+
     // 2. Current working directory (dev mode from project root)
     if let Ok(cwd) = env::current_dir() {
         let p = cwd.join("src-tauri").join("packaging").join(name);
@@ -42,22 +42,46 @@ fn locate_resource_file(name: &str) -> Option<PathBuf> {
         let p2 = cwd.join("src-tauri").join(name);
         if p2.exists() { return Some(p2); }
     }
-    // 3. Walk up from executable parent directories.
-    //    Tauri v2 bundles resources as: /exe/dir/_up_/src-tauri/packaging/<name>
-    //    or during deb: /usr/lib/<app>/_up_/src-tauri/packaging/<name>
+
+    // 3. Walk up from executable parent directories (Tauri 2 bundle layouts)
     if let Ok(exe) = env::current_exe() {
+        let exe_name = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
         let mut path = exe.parent();
         while let Some(dir) = path {
-            // Check _up_/src-tauri/packaging/ (Tauri v2 default resource layout)
-            let up = dir.join("_up_").join("src-tauri").join("packaging").join(name);
-            if up.exists() { return Some(up); }
-            // Check _up_/ packaging directly
-            let up2 = dir.join("_up_").join("packaging").join(name);
-            if up2.exists() { return Some(up2); }
-            // Check packaging/ alongside the binary
-            let p = dir.join("packaging").join(name);
-            if p.exists() { return Some(p); }
-            // Check src-tauri/packaging/ one level up
+            let dir_str = dir.to_string_lossy();
+
+            // At /usr/bin/ level (binary installed to /usr/bin/), check /usr/lib/<appname>/
+            if dir_str == "/usr/bin" || dir_str == "/usr/local/bin" {
+                for lib_subdir in [&exe_name, "AI Music Video Studio"] {
+                    let lib_root = PathBuf::from("/usr/lib").join(lib_subdir);
+                    let checks = [
+                        lib_root.join("_up_").join("src-tauri").join("packaging").join(name),
+                        lib_root.join("_up_").join("packaging").join(name),
+                        lib_root.join("packaging").join(name),
+                        lib_root.join("resources").join("packaging").join(name),
+                        lib_root.join("resources").join(name),
+                        lib_root.join(name),
+                    ];
+                    for p in checks.iter() {
+                        if p.exists() { return Some(p.clone()); }
+                    }
+                }
+            }
+
+            // Direct checks at this directory level
+            let checks = [
+                dir.join("resources").join(name),
+                dir.join(name),
+                dir.join("packaging").join(name),
+                dir.join("_up_").join("src-tauri").join("packaging").join(name),
+                dir.join("_up_").join("packaging").join(name),
+                dir.join("lib").join(name),
+                dir.join("share").join(name),
+            ];
+            for p in checks.iter() {
+                if p.exists() { return Some(p.clone()); }
+            }
+            // src-tauri/packaging/ one level up
             if let Some(parent) = dir.parent() {
                 let p2 = parent.join("src-tauri").join("packaging").join(name);
                 if p2.exists() { return Some(p2); }
@@ -65,16 +89,33 @@ fn locate_resource_file(name: &str) -> Option<PathBuf> {
             path = dir.parent();
         }
     }
-    // 4. Fallback: check known .deb install paths
-    let candidates = [
-        format!("/usr/lib/AI Music Video Studio/_up_/src-tauri/packaging/{}", name),
-        format!("/usr/lib/AI Music Video Studio/packaging/{}", name),
+
+    // 4. Common absolute paths for installed Tauri 2 deb packages (Linux)
+    let app_name = "AI Music Video Studio";
+    let deb_candidates = [
+        format!("/usr/lib/{}/resources/{}", app_name, name),
+        format!("/usr/lib/{}/{}", app_name, name),
+        format!("/usr/lib/{}/packaging/{}", app_name, name),
+        format!("/usr/lib/{}/_up_/src-tauri/packaging/{}", app_name, name),
     ];
-    for c in &candidates {
+    for c in &deb_candidates {
         if std::path::Path::new(c).exists() {
             return Some(std::path::PathBuf::from(c));
         }
     }
+
+    // 5. Try snap / flatpak paths
+    let snap_candidates = [
+        format!("/snap/{app_name}/current/usr/lib/{app_name}/resources/{name}"),
+        format!("/snap/{app_name}/current/resources/{name}"),
+    ];
+    for c in &snap_candidates {
+        let p = c.replace("{app_name}", app_name).replace("{name}", name);
+        if std::path::Path::new(&p).exists() {
+            return Some(std::path::PathBuf::from(p));
+        }
+    }
+
     None
 }
 

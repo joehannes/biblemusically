@@ -3,6 +3,7 @@ use crate::{
     state::AppState,
 };
 use bson::{doc, Document};
+use regex::Regex;
 use serde_json::Value;
 use tauri::State;
 use uuid::Uuid;
@@ -118,4 +119,559 @@ pub async fn channels_connect_all_urls(state: State<'_, AppState>) -> Res<Value>
         }
     }
     Ok(serde_json::json!({ "items": out }))
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Pure Rust YouTube channel discovery  –  no Node.js, no Puppeteer
+// Uses reqwest to fetch YouTube pages and parse the embedded
+// ytInitialData JSON payload to extract channel info.
+// ─────────────────────────────────────────────────────────────────────
+
+fn build_candidate_urls(user: &str) -> Vec<String> {
+    let normalized = user.trim().to_string();
+    let mut candidates = Vec::new();
+    if normalized.is_empty() { return candidates; }
+    if normalized.starts_with("http://") || normalized.starts_with("https://") {
+        candidates.push(normalized.clone());
+    } else if normalized.starts_with("@") {
+        candidates.push(format!("https://www.youtube.com/{}", normalized));
+        candidates.push(format!("https://www.youtube.com/{}/channels", normalized));
+    } else if normalized.starts_with("UC") && normalized.len() >= 24 {
+        candidates.push(format!("https://www.youtube.com/channel/{}", normalized));
+        candidates.push(format!("https://www.youtube.com/channel/{}/channels", normalized));
+    } else {
+        candidates.push(format!("https://www.youtube.com/@{}", normalized));
+        candidates.push(format!("https://www.youtube.com/c/{}", normalized));
+        candidates.push(format!("https://www.youtube.com/user/{}", normalized));
+    }
+    candidates
+}
+
+fn parse_channel_id(text: &str) -> Option<String> {
+    let re = Regex::new(r"youtu(?:\.be/|be\.com/(?:channel/|user/|c/|@))([A-Za-z0-9_-]+)").ok()?;
+    re.captures(text).and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+}
+
+/// Find the ytInitialData JSON blob in a YouTube HTML page and parse it.
+fn find_yt_initial_data(body: &str) -> Option<Value> {
+    // Look for window["ytInitialData"] = { ... }; or window['ytInitialData'] = { ... };
+    // or just ytInitialData = { ... };
+    let markers = [
+        "window[",
+        "ytInitialData",
+    ];
+
+    for &first_mark in &markers {
+        let Some(start_of_marker) = body.find(first_mark) else { continue };
+        let after_mark = &body[start_of_marker..];
+
+        // Find the '=' sign
+        let Some(eq_pos) = after_mark.find('=') else { continue };
+        let after_eq = &after_mark[eq_pos + 1..];
+
+        // Now find the opening '{'
+        let Some(open_brace) = after_eq.find('{') else { continue };
+        let json_start = open_brace;
+        let json_body = &after_eq[json_start..];
+
+        // Count braces to find the matching closing brace, handling strings
+        let mut depth: i32 = 0;
+        let mut end_pos = 0;
+        let mut in_string = false;
+        let mut escaped = false;
+        for (i, ch) in json_body.char_indices() {
+            if escaped { escaped = false; continue; }
+            if ch == '\\' { escaped = true; continue; }
+            if ch == '"' { in_string = !in_string; continue; }
+            if in_string { continue; }
+            if ch == '{' { depth += 1; }
+            else if ch == '}' { depth -= 1; }
+            if depth == 0 { end_pos = i + 1; break; }
+        }
+        if end_pos == 0 { continue; }
+
+        let json_str = &json_body[..end_pos];
+        if json_str.len() < 3 { continue; }
+        if let Ok(data) = serde_json::from_str::<Value>(json_str) {
+            return Some(data);
+        }
+    }
+    None
+}
+
+/// Extract channel items from the parsed ytInitialData structure.
+fn extract_channels_from_data(data: &Value) -> Vec<Value> {
+    let mut results = Vec::new();
+
+    // Navigate: contents.twoColumnBrowseResultsRenderer.tabs[]
+    let tabs = data
+        .pointer("/contents/twoColumnBrowseResultsRenderer/tabs")
+        .or_else(|| data.pointer("/contents"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    for tab in &tabs {
+        let contents_paths = [
+            "/tabRenderer/content/sectionListRenderer/contents",
+            "/tabRenderer/content/richGridRenderer/contents",
+        ];
+        for path in &contents_paths {
+            let Some(sections) = tab.pointer(path).and_then(|v| v.as_array()) else { continue };
+            for section in sections {
+                let items = section
+                    .pointer("/itemSectionRenderer/contents")
+                    .or_else(|| Some(section))
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                for item in &items {
+                    // Try gridChannelRenderer, then channelRenderer
+                    let cr = item
+                        .pointer("/gridChannelRenderer")
+                        .or_else(|| item.pointer("/channelRenderer"))
+                        .or_else(|| item.pointer("/richItemRenderer/content/channelRenderer"));
+                    let Some(cr) = cr else { continue };
+
+                    let channel_id = cr["channelId"].as_str().unwrap_or("").to_string();
+                    let title = cr["title"]["simpleText"]
+                        .as_str()
+                        .or_else(|| cr["title"]["runs"].as_array()
+                            .and_then(|a| a.first())
+                            .and_then(|r| r["text"].as_str()))
+                        .unwrap_or("")
+                        .to_string();
+                    if channel_id.is_empty() || title.is_empty() { continue; }
+
+                    let subscriber_text = cr["subscriberCountText"]["simpleText"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    let avatar = cr["thumbnail"]["thumbnails"]
+                        .as_array()
+                        .and_then(|t| t.first())
+                        .and_then(|t| t["url"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    results.push(serde_json::json!({
+                        "channel_id": channel_id,
+                        "channel_url": format!("https://www.youtube.com/channel/{}", channel_id),
+                        "title": title,
+                        "subscriber_count": subscriber_text,
+                        "avatar": if avatar.starts_with("http") { avatar } else { String::new() },
+                    }));
+                }
+            }
+        }
+    }
+    results
+}
+
+/// Scrape a YouTube page for channel info using only HTTP + HTML parsing.
+async fn scrape_youtube_page(
+    client: &reqwest::Client,
+    url: &str,
+    timeout: std::time::Duration,
+) -> Result<Vec<Value>, String> {
+    let resp = client
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {} for {}", resp.status(), url));
+    }
+
+    let body = resp.text().await.map_err(|e| format!("Read body failed: {}", e))?;
+
+    // Attempt 1: extract channels from ytInitialData
+    if let Some(data) = find_yt_initial_data(&body) {
+        let channels = extract_channels_from_data(&data);
+        if !channels.is_empty() {
+            return Ok(channels);
+        }
+    }
+
+    // Attempt 2: fallback – extract single channel info from meta tags
+    let page_title = {
+        Regex::new(r"<title>(.+?)</title>")
+            .ok()
+            .and_then(|re| re.captures(&body))
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string())
+    };
+    let channel_id = parse_channel_id(url).or_else(|| parse_channel_id(&body));
+    let canonical_url = {
+        Regex::new(r#"<link\s+rel="canonical"\s+href="([^"]+)""#)
+            .ok()
+            .and_then(|re| re.captures(&body))
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string())
+    };
+
+    if let Some(cid) = channel_id {
+        let clean_title = page_title
+            .map(|t| t.replace(" - YouTube", "").trim().to_string())
+            .unwrap_or_default();
+        return Ok(vec![serde_json::json!({
+            "channel_id": cid,
+            "channel_url": canonical_url.unwrap_or_else(|| format!("https://www.youtube.com/channel/{}", cid)),
+            "title": clean_title,
+            "subscriber_count": "",
+            "avatar": "",
+        })]);
+    }
+
+    Ok(Vec::new())
+}
+
+#[tauri::command]
+pub async fn import_from_google_account(
+    state: State<'_, AppState>,
+    oauth_client_id: String,
+) -> Res<Value> {
+    use crate::commands::oauth::perform_oauth_loopback;
+    let scope = "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl";
+    let tokens = perform_oauth_loopback(&state.db, &oauth_client_id, Some(scope.to_string())).await?;
+    let access = tokens["access_token"].as_str().unwrap_or("").to_string();
+    if access.is_empty() {
+        return Err("OAuth flow did not produce an access token".into());
+    }
+
+    // Call YouTube Data API v3 to list all channels managed by the authenticated user
+    let http = reqwest::Client::new();
+    let mut all_channels: Vec<Value> = Vec::new();
+    let mut next_page_token = String::new();
+
+    loop {
+        let mut params = vec![
+            ("part".to_string(), "snippet,statistics,contentDetails".to_string()),
+            ("managedByMe".to_string(), "true".to_string()),
+            ("maxResults".to_string(), "50".to_string()),
+        ];
+        if !next_page_token.is_empty() {
+            params.push(("pageToken".to_string(), next_page_token.clone()));
+        }
+        let resp = http.get("https://www.googleapis.com/youtube/v3/channels")
+            .query(&params)
+            .bearer_auth(&access)
+            .send().await.map_err(e)?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("YouTube API error {}: {}", status, body));
+        }
+
+        let data: Value = resp.json().await.map_err(e)?;
+        if let Some(items) = data["items"].as_array() {
+            for item in items {
+                let channel_id = item["id"].as_str().unwrap_or("").to_string();
+                let title = item["snippet"]["title"].as_str().unwrap_or("").to_string();
+                let description = item["snippet"]["description"].as_str().unwrap_or("").to_string();
+                let thumbnail = item["snippet"]["thumbnails"]
+                    .as_object()
+                    .and_then(|t| t.get("default"))
+                    .and_then(|d| d.as_object())
+                    .and_then(|d| d.get("url"))
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let subscriber_count = item["statistics"]["subscriberCount"]
+                    .as_str()
+                    .unwrap_or("0")
+                    .parse::<i64>()
+                    .unwrap_or(0);
+                let video_count = item["statistics"]["videoCount"]
+                    .as_str()
+                    .unwrap_or("0")
+                    .parse::<i64>()
+                    .unwrap_or(0);
+
+                all_channels.push(serde_json::json!({
+                    "channel_id": channel_id,
+                    "title": title,
+                    "description": description,
+                    "thumbnail": thumbnail,
+                    "subscriber_count": subscriber_count,
+                    "video_count": video_count,
+                }));
+            }
+        }
+
+        next_page_token = data["nextPageToken"].as_str().unwrap_or("").to_string();
+        if next_page_token.is_empty() {
+            break;
+        }
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "channels": all_channels,
+        "count": all_channels.len(),
+    }))
+}
+
+#[tauri::command]
+pub async fn discover_youtube_channels(
+    users: Vec<String>,
+    timeout_sec: Option<i32>,
+) -> Res<Value> {
+    let timeout = std::time::Duration::from_secs(timeout_sec.unwrap_or(180).max(30) as u64);
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let mut discovered = Vec::new();
+    let mut errors = Vec::new();
+
+    for user in &users {
+        let targets = build_candidate_urls(user);
+        let mut matched = false;
+
+        for target in &targets {
+            if matched { break; }
+
+            match scrape_youtube_page(&client, target, timeout).await {
+                Ok(channels) if !channels.is_empty() => {
+                    discovered.push(serde_json::json!({
+                        "query": user,
+                        "source": target,
+                        "channels": channels,
+                    }));
+                    matched = true;
+                }
+                Ok(_) => {
+                    // Try the /channels sub-page
+                    let channels_url = format!("{}/channels", target.trim_end_matches('/'));
+                    match scrape_youtube_page(&client, &channels_url, timeout).await {
+                        Ok(sub_channels) if !sub_channels.is_empty() => {
+                            discovered.push(serde_json::json!({
+                                "query": user,
+                                "source": channels_url,
+                                "channels": sub_channels,
+                            }));
+                            matched = true;
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            errors.push(serde_json::json!({
+                                "query": user,
+                                "target": target,
+                                "error": e,
+                            }));
+                        }
+                    }
+                }
+                Err(e) => {
+                    errors.push(serde_json::json!({
+                        "query": user,
+                        "target": target,
+                        "error": e,
+                    }));
+                }
+            }
+        }
+
+        if !matched {
+            errors.push(serde_json::json!({
+                "query": user,
+                "error": "Could not discover channels for this user/URL",
+            }));
+        }
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "requested_users": users,
+        "discovered": discovered,
+        "errors": errors,
+    }))
+}
+
+#[tauri::command]
+pub async fn import_discovered_channels(
+    state: State<'_, AppState>,
+    channels: Vec<Value>,
+) -> Res<Value> {
+    let coll = state.db.collection::<Document>("channels");
+    let mut inserted = 0;
+    let mut skipped = 0;
+    let mut duplicates = Vec::new();
+
+    for channel in channels {
+        let channel_id = channel["channel_id"].as_str().unwrap_or("").trim().to_string();
+        let name = channel["title"]
+            .as_str()
+            .or_else(|| channel["name"].as_str())
+            .unwrap_or("Imported Channel")
+            .to_string();
+        if channel_id.is_empty() {
+            skipped += 1;
+            continue;
+        }
+        if let Ok(Some(_)) = coll.find_one(doc! { "youtube_channel_id": &channel_id }).await {
+            duplicates.push(channel_id.clone());
+            skipped += 1;
+            continue;
+        }
+        let ch = Channel {
+            id: Uuid::new_v4().to_string(),
+            name,
+            youtube_channel_id: channel_id.clone(),
+            language: channel["language"].as_str().unwrap_or("English").to_string(),
+            styles: channel["styles"].as_str().unwrap_or("").to_string(),
+            region: channel["region"].as_str().unwrap_or("").to_string(),
+            refresh_token: None,
+            connected: false,
+            avatar: channel["avatar"].as_str().map(|s| s.to_string()),
+            subscriber_count: channel["subscriber_count"].as_i64().unwrap_or(0),
+            oauth_client_id: None,
+        };
+        let bson = bson::to_document(&ch).map_err(e)?;
+        coll.insert_one(bson).await.map_err(e)?;
+        inserted += 1;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "inserted": inserted,
+        "skipped": skipped,
+        "duplicates": duplicates,
+    }))
+}
+
+#[tauri::command]
+pub async fn refresh_all_channel_metadata(state: State<'_, AppState>) -> Res<Value> {
+    use futures_util::StreamExt;
+    let mut cursor = state.db
+        .collection::<Document>("channels")
+        .find(doc! {})
+        .await
+        .map_err(e)?;
+    let mut updated = 0;
+    let mut failed = Vec::new();
+
+    while let Some(Ok(doc)) = cursor.next().await {
+        let ch = bson_to_value(doc.clone());
+        let connected = ch["connected"].as_bool().unwrap_or(false);
+        let yt_id = ch["youtube_channel_id"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let refresh_token = ch["refresh_token"].as_str().unwrap_or("").to_string();
+        if !connected || refresh_token.is_empty() || yt_id.is_empty() {
+            continue;
+        }
+        let client = crate::jobs::pick_oauth_client(
+            &state.db,
+            &ch,
+            ch["oauth_client_id"].as_str(),
+        )
+        .await;
+        let Some(client) = client else {
+            failed.push(serde_json::json!({ "id": ch["id"], "reason": "missing_oauth_client" }));
+            continue;
+        };
+        let client_id = client["client_id"].as_str().unwrap_or("");
+        let client_secret = client["client_secret"].as_str().unwrap_or("");
+        if client_id.is_empty() || client_secret.is_empty() {
+            failed.push(serde_json::json!({ "id": ch["id"], "reason": "missing_client_secret" }));
+            continue;
+        }
+        let http = reqwest::Client::new();
+        let token_res = http
+            .post("https://oauth2.googleapis.com/token")
+            .form(&[
+                ("client_id", client_id),
+                ("client_secret", client_secret),
+                ("refresh_token", &refresh_token),
+                ("grant_type", "refresh_token"),
+            ])
+            .send()
+            .await;
+        let access_token = match token_res {
+            Ok(resp) if resp.status().is_success() => {
+                let body: Value = resp.json().await.map_err(e)?;
+                body["access_token"].as_str().unwrap_or("").to_string()
+            }
+            Ok(resp) => {
+                failed.push(serde_json::json!({
+                    "id": ch["id"],
+                    "reason": format!("token_refresh_failed:{}", resp.status()),
+                }));
+                continue;
+            }
+            Err(err) => {
+                failed.push(serde_json::json!({ "id": ch["id"], "reason": err.to_string() }));
+                continue;
+            }
+        };
+        if access_token.is_empty() {
+            failed.push(serde_json::json!({ "id": ch["id"], "reason": "empty_access_token" }));
+            continue;
+        }
+        let detail_res = http
+            .get("https://www.googleapis.com/youtube/v3/channels")
+            .query(&[("part", "snippet,statistics"), ("id", &yt_id)])
+            .bearer_auth(&access_token)
+            .send()
+            .await;
+        let detail = match detail_res {
+            Ok(resp) if resp.status().is_success() => resp.json::<Value>().await.map_err(e)?,
+            Ok(resp) => {
+                failed.push(serde_json::json!({
+                    "id": ch["id"],
+                    "reason": format!("youtube_api:{}", resp.status()),
+                }));
+                continue;
+            }
+            Err(err) => {
+                failed.push(serde_json::json!({ "id": ch["id"], "reason": err.to_string() }));
+                continue;
+            }
+        };
+        let item = detail["items"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .cloned();
+        if let Some(item) = item {
+            let title = item["snippet"]["title"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            let subs = item["statistics"]["subscriberCount"]
+                .as_str()
+                .unwrap_or("0")
+                .parse::<i64>()
+                .unwrap_or(0);
+            let avatar = item["snippet"]["thumbnails"]["default"]["url"]
+                .as_str()
+                .map(|s| s.to_string());
+            state
+                .db
+                .collection::<Document>("channels")
+                .update_one(
+                    doc! { "id": ch["id"].as_str().unwrap_or("") },
+                    doc! { "$set": {
+                        "name": title,
+                        "subscriber_count": subs,
+                        "avatar": avatar,
+                    }},
+                )
+                .await
+                .map_err(e)?;
+            updated += 1;
+        }
+    }
+
+    Ok(serde_json::json!({ "ok": true, "updated": updated, "failed": failed }))
 }

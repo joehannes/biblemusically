@@ -318,6 +318,10 @@ pub fn run() {
             commands::delete_channel,
             commands::oauth_complete_channel,
             commands::channels_connect_all_urls,
+            commands::discover_youtube_channels,
+            commands::import_discovered_channels,
+            commands::refresh_all_channel_metadata,
+            commands::import_from_google_account,
             // OAuth commands
             commands::list_oauth_clients,
             commands::create_oauth_client,
@@ -325,6 +329,7 @@ pub fn run() {
             commands::delete_oauth_client,
             commands::channel_picked_client,
             commands::oauth_start,
+            commands::oauth_start_for_channel,
             commands::oauth_start_loopback,
             commands::oauth_callback,
             // Jobs commands

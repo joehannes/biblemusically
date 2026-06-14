@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "ai-music-video-studio"
-version = "0.10.0"
+version = "0.10.6"
 dependencies = [
  "anyhow",
  "bson",

@@ -1,10 +1,9 @@
 use crate::{
-    models::{now_iso, Project, ProjectCreate},
+    models::{now_iso, Project},
     state::AppState,
 };
 use bson::{doc, Document};
 use serde_json::Value;
-use std::env;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
 use uuid::Uuid;
@@ -82,16 +81,35 @@ pub async fn list_projects(state: State<'_, AppState>) -> Res<Vec<Value>> {
 }
 
 #[tauri::command]
-pub async fn create_project(state: State<'_, AppState>, body: ProjectCreate) -> Res<Value> {
+pub async fn create_project(state: State<'_, AppState>, body: Value) -> Res<Value> {
+    let name = body["name"].as_str().unwrap_or("").trim().to_string();
+    if name.is_empty() {
+        return Err("Project name is required".into());
+    }
+    let topic = body["topic"].as_str().unwrap_or("").to_string();
+    let schedule = if body["schedule"].is_null() {
+        None
+    } else {
+        body["schedule"].as_str().map(|s| s.to_string())
+    };
+    let multi_language = body["multi_language"].as_bool().unwrap_or(true);
+    let multi_style = body["multi_style"].as_bool().unwrap_or(true);
+    let languages = body["languages"].as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_else(Vec::new);
+    let styles = body["styles"].as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_else(Vec::new);
+
     let p = Project {
         id: Uuid::new_v4().to_string(),
-        name: body.name,
-        topic: body.topic,
-        schedule: body.schedule,
-        multi_language: true,
-        multi_style: true,
-        languages: vec![],
-        styles: vec![],
+        name,
+        topic,
+        schedule,
+        multi_language,
+        multi_style,
+        languages,
+        styles,
         created_at: now_iso(),
     };
     let bson = bson::to_document(&p).map_err(e)?;

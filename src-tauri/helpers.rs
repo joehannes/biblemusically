@@ -94,39 +94,110 @@ pub fn parse_annotations(annotations: &str, lyrics: &str) -> Vec<AnnotationPair>
 }
 
 pub fn resolve_node_executable() -> Option<String> {
-    // Prefer a bundled node binary in known Tauri resource locations.
-    let mut candidates = Vec::new();
+    // 1. Bundled / sidecar node binary next to the executable (Tauri 2 externalBin layout)
+    //    Looks for "<exe_dir>/node" or "<lib_dir>/_up_/binaries/node" etc.
+    if let Ok(exe) = env::current_exe() {
+        let exe_name = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        let mut candidates: Vec<PathBuf> = Vec::new();
+
+        if let Some(parent) = exe.parent() {
+            // Directly beside the binary
+            candidates.push(parent.join("node"));
+            candidates.push(parent.join("bin").join("node"));
+            candidates.push(parent.join("node.exe"));
+            candidates.push(parent.join("bin").join("node.exe"));
+
+            // At /usr/bin/ level, check /usr/lib/<app>/_up_/binaries/node
+            let dir_str = parent.to_string_lossy();
+            if dir_str == "/usr/bin" || dir_str == "/usr/local/bin" {
+                for subdir in [&exe_name, "AI Music Video Studio"] {
+                    candidates.push(
+                        PathBuf::from("/usr/lib").join(subdir).join("_up_").join("binaries").join("node")
+                    );
+                    candidates.push(
+                        PathBuf::from("/usr/lib").join(subdir).join("_up_").join("binaries").join("bin").join("node")
+                    );
+                    candidates.push(
+                        PathBuf::from("/usr/lib").join(subdir).join("_up_").join("src-tauri").join("packaging").join("node")
+                    );
+                    candidates.push(
+                        PathBuf::from("/usr/lib").join(subdir).join("_up_").join("src-tauri").join("packaging").join("bin").join("node")
+                    );
+                    // Check resources/ dir
+                    candidates.push(
+                        PathBuf::from("/usr/lib").join(subdir).join("node")
+                    );
+                }
+            }
+        }
+
+        // Walk up from exe parent, checking common resource locations
+        let mut path = exe.parent();
+        while let Some(dir) = path {
+            candidates.push(dir.join("node"));
+            candidates.push(dir.join("bin").join("node"));
+            candidates.push(dir.join("binaries").join("node"));
+            candidates.push(dir.join("binaries").join("bin").join("node"));
+            candidates.push(dir.join("_up_").join("binaries").join("node"));
+            candidates.push(dir.join("_up_").join("binaries").join("bin").join("node"));
+            candidates.push(dir.join("_up_").join("src-tauri").join("packaging").join("node"));
+            candidates.push(dir.join("_up_").join("src-tauri").join("packaging").join("bin").join("node"));
+            candidates.push(dir.join("resources").join("node"));
+            candidates.push(dir.join("resources").join("bin").join("node"));
+            candidates.push(dir.join("packaging").join("node"));
+            candidates.push(dir.join("packaging").join("bin").join("node"));
+            path = dir.parent();
+        }
+
+        for candidate in candidates {
+            if candidate.exists() && candidate.is_file() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // 2. TAURI_RESOURCE_DIR env var (dev mode / older Tauri)
     if let Some(rd) = env::var_os("TAURI_RESOURCE_DIR") {
         let rd = PathBuf::from(rd);
-        candidates.extend([
+        let candidates = [
             rd.join("node"),
             rd.join("bin").join("node"),
             rd.join("node.exe"),
             rd.join("bin").join("node.exe"),
-        ]);
+            rd.join("_up_").join("binaries").join("node"),
+            rd.join("_up_").join("src-tauri").join("packaging").join("node"),
+            rd.join("resources").join("node"),
+        ];
+        for c in &candidates {
+            if c.exists() && c.is_file() {
+                return Some(c.to_string_lossy().to_string());
+            }
+        }
     }
 
+    // 3. Source tree / development paths
     if let Ok(cwd) = env::current_dir() {
-        candidates.extend([
+        let candidates = [
             cwd.join("src-tauri").join("packaging").join("node"),
             cwd.join("src-tauri").join("packaging").join("bin").join("node"),
             cwd.join("src-tauri").join("packaging").join("node.exe"),
             cwd.join("src-tauri").join("packaging").join("bin").join("node.exe"),
             cwd.join("binaries").join("node"),
             cwd.join("binaries").join("bin").join("node"),
-        ]);
-    }
-
-    for candidate in candidates {
-        if candidate.exists() && candidate.is_file() {
-            return Some(candidate.to_string_lossy().to_string());
+        ];
+        for c in &candidates {
+            if c.exists() && c.is_file() {
+                return Some(c.to_string_lossy().to_string());
+            }
         }
     }
 
+    // 4. System PATH (standard Node.js installation)
     if let Ok(path) = which::which("node") {
         return Some(path.to_string_lossy().to_string());
     }
 
+    // 5. Common Linux paths
     for cand in ["/usr/bin/node", "/usr/local/bin/node", "/bin/node", "/snap/bin/node"] {
         let path = Path::new(cand);
         if path.exists() && path.is_file() {
@@ -134,6 +205,7 @@ pub fn resolve_node_executable() -> Option<String> {
         }
     }
 
+    // 6. Windows common paths
     if cfg!(target_os = "windows") {
         for cand in [
             "C:\\Program Files\\nodejs\\node.exe",

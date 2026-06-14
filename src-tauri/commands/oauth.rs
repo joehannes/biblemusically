@@ -238,6 +238,170 @@ pub async fn oauth_callback(
 }
 
 // ────────────────────────────────────────────────────────────────
+// OAuth for a SPECIFIC channel — loopback server approach
+// Spins up a local HTTP server to catch the Google redirect,
+// exchanges the code, fetches channel info, and updates the
+// channel document. This is the recommended flow because it
+// handles the full callback automatically without manual steps.
+// ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn oauth_start_for_channel(
+    state: State<'_, AppState>,
+    cid: String,
+    body: Option<Value>,
+) -> Res<Value> {
+    let ch_doc = state.db.collection::<Document>("channels")
+        .find_one(doc! { "id": &cid }).await.map_err(e)?
+        .ok_or_else(|| "channel not found".to_string())?;
+    let ch = bson_to_value(ch_doc);
+    let body = body.unwrap_or_default();
+    let forced = body["oauth_client_id"].as_str();
+    let client = crate::jobs::pick_oauth_client(&state.db, &ch, forced).await;
+    let Some(client) = client else {
+        return Err("No OAuth client configured. Add one in Channel Manager → OAuth Clients.".into());
+    };
+    let cid_g = client["client_id"].as_str().unwrap_or("").to_string();
+    let csec = client["client_secret"].as_str().unwrap_or("").to_string();
+    let redirect = client["redirect_uri"].as_str().unwrap_or("").to_string();
+
+    if cid_g.is_empty() || csec.is_empty() || redirect.is_empty() {
+        return Err("OAuth client missing client_id/client_secret/redirect_uri".into());
+    }
+
+    let parsed = Url::parse(&redirect).map_err(e)?;
+    let host = parsed.host_str().unwrap_or("");
+    if host != "127.0.0.1" && host != "localhost" {
+        return Err("OAuth client redirect_uri must be a loopback address (127.0.0.1 or localhost)".into());
+    }
+
+    // Update channel's oauth_client_id
+    state.db.collection::<Document>("channels")
+        .update_one(doc! { "id": &cid },
+            doc! { "$set": { "oauth_client_id": client["id"].as_str().unwrap_or("") } })
+        .await.map_err(e)?;
+
+    // Set up channel to receive the callback query params
+    let (tx, mut rx) = mpsc::channel::<HashMap<String, String>>(1);
+    let tx_filter = warp::any().map(move || tx.clone());
+
+    let callback_route = warp::get()
+        .and(warp::path::full())
+        .and(warp::query::<HashMap<String, String>>())
+        .and(tx_filter.clone())
+        .and_then(|_full: warp::path::FullPath, qs: HashMap<String, String>, tx: mpsc::Sender<HashMap<String, String>>| async move {
+            let _ = tx.try_send(qs);
+            let body = "<html><body style='font-family:sans-serif;text-align:center;padding:60px'><h2>✓ Authentication complete</h2><p>You can close this window and return to the app.</p></body></html>";
+            Ok::<_, std::convert::Infallible>(warp::reply::html(body))
+        });
+
+    // Bind to port from redirect URI, or let OS pick one
+    let port = parsed.port().unwrap_or(0);
+    let (addr, server) = warp::serve(callback_route).bind_ephemeral(([127, 0, 0, 1], port));
+    tokio::task::spawn(server);
+    let bound_port = addr.port();
+
+    // Reconstruct redirect URI with actual bound port
+    let mut redirect_used = parsed.clone();
+    redirect_used.set_port(Some(bound_port)).ok();
+    let redirect_used_str = redirect_used.to_string();
+
+    let scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+    let state_param = cid.clone();
+    let auth_url = format!(
+        "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state={}",
+        cid_g,
+        urlencoding::encode(&redirect_used_str),
+        urlencoding::encode(scope),
+        state_param
+    );
+
+    // Open system browser for user consent
+    let _ = open::that(auth_url.clone());
+
+    // Wait for the callback (120s timeout)
+    match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
+        Ok(Some(qs)) => {
+            if let Some(err) = qs.get("error") {
+                return Err(format!("OAuth error: {}", err));
+            }
+            let code = qs.get("code").cloned().unwrap_or_default();
+            let returned_state = qs.get("state").cloned().unwrap_or_default();
+            if code.is_empty() || returned_state != state_param {
+                return Err("Missing code or invalid state in callback".into());
+            }
+
+            // Exchange code for tokens
+            let http = reqwest::Client::new();
+            let tr = http.post("https://oauth2.googleapis.com/token")
+                .form(&[
+                    ("code", code.as_str()),
+                    ("client_id", cid_g.as_str()),
+                    ("client_secret", csec.as_str()),
+                    ("redirect_uri", redirect_used_str.as_str()),
+                    ("grant_type", "authorization_code"),
+                ])
+                .send().await.map_err(e)?;
+            if !tr.status().is_success() {
+                return Err(format!("Token exchange failed: {}", tr.text().await.unwrap_or_default()));
+            }
+            let tokens: Value = tr.json().await.map_err(e)?;
+
+            let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
+            let access = tokens["access_token"].as_str().unwrap_or("").to_string();
+
+            // Fetch channel metadata using the access token
+            let mut yt_channel_id = String::new();
+            let mut subs: i64 = 0;
+            let mut chan_title = String::new();
+
+            if !access.is_empty() {
+                let yr = http.get("https://www.googleapis.com/youtube/v3/channels")
+                    .query(&[("part", "snippet,statistics"), ("mine", "true")])
+                    .bearer_auth(&access)
+                    .send().await;
+                if let Ok(yr) = yr {
+                    if yr.status().is_success() {
+                        if let Ok(data) = yr.json::<Value>().await {
+                            if let Some(items) = data["items"].as_array() {
+                                if let Some(item) = items.first() {
+                                    yt_channel_id = item["id"].as_str().unwrap_or("").to_string();
+                                    chan_title = item["snippet"]["title"].as_str().unwrap_or("").to_string();
+                                    subs = item["statistics"]["subscriberCount"]
+                                        .as_str().unwrap_or("0").parse().unwrap_or(0);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Update the channel document
+            let mut update = doc! {
+                "connected": true,
+                "youtube_channel_id": &yt_channel_id,
+                "subscriber_count": subs,
+                "oauth_client_id": client["id"].as_str().unwrap_or(""),
+            };
+            if !refresh.is_empty() { update.insert("refresh_token", &refresh); }
+            state.db.collection::<Document>("channels")
+                .update_one(doc! { "id": &cid }, doc! { "$set": update })
+                .await.map_err(e)?;
+
+            Ok(serde_json::json!({
+                "ok": true,
+                "channel_title": chan_title,
+                "youtube_channel_id": yt_channel_id,
+                "oauth_client_id": client["id"],
+                "label": client["label"],
+            }))
+        }
+        Ok(None) => Err("Callback receiver closed".into()),
+        Err(_) => Err("Timed out waiting for OAuth callback (120s)".into()),
+    }
+}
+
+// ────────────────────────────────────────────────────────────────
 // OAuth start using a local loopback server — opens system browser
 // and performs the code exchange, then persists tokens into settings
 // ────────────────────────────────────────────────────────────────

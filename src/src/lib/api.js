@@ -112,8 +112,14 @@ export const api = {
   deleteChannel: (id) => invokeCommand("delete_channel", { cid: id }),
   oauthStart: (id, oauth_client_id) =>
     invokeCommand("oauth_start", { cid: id, ...(oauth_client_id ? { body: { oauth_client_id } } : {}) }),
+  oauthStartForChannel: (id, oauth_client_id) =>
+    invokeCommand("oauth_start_for_channel", { cid: id, ...(oauth_client_id ? { body: { oauth_client_id } } : {}) }),
   oauthComplete: (id, b) => invokeCommand("oauth_complete_channel", { cid: id, body: b }),
   channelPickedClient: (id) => invokeCommand("channel_picked_client", { cid: id }),
+  discoverYoutubeChannels: (users, timeoutSec) => invokeCommand("discover_youtube_channels", { users, timeout_sec: timeoutSec }),
+  importDiscoveredChannels: (channels) => invokeCommand("import_discovered_channels", { channels }),
+  refreshAllChannelMetadata: () => invokeCommand("refresh_all_channel_metadata"),
+  importFromGoogleAccount: (oauthClientId) => invokeCommand("import_from_google_account", { oauth_client_id: oauthClientId }),
 
   // ============ OAuth Clients ============
   listOauthClients: () => invokeCommand("list_oauth_clients"),
