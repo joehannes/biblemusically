@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
 import { Card } from "../components/ui/card";
@@ -33,9 +33,8 @@ export default function Upload() {
   const [bulkPrivacy, setBulkPrivacy] = useState("public");
   const [globalDesc, setGlobalDesc] = useState("");
   const [busy, setBusy] = useState("");
-  const [oauthQueue, setOauthQueue] = useState([]); // [{channel_id, name, url, label}]
+  const [oauthQueue, setOauthQueue] = useState([]); // [{channel_id, name, label}]
   const [currentOauth, setCurrentOauth] = useState(null);
-  const pollRef = useRef();
 
   const load = async () => { setChannels(await api.listChannels()); setUploads(await api.listUploads()); };
   useEffect(() => { load(); const t = setInterval(load, 3000); return () => clearInterval(t); }, []);
@@ -69,27 +68,30 @@ export default function Upload() {
     } finally { setBusy(""); }
   };
 
-  // sequential OAuth flow: open one, poll channels for connected=true, then open next
-  const startConnectFlow = async (queue) => {
-    if (!queue.length) { runPublishAll(); return; }
+  // sequential OAuth flow: run one local loopback server at a time, then advance
+  const startConnectFlow = async (queue, publishAfter = false) => {
+    if (!queue.length) {
+      if (publishAfter) await runPublishAll();
+      return;
+    }
     const next = queue[0];
     setCurrentOauth(next);
-    const win = window.open(next.url, "_blank", "width=720,height=820");
-    if (pollRef.current) clearInterval(pollRef.current);
-    let attempts = 0;
-    pollRef.current = setInterval(async () => {
-      attempts++;
-      const all = await api.listChannels();
-      const ch = all.find(x => x.id === next.channel_id);
-      if ((ch && ch.connected) || (win && win.closed) || attempts > 120) {
-        clearInterval(pollRef.current); pollRef.current = null;
-        try { win && !win.closed && win.close(); } catch {}
-        const rest = queue.slice(1);
-        setOauthQueue(rest);
-        setCurrentOauth(null);
-        setTimeout(() => startConnectFlow(rest), 400);
+    setOauthQueue(queue.slice(1));
+    try {
+      const r = await api.oauthStartForChannel(next.channel_id);
+      if (r?.ok) {
+        toast.success(`Connected ${r.channel_title || next.name || "channel"}`);
+      } else if (r?.error) {
+        toast.error(r.error);
       }
-    }, 1500);
+    } catch (err) {
+      console.error(err);
+      toast.error("OAuth failed: " + (err?.toString?.() || "Unknown error"));
+    } finally {
+      await load();
+      setCurrentOauth(null);
+      setTimeout(() => startConnectFlow(queue.slice(1), publishAfter), 400);
+    }
   };
 
   const runPublishAll = async () => {
@@ -101,16 +103,23 @@ export default function Upload() {
   };
 
   const runConnectAll = async (alsoPublish = false) => {
-    const pre = alsoPublish ? await api.uploadsPreflight() : await api.connectAllUrls().then(d=>({ need_oauth: d.items, ready: [], pending_uploads: 0 }));
-    const need = (pre.need_oauth || []).filter(x => x.url);
+    const pre = alsoPublish
+      ? await api.uploadsPreflight()
+      : { need_oauth: channels.filter((c) => !c.connected || !c.refresh_token).map((c) => ({ channel_id: c.id, name: c.name, label: "auto" })) };
+    const blocked = (pre.need_oauth || []).filter(x => x.error);
+    blocked.forEach((item) => toast.error(`${item.name || item.channel_id}: ${item.error}`));
+    const need = (pre.need_oauth || []).filter(x => x.channel_id && !x.error);
+    if (blocked.length && !need.length) {
+      return;
+    }
     if (!need.length) {
       toast.success("All channels already connected");
       if (alsoPublish) runPublishAll();
       return;
     }
-    toast.info(`Connecting ${need.length} channel${need.length>1?"s":""} sequentially — popups will open one by one`);
+    toast.info(`Connecting ${need.length} channel${need.length>1?"s":""} sequentially`);
     setOauthQueue(need);
-    startConnectFlow(need);
+    startConnectFlow(need, alsoPublish);
   };
 
   // Smart bulk: bulk-create → AI enrich → connect-all → publish
@@ -124,10 +133,12 @@ export default function Upload() {
       toast.success(`AI enriched ${e.updated}`);
       setBulkOpen(false);
       const pre = await api.uploadsPreflight();
-      const need = (pre.need_oauth || []).filter(x => x.url);
+      const blocked = (pre.need_oauth || []).filter(x => x.error);
+      blocked.forEach((item) => toast.error(`${item.name || item.channel_id}: ${item.error}`));
+      const need = (pre.need_oauth || []).filter(x => x.channel_id && !x.error);
       if (need.length) {
         toast.info(`Pre-connecting ${need.length} channel${need.length>1?"s":""} before upload`);
-        setOauthQueue(need); startConnectFlow(need);
+        setOauthQueue(need); startConnectFlow(need, true);
       } else {
         await runPublishAll();
       }
@@ -264,7 +275,7 @@ export default function Upload() {
           {currentOauth && (
             <div className="text-sm space-y-2">
               <div><b>{currentOauth.name}</b> via <span className="text-mono text-xs">{currentOauth.label}</span></div>
-              <p className="text-muted-foreground">A Google authorization popup is open. Approve it — this dialog will advance automatically once the channel reports connected (or when you close the popup).</p>
+              <p className="text-muted-foreground">A Google authorization window is open. Approve it — this dialog will advance automatically once the local callback completes.</p>
               <div className="text-xs text-muted-foreground text-mono">Queue remaining: {oauthQueue.length}</div>
               <div className="flex items-center gap-2 text-primary"><Loader2 className="w-4 h-4 animate-spin" /> waiting for callback…</div>
             </div>

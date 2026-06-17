@@ -10,11 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import {
   Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound,
   RefreshCw, User, AtSign, Globe, Hash, Mail, Sparkles, Info,
-  ChevronDown, X, Lightbulb,
+  ChevronDown, X, Lightbulb, Search,
 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
 // ── Category definitions for discovery input labels ──
 const CATEGORIES = {
@@ -196,9 +195,14 @@ export default function Channels() {
   const [discoverStatus, setDiscoverStatus] = useState("");
   const [discoverErrors, setDiscoverErrors] = useState([]);
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [isDiscoveringSwitcher, setIsDiscoveringSwitcher] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isConnectingAll, setIsConnectingAll] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [importResults, setImportResults] = useState(null);
+  const [selectedImportClient, setSelectedImportClient] = useState("");
+  const [selectedClientValid, setSelectedClientValid] = useState(null); // null | 'loading' | { ok, missing } | { error }
+  const [importError, setImportError] = useState(null);
 
   const load = async () => setChannels(await api.listChannels());
   useEffect(() => { load(); }, []);
@@ -254,14 +258,68 @@ export default function Channels() {
     try {
       toast.info("Opening browser for OAuth consent. Please authorize in the browser window...");
       const r = await api.oauthStartForChannel(c.id, forceClientId);
-      if (r.error) return toast.error(r.error);
+      if (r.error) {
+        toast.error(r.error);
+        return false;
+      }
       if (r.ok) {
         toast.success(`Channel connected! ${r.channel_title || r.youtube_channel_id || ""}`);
         await load();
+        return true;
       }
+      return false;
     } catch (err) {
       console.error("OAuth loopback failed:", err);
       toast.error("OAuth failed: " + (err?.toString?.() || "Unknown error"));
+      return false;
+    }
+  };
+
+  const connectAllChannels = async () => {
+    const targets = channels.filter((c) => !c.connected || !c.refresh_token);
+    if (!targets.length) {
+      await load();
+      return toast.success("All channels already connected");
+    }
+
+    setIsConnectingAll(true);
+    try {
+      // Try the one-shot approach first: single OAuth → all channels via YouTube API
+      const firstTarget = targets[0];
+      const forcedClientId = pickedClient[firstTarget.id];
+      toast.info(`Connecting ${targets.length} channel${targets.length === 1 ? "" : "s"} in a single OAuth flow...`);
+
+      try {
+        const result = await api.connectAllChannelsOneShot(forcedClientId || null);
+        if (result?.ok) {
+          const count = result.connected_count || 0;
+          if (count > 0) {
+            toast.success(`Connected ${count} channel${count > 1 ? 's' : ''} in one go! (via ${result.oauth_client_label || 'OAuth'})`);
+          } else if (result.already_connected > 0) {
+            toast.success(`All ${result.already_connected} channel${result.already_connected > 1 ? 's' : ''} already connected.`);
+          }
+          await load();
+          return;
+        }
+      } catch (oneShotErr) {
+        // One-shot failed — fall through to sequential approach
+        console.warn("One-shot connect-all failed, falling back to sequential OAuth:", oneShotErr?.toString?.());
+      }
+
+      // Fallback: sequential per-channel OAuth with progress feedback
+      toast.info(`Falling back: connecting ${targets.length} channel${targets.length === 1 ? "" : "s"} one at a time...`);
+      let connected = 0;
+      for (let i = 0; i < targets.length; i++) {
+        const channel = targets[i];
+        const progressMsg = `Connecting channel ${i + 1}/${targets.length}: ${channel.name || channel.youtube_channel_id || "..."}`;
+        toast.info(progressMsg, { duration: 3000 });
+        const ok = await startOauth(channel);
+        if (ok) connected += 1;
+      }
+      await load();
+      toast.success(`Connected ${connected} of ${targets.length} channel${targets.length === 1 ? "" : "s"}.`);
+    } finally {
+      setIsConnectingAll(false);
     }
   };
 
@@ -299,6 +357,45 @@ export default function Channels() {
     }
   };
 
+  // ── Channel Switcher discovery ──
+  const discoverChannelSwitcher = async () => {
+    setIsDiscoveringSwitcher(true);
+    setDiscoverErrors([]);
+    setDiscoverResults([]);
+    setDiscoverStatus("Opening YouTube channel switcher in browser…");
+    try {
+      const result = await api.discoverFromChannelSwitcher(null, 120);
+      if (!result?.ok) {
+        setDiscoverStatus("Channel switcher discovery failed.");
+        return toast.error(result?.error || "Channel switcher discovery failed.");
+      }
+      const channels = Array.isArray(result.channels) ? result.channels : [];
+      if (!channels.length) {
+        setDiscoverStatus("No channels found in account switcher. Make sure you're logged into YouTube.");
+        toast.info("No channels found. Ensure you're logged into your main YouTube account.");
+        return;
+      }
+      // Map channel_switcher results into the same format as discover results for unified display
+      const mapped = channels.map((ch) => ({
+        channel_id: ch.channel_id || "",
+        title: ch.title || "Unknown channel",
+        handle: ch.handle || "",
+        avatar: ch.avatar || "",
+        source: "youtube.com/channel_switcher",
+        query: ch.handle || ch.channel_id || "",
+      }));
+      setDiscoverResults(mapped);
+      setDiscoverStatus(`Found ${mapped.length} available channel${mapped.length > 1 ? 's' : ''} in your YouTube account.`);
+      toast.success(`Found ${mapped.length} channel${mapped.length > 1 ? 's' : ''} from channel switcher.`);
+    } catch (err) {
+      console.error(err);
+      setDiscoverStatus("Channel switcher discovery failed.");
+      toast.error(err?.toString?.() || "Channel switcher discovery failed.");
+    } finally {
+      setIsDiscoveringSwitcher(false);
+    }
+  };
+
   const importDiscoveredChannels = async () => {
     if (!discoverResults.length) return toast.error("No discovered channels to import.");
     try {
@@ -327,20 +424,59 @@ export default function Channels() {
   };
 
   // ── Google Account import ──
+  // Validate the selected OAuth client whenever it changes
+  useEffect(() => {
+    if (!selectedImportClient) {
+      setSelectedClientValid(null);
+      return;
+    }
+    (async () => {
+      setSelectedClientValid("loading");
+      try {
+        const result = await api.validateOauthClient(selectedImportClient);
+        setSelectedClientValid(result);
+      } catch (err) {
+        setSelectedClientValid({ ok: false, error: err.toString() });
+      }
+    })();
+  }, [selectedImportClient, oauthClients]);
+
   const importFromGoogleAccount = async (oauthClientId) => {
+    if (!oauthClientId) return toast.error("Select an OAuth client first.");
+    if (selectedClientValid && !selectedClientValid.ok && selectedClientValid !== "loading") {
+      const missing = selectedClientValid.missing?.join(", ") || "unknown fields";
+      toast.error(`Selected client is missing: ${missing}. Edit it in the OAuth client pool above.`);
+      return;
+    }
     setImportLoading(true);
     setImportResults(null);
+    setImportError(null);
     try {
       const result = await api.importFromGoogleAccount(oauthClientId);
       if (!result?.ok) {
-        toast.error("Failed to import channels from Google account.");
+        toast.error(result?.error || "Failed to import channels from Google account.");
         return;
       }
       setImportResults(result.channels || []);
-      toast.success(`Found ${result.count || 0} channels from Google account.`);
+      // Show auto-creation summary
+      const created = result.created_count || 0;
+      const existing = result.existing_count || 0;
+      const hasTokens = result.tokens_available;
+      const parts = [`Found ${result.count || 0} channels from Google account.`];
+      if (created > 0) parts.push(`Automatically created ${created} new channel${created > 1 ? 's' : ''}.`);
+      if (existing > 0) parts.push(`${existing} already existed (tokens refreshed).`);
+      if (hasTokens && created + existing > 0) {
+        parts.push('These channels are now connected and ready for upload.');
+      } else if (!hasTokens && created + existing > 0) {
+        parts.push('Note: No refresh token was returned. You may need to OAuth-connect each channel individually.');
+      }
+      toast.success(parts.join(' '));
+      await load(); // Refresh the channel list
     } catch (err) {
       console.error(err);
-      toast.error("Failed to import channels from Google account.");
+      const errMsg = err?.toString?.() || "Unknown error";
+      setImportError(errMsg);
+      toast.error("Failed to import channels from Google account: " + errMsg);
     } finally {
       setImportLoading(false);
     }
@@ -389,26 +525,9 @@ export default function Channels() {
           <Button variant="outline" size="sm" onClick={refreshMetadata} disabled={isRefreshing}>
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />Refresh metadata
           </Button>
-          <Button data-testid="channels-connect-all-btn" onClick={async () => {
-            const r = await api.connectAllUrls();
-            const items = (r.items || []).filter((x) => x.url);
-            if (!items.length) { load(); return toast.success("All channels already connected"); }
-            toast.info(`Opening ${items.length} OAuth URLs in browser one at a time…`);
-            let i = 0;
-            const next = async () => {
-              if (i >= items.length) { toast.success("Done"); return; }
-              const it = items[i++];
-              try { await openUrl(it.url); } catch { toast.error("Could not open browser for " + (it.label || it.channel_id)); }
-              let attempts = 0;
-              const poll = setInterval(async () => {
-                attempts++;
-                const all = await api.listChannels();
-                const ch = all.find((x) => x.id === it.channel_id);
-                if ((ch && ch.connected) || attempts > 120) { clearInterval(poll); load(); setTimeout(next, 300); }
-              }, 1500);
-            };
-            next();
-          }}><ShieldCheck className="w-4 h-4 mr-2" />Connect all</Button>
+          <Button data-testid="channels-connect-all-btn" onClick={connectAllChannels} disabled={isConnectingAll || !channels.length}>
+            <ShieldCheck className="w-4 h-4 mr-2" />{isConnectingAll ? "Connecting..." : "Connect all"}
+          </Button>
         </div>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Add YouTube channels and connect each via Google OAuth. Manage multiple OAuth clients below to spread upload quota across language groups.</p>
@@ -430,40 +549,70 @@ export default function Channels() {
 
       {/* ── Import from Google Account (★ recommended — discovers ALL brand channels) ── */}
       <Card className="p-5 mb-6 border-primary/30 bg-primary/[0.03]">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Import from Google Account</div>
-              <Badge variant="outline" className="text-[9px] border-primary/40 text-primary gap-1"><Sparkles className="w-2.5 h-2.5" /> recommended</Badge>
-            </div>
-            <div className="text-sm text-muted-foreground max-w-2xl">Connect your Google account to import <strong className="text-foreground">all YouTube channels you manage</strong> — including brand channels and channel accounts under one Gmail.</div>
+        <div className="mb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Import from Google Account</div>
+            <Badge variant="outline" className="text-[9px] border-primary/40 text-primary gap-1"><Sparkles className="w-2.5 h-2.5" /> recommended</Badge>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Select onValueChange={(v) => { if (v) importFromGoogleAccount(v); }}>
-              <SelectTrigger className="w-[200px]" disabled={importLoading}>
-                <SelectValue placeholder={importLoading ? "Loading…" : "Select OAuth Client"} />
-              </SelectTrigger>
-              <SelectContent>
-                {oauthClients.map((oc) => (
-                  <SelectItem key={oc.id} value={oc.id}>
-                    <User className="w-3 h-3 mr-2 inline" />{oc.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="text-sm text-muted-foreground max-w-2xl">Select an OAuth client token, then click <strong className="text-foreground">Discover channels</strong> to import <strong className="text-foreground">all YouTube channels you manage</strong> — including brand channels.</div>
         </div>
 
-        {/* Brand channel tip */}
+        <div className="flex items-center gap-3 flex-wrap mb-3">
+          <Select value={selectedImportClient} onValueChange={(v) => setSelectedImportClient(v)}>
+            <SelectTrigger className="w-[260px]" disabled={importLoading}>
+              <SelectValue placeholder="Select OAuth token…" />
+            </SelectTrigger>
+            <SelectContent>
+              {oauthClients.map((oc) => (
+                <SelectItem key={oc.id} value={oc.id}>
+                  <KeyRound className="w-3 h-3 mr-2 inline" />{oc.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {oauthClients.length === 0 && discoveryTags.filter(t => t.category === "email").length > 0 && (
+            <div className="text-[10px] text-amber-400 italic">
+              ⚠️ You added Gmail addresses to the discovery field below, but you still need to create an OAuth client above first.
+            </div>
+          )}
+          <Button
+            size="sm"
+            onClick={() => importFromGoogleAccount(selectedImportClient)}
+            disabled={importLoading || !selectedImportClient}
+            className="gap-2"
+          >
+            {importLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {importLoading ? "Authenticating…" : "Discover channels"}
+          </Button>
+        </div>
+
+        {/* How it works explanation */}
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs text-muted-foreground mb-2">
           <Lightbulb className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <strong className="text-amber-300">Discover all brand channels with one Gmail:</strong>{" "}
-            YouTube lets you manage multiple brand channels (also called "channel accounts") under a single Google account.
-            When you authenticate with your main Gmail here, the API returns <em>every</em> channel you manage — no need to enter each handle separately.
-            Just select the OAuth client linked to that Gmail and all your brand channels appear for import.
+            <strong className="text-amber-300">How this works:</strong>{" "}
+            First select the OAuth token (API credentials set up in Google Cloud Console) linked to your Google account, then click "Discover channels".
+            This opens your browser to sign in. After you authorize, the app discovers <em>every</em> channel you manage — including all brand channels.
+            {discoveryTags.filter(t => t.category === "email").length > 0 && (
+              <div className="mt-1.5 text-amber-300/80">
+                💡 <strong>Tip:</strong> You added {discoveryTags.filter(t => t.category === "email").length} Gmail address{discoveryTags.filter(t => t.category === "email").length > 1 ? "es" : ""} in the "YouTube Channel Discovery" section below.
+                No need to re-enter them here — just configure one OAuth client per Google Cloud project above, then select it here.
+              </div>
+            )}
           </div>
         </div>
+
+        {oauthClients.length === 0 && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-muted-foreground mb-2">
+            <Info className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+            <div>
+              <strong className="text-destructive">No OAuth clients configured.</strong>{" "}
+              You need to set up at least one Google OAuth client first. Open the "YouTube OAuth client pool" section above to add one.
+              You'll need a Google Cloud Console project with the YouTube Data API enabled and OAuth credentials created.
+              Make sure the <strong>redirect_uri</strong> is set to <code className="text-foreground">http://127.0.0.1:3335</code> (must match what you enter in Google Cloud Console).
+            </div>
+          </div>
+        )}
 
         {importResults && importResults.length > 0 && (
           <div className="mt-3">
@@ -495,7 +644,7 @@ export default function Channels() {
               <Button size="sm" variant="secondary" onClick={() => {
                 const newChannels = importResults.filter((ch) => !channels.some((c) => c.youtube_channel_id === ch.channel_id));
                 if (newChannels.length) {
-                  newChannels.forEach((ch) => importGoogleChannel(ch));
+                  Promise.all(newChannels.map((ch) => importGoogleChannel(ch)));
                 } else {
                   toast.info("All channels already added.");
                 }
@@ -516,6 +665,9 @@ export default function Channels() {
           <div className="flex gap-2 flex-wrap">
             <Button size="sm" onClick={discoverChannels} disabled={isDiscovering || !discoveryTags.length}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isDiscovering ? "animate-spin" : ""}`} />{isDiscovering ? "Discovering…" : "Discover channels"}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={discoverChannelSwitcher} disabled={isDiscoveringSwitcher}>
+              <Search className={`w-4 h-4 mr-2 ${isDiscoveringSwitcher ? "animate-pulse" : ""}`} />{isDiscoveringSwitcher ? "Opening channel switcher…" : "Auto Discover (Available Channels)"}
             </Button>
             <Button size="sm" variant="secondary" onClick={importDiscoveredChannels} disabled={!discoverResults.length}>
               Import discovered

@@ -133,58 +133,11 @@ pub fn run() {
             app.manage(app_state);
             app.manage(state_arc.clone());
 
-            // Autotrigger authentication helpers at startup:
-            // - If Suno cookie missing, ensure Browsh is running (started above) to capture cookies.
-            // - If Google OAuth client exists and no stored Google refresh token for Suno, perform loopback OAuth.
-            {
-                let db_start = db_clone.clone();
-                tauri::async_runtime::spawn(async move {
-                    // Small delay to allow sidecars and DB to be ready
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-                    // Check settings for existing Suno cookie and Google refresh token
-                    let settings_coll = db_start.collection::<mongodb::bson::Document>("settings");
-                    let sdoc = settings_coll.find_one(mongodb::bson::doc! { "_id": "singleton" }).await.ok().flatten();
-                    let mut has_suno_cookie = false;
-                    let mut has_google_refresh = false;
-                    if let Some(doc) = sdoc {
-                        if let Some(v) = doc.get_str("suno_cookie").ok() {
-                            has_suno_cookie = !v.trim().is_empty();
-                        }
-                        if let Some(v) = doc.get_str("suno_google_refresh_token").ok() {
-                            has_google_refresh = !v.trim().is_empty();
-                        }
-                    }
-
-                    // If no Suno cookie, Browsh was started above with startup-url to capture cookies.
-                    if !has_suno_cookie {
-                        eprintln!("Suno cookie missing: awaiting Browsh-assisted capture (startup web page)");
-                    }
-
-                    // If no Google refresh token, try performing loopback OAuth using first available OAuth client
-                    if !has_google_refresh {
-                        let ocoll = db_start.collection::<mongodb::bson::Document>("oauth_clients");
-                        if let Ok(doc_opt) = ocoll.find_one(mongodb::bson::doc! {}).await {
-                            if let Some(doc) = doc_opt {
-                                if let Ok(oid) = doc.get_str("id") {
-                                    // spawn the loopback OAuth flow (opens system browser)
-                                    let oid_str = oid.to_string();
-                                    tokio::spawn(async move {
-                                        match crate::commands::oauth::perform_oauth_loopback(&db_start, &oid_str, None).await {
-                                            Ok(tokens) => {
-                                                eprintln!("Loopback OAuth completed on startup: tokens stored");
-                                            }
-                                            Err(err) => {
-                                                eprintln!("Loopback OAuth on startup failed: {}", err);
-                                            }
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+            // NOTE: Automatic OAuth loopback on startup has been intentionally removed.
+            // It was binding to the redirect port (e.g. 3335) at startup and leaving a
+            // warp server running, which caused a panic when the user clicked
+            // "Discover channels" — their explicit OAuth flow tried to bind the same port.
+            // All OAuth flows are now user-initiated only.
 
             // Start a small local HTTP endpoint so the Browsh CLI/extension can POST
             // detected Suno cookies to the backend for persistence.
@@ -215,7 +168,7 @@ pub fn run() {
                             ))
                         });
 
-                    warp::serve(route).run(([127, 0, 0, 1], 3335)).await;
+                    warp::serve(route).run(([127, 0, 0, 1], 3337)).await;
                 });
             }
 
@@ -319,6 +272,8 @@ pub fn run() {
             commands::oauth_complete_channel,
             commands::channels_connect_all_urls,
             commands::discover_youtube_channels,
+            commands::discover_from_channel_switcher,
+            commands::connect_all_channels_one_shot,
             commands::import_discovered_channels,
             commands::refresh_all_channel_metadata,
             commands::import_from_google_account,
@@ -332,6 +287,7 @@ pub fn run() {
             commands::oauth_start_for_channel,
             commands::oauth_start_loopback,
             commands::oauth_callback,
+            commands::validate_oauth_client,
             // Jobs commands
             commands::list_jobs,
             commands::get_job,

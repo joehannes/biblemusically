@@ -338,7 +338,33 @@ pub async fn import_from_google_account(
 ) -> Res<Value> {
     use crate::commands::oauth::perform_oauth_loopback;
     let scope = "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl";
+    // Validate OAuth client credentials before starting the loopback
+    // (inline the validation logic to avoid cross-command coupling)
+    let oauth_client_label: String;
+    {
+        let client_doc = state.db.collection::<Document>("oauth_clients")
+            .find_one(doc! { "id": &oauth_client_id }).await.map_err(e)?
+            .ok_or_else(|| format!("OAuth client '{}' not found", oauth_client_id))?;
+        let client = crate::commands::oauth::bson_to_value(client_doc);
+        let mut missing = Vec::new();
+        let cid = client["client_id"].as_str().unwrap_or("");
+        if cid.trim().is_empty() { missing.push("client_id"); }
+        let csec = client["client_secret"].as_str().unwrap_or("");
+        if csec.trim().is_empty() || csec.starts_with('•') { missing.push("client_secret"); }
+        let redirect = client["redirect_uri"].as_str().unwrap_or("");
+        if redirect.trim().is_empty() { missing.push("redirect_uri"); }
+        if !missing.is_empty() {
+            let label = client["label"].as_str().unwrap_or("Unknown");
+            return Err(format!(
+                "OAuth client '{}' has missing or invalid credentials: {}. Open the 'YouTube OAuth client pool' section above and edit this client to fill in all required fields.",
+                label,
+                missing.join(", ")
+            ));
+        }
+        oauth_client_label = client["label"].as_str().unwrap_or("Unknown").to_string();
+    }
     let tokens = perform_oauth_loopback(&state.db, &oauth_client_id, Some(scope.to_string())).await?;
+    let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
     let access = tokens["access_token"].as_str().unwrap_or("").to_string();
     if access.is_empty() {
         return Err("OAuth flow did not produce an access token".into());
@@ -352,7 +378,7 @@ pub async fn import_from_google_account(
     loop {
         let mut params = vec![
             ("part".to_string(), "snippet,statistics,contentDetails".to_string()),
-            ("managedByMe".to_string(), "true".to_string()),
+            ("mine".to_string(), "true".to_string()),
             ("maxResults".to_string(), "50".to_string()),
         ];
         if !next_page_token.is_empty() {
@@ -411,11 +437,320 @@ pub async fn import_from_google_account(
         }
     }
 
+    // ── Fix 2: Persist discovered channels into the DB with the refresh token ──
+    // This means channels are immediately connected and ready for upload.
+    let channels_coll = state.db.collection::<Document>("channels");
+    let mut created_count = 0;
+    let mut existing_count = 0;
+    let mut created_channels = Vec::new();
+
+    for ch_info in &all_channels {
+        let channel_id = ch_info["channel_id"].as_str().unwrap_or("").trim().to_string();
+        if channel_id.is_empty() {
+            continue;
+        }
+        // Check if channel already exists
+        let existing = channels_coll
+            .find_one(doc! { "youtube_channel_id": &channel_id })
+            .await
+            .map_err(e)?;
+        if existing.is_some() {
+            // Update existing channel with refresh token + connected status if not already
+            if !refresh.is_empty() {
+                let _ = channels_coll
+                    .update_one(
+                        doc! { "youtube_channel_id": &channel_id },
+                        doc! { "$set": {
+                            "connected": true,
+                            "refresh_token": &refresh,
+                            "oauth_client_id": &oauth_client_id,
+                        }},
+                    )
+                    .await;
+            }
+            existing_count += 1;
+            continue;
+        }
+        // Create new channel with all fields filled
+        let name = ch_info["title"].as_str().unwrap_or("Imported Channel").to_string();
+        let sub_count = ch_info["subscriber_count"].as_i64().unwrap_or(0);
+        let avatar = ch_info["thumbnail"].as_str().unwrap_or("").to_string();
+        let new_ch = Channel {
+            id: Uuid::new_v4().to_string(),
+            name,
+            youtube_channel_id: channel_id.clone(),
+            language: "English".to_string(),
+            styles: String::new(),
+            region: String::new(),
+            refresh_token: if refresh.is_empty() { None } else { Some(refresh.clone()) },
+            connected: !refresh.is_empty(),
+            avatar: if avatar.is_empty() { None } else { Some(avatar) },
+            subscriber_count: sub_count,
+            oauth_client_id: Some(oauth_client_id.clone()),
+        };
+        let bson = bson::to_document(&new_ch).map_err(e)?;
+        channels_coll.insert_one(bson).await.map_err(e)?;
+        created_count += 1;
+        created_channels.push(serde_json::to_value(&new_ch).map_err(e)?);
+    }
+
     Ok(serde_json::json!({
         "ok": true,
         "channels": all_channels,
         "count": all_channels.len(),
+        "oauth_client_label": oauth_client_label,
+        "created_count": created_count,
+        "existing_count": existing_count,
+        "tokens_available": !refresh.is_empty(),
     }))
+}
+
+/// Locate a resource file (same as locate_resource_file in settings.rs)
+fn locate_switcher_script(name: &str) -> Option<std::path::PathBuf> {
+    // Current working directory (dev mode from project root)
+    if let Ok(cwd) = std::env::current_dir() {
+        let p = cwd.join("src-tauri").join("packaging").join(name);
+        if p.exists() { return Some(p); }
+    }
+    // TAURI_RESOURCE_DIR env var
+    if let Ok(rd) = std::env::var("TAURI_RESOURCE_DIR") {
+        let p = std::path::PathBuf::from(&rd).join(name);
+        if p.exists() { return Some(p); }
+        let p2 = std::path::PathBuf::from(&rd).join("packaging").join(name);
+        if p2.exists() { return Some(p2); }
+    }
+    // Walk up from executable
+    if let Ok(exe) = std::env::current_exe() {
+        let mut path = exe.parent();
+        while let Some(dir) = path {
+            let checks = [
+                dir.join("resources").join(name),
+                dir.join(name),
+                dir.join("packaging").join(name),
+                dir.join("_up_").join("src-tauri").join("packaging").join(name),
+                dir.join("_up_").join("packaging").join(name),
+            ];
+            for p in &checks {
+                if p.exists() { return Some(p.clone()); }
+            }
+            if let Some(parent) = dir.parent() {
+                let p2 = parent.join("src-tauri").join("packaging").join(name);
+                if p2.exists() { return Some(p2); }
+            }
+            path = dir.parent();
+        }
+    }
+    None
+}
+
+/// Connect ALL not-connected channels with a single OAuth flow.
+/// Does one OAuth loopback, gets all channels from the YouTube API,
+/// then applies the same refresh token to every existing unconnected channel.
+#[tauri::command]
+pub async fn connect_all_channels_one_shot(
+    state: State<'_, AppState>,
+    oauth_client_id: Option<String>,
+) -> Res<Value> {
+    use crate::commands::oauth::perform_oauth_loopback;
+    use futures_util::StreamExt;
+
+    // Find all unconnected channels
+    let mut cursor = state.db.collection::<Document>("channels")
+        .find(doc! { "$or": [
+            { "connected": { "$ne": true } },
+            { "refresh_token": { "$exists": false } },
+            { "refresh_token": "" },
+        ]})
+        .await.map_err(e)?;
+    let mut targets = Vec::new();
+    while let Some(Ok(d)) = cursor.next().await {
+        targets.push(bson_to_value(d));
+    }
+    if targets.is_empty() {
+        return Ok(serde_json::json!({ "ok": true, "connected_count": 0, "message": "All channels already connected" }));
+    }
+
+    // Pick an OAuth client - use provided, or auto-pick from the first target channel
+    let client = if let Some(ref forced_id) = oauth_client_id {
+        let doc = state.db.collection::<Document>("oauth_clients")
+            .find_one(doc! { "id": forced_id }).await.map_err(e)?
+            .ok_or_else(|| format!("OAuth client '{}' not found", forced_id))?;
+        Some(bson_to_value(doc))
+    } else {
+        // Try to auto-pick from the first unconnected channel
+        if let Some(ch) = targets.first() {
+            crate::jobs::pick_oauth_client(&state.db, ch, None).await
+        } else {
+            None
+        }
+    };
+
+    let client = client.ok_or_else(|| {
+        "No OAuth client configured. Add one in the 'YouTube OAuth client pool' section above.".to_string()
+    })?;
+
+    let client_label = client["label"].as_str().unwrap_or("OAuth client").to_string();
+
+    // Do a single OAuth loopback
+    let client_id_db = client["id"].as_str().unwrap_or("").to_string();
+    let tokens = perform_oauth_loopback(&state.db, &client_id_db, None).await?;
+    let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
+    let access = tokens["access_token"].as_str().unwrap_or("").to_string();
+
+    if access.is_empty() {
+        return Err("OAuth flow did not produce an access token".into());
+    }
+
+    // Call YouTube API to get info for ALL channels managed by this account
+    // so we can match them to our existing channels
+    let http = reqwest::Client::new();
+    let mut yt_channels: Vec<Value> = Vec::new();
+    let mut next_page_token = String::new();
+
+    loop {
+        let mut params = vec![
+            ("part".to_string(), "snippet".to_string()),
+            ("mine".to_string(), "true".to_string()),
+            ("maxResults".to_string(), "50".to_string()),
+        ];
+        if !next_page_token.is_empty() {
+            params.push(("pageToken".to_string(), next_page_token.clone()));
+        }
+        let resp = http.get("https://www.googleapis.com/youtube/v3/channels")
+            .query(&params)
+            .bearer_auth(&access)
+            .send().await.map_err(e)?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("YouTube API error {}: {}", status, body));
+        }
+
+        let data: Value = resp.json().await.map_err(e)?;
+        if let Some(items) = data["items"].as_array() {
+            for item in items {
+                let channel_id = item["id"].as_str().unwrap_or("").to_string();
+                let title = item["snippet"]["title"].as_str().unwrap_or("").to_string();
+                let thumbnail = item["snippet"]["thumbnails"]["default"]["url"]
+                    .as_str().unwrap_or("").to_string();
+                yt_channels.push(serde_json::json!({
+                    "channel_id": channel_id,
+                    "title": title,
+                    "thumbnail": thumbnail,
+                }));
+            }
+        }
+        next_page_token = data["nextPageToken"].as_str().unwrap_or("").to_string();
+        if next_page_token.is_empty() { break; }
+    }
+
+    // Build a lookup map by youtube_channel_id
+    let yt_lookup: std::collections::HashMap<String, Value> = yt_channels.into_iter()
+        .map(|ch| (ch["channel_id"].as_str().unwrap_or("").to_string(), ch))
+        .collect();
+
+    // Update all target channels with the refresh token
+    let channels_coll = state.db.collection::<Document>("channels");
+    let mut connected_count = 0;
+    let mut already_count = 0;
+
+    for ch in &targets {
+        let yt_id = ch["youtube_channel_id"].as_str().unwrap_or("").to_string();
+        if refresh.is_empty() { break; }
+
+        // Check if this channel is already connected
+        if ch["connected"].as_bool().unwrap_or(false) && !ch["refresh_token"].as_str().unwrap_or("").is_empty() {
+            already_count += 1;
+            continue;
+        }
+
+        // Update with the refresh token
+        let mut update = doc! {
+            "connected": true,
+            "refresh_token": &refresh,
+            "oauth_client_id": &client_id_db,
+        };
+
+        // Add metadata from YouTube API response if available
+        if !yt_id.is_empty() {
+            if let Some(yt_ch) = yt_lookup.get(&yt_id) {
+                if let Some(title) = yt_ch["title"].as_str() {
+                    update.insert("name", title);
+                }
+                let thumb = yt_ch["thumbnail"].as_str().unwrap_or("");
+                if !thumb.is_empty() {
+                    update.insert("avatar", thumb);
+                }
+            }
+        }
+
+        channels_coll
+            .update_one(
+                doc! { "id": ch["id"].as_str().unwrap_or("") },
+                doc! { "$set": update },
+            )
+            .await.map_err(e)?;
+        connected_count += 1;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "connected_count": connected_count,
+        "already_connected": already_count,
+        "total_targets": targets.len(),
+        "oauth_client_label": client_label,
+        "tokens_available": !refresh.is_empty(),
+    }))
+}
+
+#[tauri::command]
+pub async fn discover_from_channel_switcher(
+    _state: State<'_, AppState>,
+    profile_dir: Option<String>,
+    timeout_sec: Option<i32>,
+) -> Res<Value> {
+    use crate::helpers::resolve_node_executable;
+    use tokio::process::Command;
+
+    let script = locate_switcher_script("youtube-channel-switcher.js")
+        .ok_or_else(|| "youtube-channel-switcher.js not found in resources/packaging".to_string())?;
+    let node = resolve_node_executable()
+        .ok_or_else(|| "Node.js is required for channel switcher discovery. Install Node.js and npm.".to_string())?;
+
+    let timeout = timeout_sec.unwrap_or(120).max(30);
+    let profile = profile_dir.unwrap_or_default();
+
+    let mut cmd = Command::new(&node);
+    cmd.arg(script.to_string_lossy().to_string());
+    if !profile.is_empty() {
+        cmd.arg(&profile);
+    }
+    cmd.arg(timeout.to_string());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let child = cmd.spawn().map_err(|e| format!("Failed to launch channel switcher script: {}", e))?;
+    let output = child.wait_with_output().await.map_err(|e| format!("Failed to wait for script: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Try to parse stderr as JSON error
+        if let Ok(err_json) = serde_json::from_str::<Value>(&stderr) {
+            return Err(err_json["detail"].as_str().unwrap_or(&stderr).to_string());
+        }
+        return Err(format!("Channel switcher script failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let result: Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("Failed to parse script output: {} - raw: {}", e, stdout.chars().take(200).collect::<String>()))?;
+
+    if result["ok"].as_bool().unwrap_or(false) {
+        Ok(result)
+    } else {
+        Err(result["detail"].as_str().unwrap_or(result["error"].as_str().unwrap_or("Unknown error")).to_string())
+    }
 }
 
 #[tauri::command]

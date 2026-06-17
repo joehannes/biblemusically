@@ -706,6 +706,8 @@ pub async fn pick_oauth_client(
     channel: &Value,
     forced_id: Option<&str>,
 ) -> Option<Value> {
+    use futures_util::StreamExt;
+
     let coll = db.collection::<Document>("oauth_clients");
 
     if let Some(fid) = forced_id {
@@ -723,6 +725,24 @@ pub async fn pick_oauth_client(
             return Some(bson_doc_to_value(doc));
         }
     }
+
+    let mut clients = Vec::new();
+    if let Ok(mut cursor) = coll.find(doc! {}).sort(doc! { "created_at": -1 }).await {
+        while let Some(Ok(doc)) = cursor.next().await {
+            clients.push(bson_doc_to_value(doc));
+        }
+    }
+    if let Some(client) = clients.iter().find(|client| {
+        client["languages"]
+            .as_array()
+            .map_or(true, |languages| languages.is_empty())
+    }) {
+        return Some(client.clone());
+    }
+    if clients.len() == 1 {
+        return clients.into_iter().next();
+    }
+
     // Legacy settings fallback
     let s = db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.ok()??.into_iter()

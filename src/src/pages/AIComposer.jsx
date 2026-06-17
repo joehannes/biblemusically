@@ -69,7 +69,6 @@ const SUNO_GENRES = {
   "Emo Rap Reflection": "emo rap, melancholic acoustic guitar trap loop, emotional raw male vocals, deep 808 bass, dark spiritual reflection",
   "Messianic Jewish Praise": "messianic jewish worship, joyful klezmer clarinet, driving hora beat, acoustic guitar, celebratory, 130 bpm",
   "Ancient Hebrew Chants": "ancient hebrew chanting, liturgical solo male cantor, resonant temple reverb, cinematic drone pads, mystical, solemn",
-  // New presets
   "Heavenly Electro Swing Revival": "Christian EDM, Electro Swing, Playful Worship, Vintage Brass, Swing House, Happy Gospel Energy, Dunkelbunt Inspired, Joyful Basslines, Organic Samples, Piano Jazz Harmony, Faith Celebration, Male/Female Christian Vocals, Retro Soul Christian Energy, Bright Festival Feeling, Positive Spiritual Emotion, Lighthearted Worship, Warm Analog Feeling",
   "Liquid Rivers Of Grace": "Liquid Drum And Bass, Christian Atmospheric EDM, Melodic DnB, Emotional Worship, Deep Spiritual Atmosphere, Ethereal Choir Layers, Beautiful Pads, Uplifting Female Vocals, Soulful Christian Expression, Warm Sub Bass, Dreamlike Synth Textures, Hopeful Emotional Crescendo, Prayerful Energy, Heavenly Soundscape, Gentle Yet Energetic",
   "Alpine Kingdom Celebration": "Christian Folk EDM, Austrian Volksmusik Influence, Bavarian Joy, Ziehharmonika, Alpine Accordion, Playful Christian Dance, Light Folk Basslines, Organic Acoustic Energy, Happy Worship Atmosphere, European Folk Charm, Positive Male Vocals, Traditional Meets Future, Joyful Faith Celebration, Sunny Mountain Village Feeling",
@@ -104,6 +103,41 @@ const DEFAULT_CFG = {
   ],
   sections: [],
 };
+
+// ── Collapsible Section Component (supports both internal state and controlled mode) ──
+function CollapsibleSection({ title, titleIcon: TitleIcon, badge, actions, defaultOpen = true, open: controlledOpen, onToggle, children }) {
+  const isControlled = controlledOpen !== undefined;
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = isControlled ? controlledOpen : internalOpen;
+  const toggle = () => { if (isControlled && onToggle) onToggle(!open); else setInternalOpen(!open); };
+  return (
+    <Card className="overflow-hidden">
+      <div
+        className="flex items-center justify-between px-5 py-3 cursor-pointer select-none hover:bg-accent/30 transition-colors border-b border-border/40"
+        onClick={toggle}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {TitleIcon && <TitleIcon className="w-4 h-4 text-primary shrink-0" />}
+          <span className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground truncate">{title}</span>
+          {badge && <Badge variant="outline" className="text-[9px] shrink-0">{badge}</Badge>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+          {actions}
+          <button
+            onClick={(e) => { e.stopPropagation(); toggle(); }}
+            className="p-1 rounded hover:bg-muted/50 text-muted-foreground"
+            title={open ? "Collapse" : "Expand"}
+          >
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? "rotate-0" : "-rotate-90"}`} />
+          </button>
+        </div>
+      </div>
+      <div className={`transition-all duration-300 overflow-hidden ${open ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}>
+        <div className="p-5">{children}</div>
+      </div>
+    </Card>
+  );
+}
 
 export default function AIComposer() {
   const nav = useNavigate();
@@ -156,13 +190,14 @@ export default function AIComposer() {
     toast.success("Cleared generated lyrics results");
   };
 
-  // New states for the custom theme preset CRUD
+  // Master toggle: collapses/expands all config sections at once
+  const [configExpanded, setConfigExpanded] = useState(true);
+
   const [customThemePresets, setCustomThemePresets] = useState(() => {
     return JSON.parse(localStorage.getItem("studio:custom-theme-presets") || "{}");
   });
   const [newPresetName, setNewPresetName] = useState("");
 
-  // New inline editor states for Themes
   const [addLangKey, setAddLangKey] = useState("English");
   const [addLangCustom, setAddLangCustom] = useState("");
   const [addLangVal, setAddLangVal] = useState("");
@@ -170,20 +205,15 @@ export default function AIComposer() {
   const [addChanKey, setAddChanKey] = useState("");
   const [addChanVal, setAddChanVal] = useState("");
 
-  // Suno style helper expansion tracking
   const [activeSunoHelperIdx, setActiveSunoHelperIdx] = useState(null);
 
   const composerState = { cfg, chapterRef, chapterText, chapterLang, chapterBook, chapterNum };
   const { status: asStatus, lastSaved, restore: restoreDraft } = useAutoSave("ai-composer", composerState, { delay: 800 });
 
-  // Silent background save of the full cfg (targets, sections, etc.) on every change
-  // This ensures that tab-switches never lose state — restored from localStorage + backend
   useBackgroundSave("ai-composer-cfg", cfg, { delay: 600, enabled: true });
 
-  // Load bible selection if pushed from BibleSources screen + restore auto-saved composer draft
   useEffect(() => {
     (async () => {
-      // 1. Try restoring the full cfg draft (includes targets, sections, etc.)
       const savedCfg = await restore("ai-composer-cfg");
       
       let restoredCfg = null;
@@ -206,9 +236,7 @@ export default function AIComposer() {
         localStorage.removeItem("studio:bible-selection");
       }
       
-      // 2. Prefer saved cfg (includes targets) over server config over defaults
       if (savedCfg && Object.keys(savedCfg).length > 1) {
-        // If savedCfg has targets, prefer it — this preserves user-added channel blocks across tab switches
         setCfg(prev => ({ ...DEFAULT_CFG, ...savedCfg }));
         return;
       }
@@ -388,10 +416,8 @@ export default function AIComposer() {
     }
   };
 
-  // Constructed Midjourney Prompt Suffix Builder
   const mjParams = `--ar ${cfg.mj_ar} --v ${cfg.mj_v}${cfg.mj_chaos ? ` --chaos ${cfg.mj_chaos}` : ""}${cfg.mj_stylize !== 100 ? ` --stylize ${cfg.mj_stylize}` : ""}${cfg.mj_weird ? ` --weird ${cfg.mj_weird}` : ""}${cfg.mj_video ? " --video" : ""}${cfg.mj_tile ? " --tile" : ""}${cfg.mj_quality && cfg.mj_quality !== "1" ? ` --quality ${cfg.mj_quality}` : ""}${cfg.mj_no ? ` --no "${cfg.mj_no}"` : ""}${cfg.mj_seed ? ` --seed ${cfg.mj_seed}` : ""}`;
 
-  // Theme Preset Actions
   const applyThemePreset = (presetData) => {
     setCfg(prev => ({
       ...prev,
@@ -429,7 +455,6 @@ export default function AIComposer() {
     toast.success(`Theme preset "${name}" deleted`);
   };
 
-  // Add/Remove helpers for GUI Theme lists
   const handleAddPerLang = () => {
     const key = addLangKey === "custom" ? addLangCustom.trim() : addLangKey;
     const val = addLangVal.trim();
@@ -535,640 +560,446 @@ export default function AIComposer() {
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Authors a multi-channel <span className="text-mono">lyrics.json</span> from your bible chapter + themes + section ideas. Powered by OpenRouter Qwen (free tier).</p>
 
-      {/* COMPOSER WORKSPACE LAYOUT */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* LEFT COLUMN: CONTROLS & PARAMS */}
-        <Card className="p-5 space-y-5 h-fit self-start">
-          
-          {/* PROFILE / PRESETS SECTION */}
-          <div className="space-y-2">
-            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Composer Config Profiles</div>
-            <div className="flex gap-2">
-              <Input data-testid="composer-profile-name" value={profileName} onChange={e=>setProfileName(e.target.value)} placeholder="profile name" className="h-8 text-xs" />
-              <Button size="sm" className="h-8" variant="secondary" data-testid="composer-profile-save" onClick={saveProfile}><Save className="w-3.5 h-3.5" /></Button>
-              <Button size="sm" className="h-8" variant="ghost" onClick={exportProfile}><Download className="w-3.5 h-3.5" /></Button>
-              <Button size="sm" className="h-8" variant="ghost" onClick={()=>importRef.current?.click()}><Upload className="w-3.5 h-3.5" /></Button>
-              <input ref={importRef} type="file" accept=".json" className="hidden" onChange={importProfile} />
-            </div>
-            <div className="flex flex-wrap gap-1 mt-2">
-              {Object.keys(profiles).map(n => (
-                <div key={n} className="flex items-center gap-1">
-                  <button data-testid={`composer-profile-${n}`} className="text-[10px] text-mono px-2 py-0.5 bg-muted rounded hover:bg-secondary" onClick={()=>loadProfile(n)}>{n}</button>
-                  <button onClick={()=>deleteProfile(n)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-            </div>
+      {/* ── Master Toggle: Show/Hide all config sections ── */}
+      <Card className="overflow-hidden border-primary/30">
+        <div
+          className="flex items-center justify-between px-5 py-3.5 cursor-pointer select-none bg-primary/5 hover:bg-primary/10 transition-colors border-b border-primary/20"
+          onClick={() => setConfigExpanded(!configExpanded)}
+        >
+          <div className="flex items-center gap-2.5">
+            <Settings className="w-4 h-4 text-primary" />
+            <span className="text-mono text-[11px] uppercase tracking-widest font-semibold text-foreground">Composer Configuration</span>
+            <Badge variant="default" className="text-[9px] bg-primary/20 text-primary">{configExpanded ? "Showing" : "Hidden"}</Badge>
           </div>
-
-          {/* PARAMS FIELD TOGGLES */}
-          <div className="border-t border-border/50 pt-4">
-            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2.5">Field Generation Toggles</div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {Object.keys(cfg.generate).map(k => (
-                <label key={k} className="flex items-center justify-between gap-2 bg-muted/30 p-1.5 rounded border border-border/20">
-                  <span className="text-mono text-[10px]">{k}</span>
-                  <Switch data-testid={`composer-toggle-${k}`} checked={cfg.generate[k]} onCheckedChange={(v)=>setCfg({...cfg, generate:{...cfg.generate,[k]:v}})} />
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* PREMIUM THEMES SECTION (FULLY GUI CONTROLLED) */}
-          <div className="border-t border-border/50 pt-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Settings className="w-3.5 h-3.5 text-primary" /> Image & Lyrics Flavor Themes</div>
-              <Badge variant="outline" className="text-[9px]">GUI Mode</Badge>
-            </div>
-
-            {/* Prepackaged Theme Presets */}
-            <div>
-              <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Prepackaged Theme Presets</div>
-              <div className="flex flex-wrap gap-1">
-                {Object.keys(THEME_PRESETS).map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => applyThemePreset(THEME_PRESETS[p])}
-                    className="text-[9px] font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded hover:bg-primary hover:text-primary-foreground transition-colors"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom User Theme Presets CRUD */}
-            <div className="bg-muted/40 p-2 rounded-lg border border-border/40 space-y-2">
-              <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground">Save Current Theme as Preset</div>
-              <div className="flex gap-1.5">
-                <Input 
-                  placeholder="preset name..." 
-                  value={newPresetName} 
-                  onChange={e => setNewPresetName(e.target.value)} 
-                  className="h-7 text-xs" 
-                />
-                <Button size="sm" onClick={saveCustomThemePreset} className="h-7 text-xs px-2.5">Save</Button>
-              </div>
-              
-              {Object.keys(customThemePresets).length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {Object.keys(customThemePresets).map(name => (
-                    <div key={name} className="flex items-center gap-1 bg-background border border-border/60 rounded px-1.5 py-0.5">
-                      <button 
-                        type="button"
-                        onClick={() => applyThemePreset(customThemePresets[name])}
-                        className="text-[9px] font-mono text-muted-foreground hover:text-primary"
-                      >
-                        {name}
-                      </button>
-                      <button onClick={() => deleteCustomThemePreset(name)} className="text-muted-foreground hover:text-destructive"><X className="w-2.5 h-2.5" /></button>
-                    </div>
-                  ))}
-                </div>
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfigExpanded(!configExpanded); }}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 py-1 rounded hover:bg-muted/50"
+            >
+              {configExpanded ? (
+                <>Hide all config <ChevronDown className="w-3.5 h-3.5 rotate-180" /></>
+              ) : (
+                <>Show all config <ChevronDown className="w-3.5 h-3.5" /></>
               )}
-            </div>
-
-            {/* 1. Global Theme */}
-            <div className="space-y-1.5">
-              <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">1. Global Theme Flavor</div>
-              <Input 
-                data-testid="composer-theme-global" 
-                placeholder="e.g. sacred, hopeful, divine light" 
-                value={cfg.themes.global} 
-                onChange={e=>setCfg({...cfg, themes:{...cfg.themes, global:e.target.value}})} 
-                className="h-8 text-xs"
-              />
-            </div>
-
-            {/* 2. Per-Language Themes */}
-            <div className="space-y-2">
-              <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">2. Per-Language Themes</div>
-              
-              {/* Active list */}
-              <div className="space-y-1 max-h-32 overflow-y-auto scroll-thin">
-                {Object.entries(cfg.themes.per_language || {}).map(([lang, theme]) => (
-                  <div key={lang} className="flex items-center justify-between text-xs bg-muted/65 p-1.5 rounded border border-border/30">
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="secondary" className="text-[9px] font-mono">{lang}</Badge>
-                      <span className="text-muted-foreground font-mono text-[10px] truncate max-w-[130px]">{theme}</span>
-                    </div>
-                    <button type="button" onClick={() => handleRemovePerLang(lang)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
-                  </div>
-                ))}
-                {!Object.keys(cfg.themes.per_language || {}).length && (
-                  <div className="text-[10px] text-muted-foreground italic">No language themes added yet</div>
-                )}
-              </div>
-
-              {/* Add form */}
-              <div className="grid grid-cols-12 gap-1.5 bg-muted/30 p-2 rounded border border-border/10">
-                <div className="col-span-5">
-                  <Select value={addLangKey} onValueChange={setAddLangKey}>
-                    <SelectTrigger className="h-7 text-xs">
-                      <SelectValue placeholder="Lang" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LANGUAGES.map(l => (
-                        <SelectItem key={l} value={l} className="text-xs">{l}</SelectItem>
-                      ))}
-                      <SelectItem value="custom" className="text-xs">Custom...</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="col-span-5">
-                  <Input 
-                    placeholder="Theme flavor" 
-                    value={addLangVal} 
-                    onChange={e => setAddLangVal(e.target.value)}
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Button type="button" size="sm" onClick={handleAddPerLang} className="w-full h-7 px-1 text-xs"><Plus className="w-3.5 h-3.5" /></Button>
-                </div>
-                {addLangKey === "custom" && (
-                  <div className="col-span-12 mt-1">
-                    <Input 
-                      placeholder="Type custom language..." 
-                      value={addLangCustom} 
-                      onChange={e => setAddLangCustom(e.target.value)}
-                      className="h-7 text-xs"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 3. Per-Channel Themes */}
-            <div className="space-y-2">
-              <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">3. Per-Channel Themes</div>
-              
-              {/* Active list */}
-              <div className="space-y-1 max-h-32 overflow-y-auto scroll-thin">
-                {Object.entries(cfg.themes.per_channel || {}).map(([chan, theme]) => (
-                  <div key={chan} className="flex items-center justify-between text-xs bg-muted/65 p-1.5 rounded border border-border/30">
-                    <div className="flex items-center gap-1.5">
-                      <Badge className="text-[9px] font-mono bg-primary/20 text-primary hover:bg-primary/20">{chan}</Badge>
-                      <span className="text-muted-foreground font-mono text-[10px] truncate max-w-[130px]">{theme}</span>
-                    </div>
-                    <button type="button" onClick={() => handleRemovePerChan(chan)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
-                  </div>
-                ))}
-                {!Object.keys(cfg.themes.per_channel || {}).length && (
-                  <div className="text-[10px] text-muted-foreground italic">No channel themes added yet</div>
-                )}
-              </div>
-
-              {/* Add form */}
-              <div className="grid grid-cols-12 gap-1.5 bg-muted/30 p-2 rounded border border-border/10">
-                <div className="col-span-5">
-                  <Input 
-                    placeholder="Channel (e.g. DnB)" 
-                    value={addChanKey} 
-                    onChange={e => setAddChanKey(e.target.value)}
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="col-span-5">
-                  <Input 
-                    placeholder="Theme flavor" 
-                    value={addChanVal} 
-                    onChange={e => setAddChanVal(e.target.value)}
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Button type="button" size="sm" onClick={handleAddPerChan} className="w-full h-7 px-1 text-xs"><Plus className="w-3.5 h-3.5" /></Button>
-                </div>
-              </div>
-            </div>
+            </button>
           </div>
+        </div>
+        <div className={`transition-all duration-300 overflow-hidden ${configExpanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}>
+          <div className="p-5 space-y-5">
 
-          {/* MIDJOURNEY ADVANCED IMAGE & VIDEO PARAMETERS */}
-          <div className="border-t border-border/50 pt-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-                <Film className="w-3.5 h-3.5 text-primary" /> Image & Video Options
+        <CollapsibleSection title="Composer Config Profiles" actions={
+          <input ref={importRef} type="file" accept=".json" className="hidden" onChange={importProfile} />
+        }>
+          <div className="flex gap-2 mb-2">
+            <Input data-testid="composer-profile-name" value={profileName} onChange={e=>setProfileName(e.target.value)} placeholder="profile name" className="h-8 text-xs flex-1" />
+            <Button size="sm" className="h-8" variant="secondary" data-testid="composer-profile-save" onClick={saveProfile}><Save className="w-3.5 h-3.5" /></Button>
+            <Button size="sm" className="h-8" variant="ghost" onClick={exportProfile}><Download className="w-3.5 h-3.5" /></Button>
+            <Button size="sm" className="h-8" variant="ghost" onClick={()=>importRef.current?.click()}><Upload className="w-3.5 h-3.5" /></Button>
+          </div>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {Object.keys(profiles).map(n => (
+              <div key={n} className="flex items-center gap-1">
+                <button data-testid={`composer-profile-${n}`} className="text-[10px] text-mono px-2 py-0.5 bg-muted rounded hover:bg-secondary" onClick={()=>loadProfile(n)}>{n}</button>
+                <button onClick={()=>deleteProfile(n)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
               </div>
-              <Badge variant="secondary" className="text-[9px]">v7 & v8.1 Ready</Badge>
-            </div>
+            ))}
+          </div>
+        </CollapsibleSection>
 
-            {/* Mode Toggle: Image vs Video */}
-            <div className="flex items-center justify-between bg-muted/40 p-2.5 rounded-lg border border-border/40">
-              <div className="space-y-0.5">
-                <div className="text-xs font-semibold flex items-center gap-1.5">
-                  {cfg.mj_video ? <Film className="w-3.5 h-3.5 text-primary" /> : <Image className="w-3.5 h-3.5 text-primary" />}
-                  {cfg.mj_video ? "Midjourney Video Mode" : "Midjourney Image Mode"}
-                </div>
-                <div className="text-[9px] text-muted-foreground">Generates a video process or tileable flat canvas</div>
-              </div>
-              <Switch 
-                checked={cfg.mj_video} 
-                onCheckedChange={(val) => setCfg(prev => ({ ...prev, mj_video: val }))}
-              />
-            </div>
+        <CollapsibleSection title="Field Generation Toggles" badge="which fields to generate">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-xs">
+            {Object.keys(cfg.generate).map(k => (
+              <label key={k} className="flex items-center justify-between gap-2 bg-muted/30 p-1.5 rounded border border-border/20">
+                <span className="text-mono text-[10px]">{k}</span>
+                <Switch data-testid={`composer-toggle-${k}`} checked={cfg.generate[k]} onCheckedChange={(v)=>setCfg({...cfg, generate:{...cfg.generate,[k]:v}})} />
+              </label>
+            ))}
+          </div>
+        </CollapsibleSection>
 
-            {/* Tile Pattern switch */}
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-mono text-[10px] text-muted-foreground">Tileable Seamless Pattern (--tile)</span>
-              <Switch 
-                checked={cfg.mj_tile} 
-                onCheckedChange={(val) => setCfg(prev => ({ ...prev, mj_tile: val }))}
-              />
-            </div>
-
-            {/* Model Version Select (Includes Latest 7 and 8.1!) */}
-            <div>
-              <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Model Version</div>
-              <div className="flex flex-wrap gap-1.5">
-                {["8.1", "7", "6.1", "6.0", "5.2", "niji 6"].map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setCfg({ ...cfg, mj_v: v })}
-                    className={`text-xs px-2 py-0.5 rounded border transition-all ${
-                      cfg.mj_v === v
-                        ? "bg-primary text-primary-foreground border-primary font-medium"
-                        : "bg-muted hover:bg-secondary border-border text-muted-foreground"
-                    }`}
-                  >
-                    {v === "8.1" || v === "7" ? `✨ ${v}` : v}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Aspect Ratio Buttons */}
-            <div>
-              <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Aspect Ratio</div>
-              <div className="flex flex-wrap gap-1.5">
-                {["16:9", "9:16", "1:1", "4:5"].map((ar) => (
-                  <button
-                    key={ar}
-                    type="button"
-                    onClick={() => setCfg({ ...cfg, mj_ar: ar })}
-                    className={`text-xs px-2.5 py-1 rounded border transition-all ${
-                      cfg.mj_ar === ar
-                        ? "bg-primary text-primary-foreground border-primary font-medium"
-                        : "bg-muted hover:bg-secondary border-border text-muted-foreground"
-                    }`}
-                  >
-                    {ar} {ar === "16:9" ? "🖥️" : ar === "9:16" ? "📱" : ar === "1:1" ? "🔲" : "📸"}
-                  </button>
-                ))}
-                <Input
-                  className="h-7 w-20 text-xs text-mono"
-                  placeholder="Custom"
-                  value={cfg.mj_ar}
-                  onChange={(e) => setCfg({ ...cfg, mj_ar: e.target.value })}
-                />
-              </div>
-            </div>
-
-            {/* Render Quality Selection */}
-            <div>
-              <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1">Rendering Quality (--quality)</div>
-              <Select 
-                value={cfg.mj_quality || "1"} 
-                onValueChange={(val) => setCfg(prev => ({ ...prev, mj_quality: val }))}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select quality..." />
-                </SelectTrigger>
-                <SelectContent className="text-xs">
-                  <SelectItem value="0.25">0.25 (Fast/Rough drafts)</SelectItem>
-                  <SelectItem value="0.5">0.5 (Standard speed draft)</SelectItem>
-                  <SelectItem value="1">1.0 (Full standard beauty)</SelectItem>
-                  <SelectItem value="2">2.0 (Double detailed beauty)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Seed and Negative Prompts inputs */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="space-y-1">
-                <span className="text-[9px] text-mono uppercase text-muted-foreground">Seed Value (--seed)</span>
-                <Input 
-                  type="number"
-                  placeholder="e.g. 1948" 
-                  value={cfg.mj_seed || ""}
-                  onChange={e => setCfg(prev => ({ ...prev, mj_seed: e.target.value }))}
-                  className="h-7 text-xs font-mono"
-                />
-              </div>
-              <div className="space-y-1">
-                <span className="text-[9px] text-mono uppercase text-muted-foreground">Negative (--no)</span>
-                <Input 
-                  placeholder="e.g. text, watermark" 
-                  value={cfg.mj_no || ""}
-                  onChange={e => setCfg(prev => ({ ...prev, mj_no: e.target.value }))}
-                  className="h-7 text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Parameters Sliders with Descriptions */}
-            <div className="space-y-3.5">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Chaos: <span className="font-semibold text-primary">{cfg.mj_chaos}</span></span>
-                  <span className="text-[9px] text-muted-foreground italic">Variety & surprise</span>
-                </div>
-                <Slider value={[cfg.mj_chaos]} onValueChange={(v) => setCfg({ ...cfg, mj_chaos: v[0] })} max={100} step={1} className="py-1" />
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Stylize: <span className="font-semibold text-primary">{cfg.mj_stylize}</span></span>
-                  <span className="text-[9px] text-muted-foreground italic">Artistic flare</span>
-                </div>
-                <Slider value={[cfg.mj_stylize]} onValueChange={(v) => setCfg({ ...cfg, mj_stylize: v[0] })} max={1000} step={10} className="py-1" />
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Weird: <span className="font-semibold text-primary">{cfg.mj_weird}</span></span>
-                  <span className="text-[9px] text-muted-foreground italic">Quirky & unusual</span>
-                </div>
-                <Slider value={[cfg.mj_weird]} onValueChange={(v) => setCfg({ ...cfg, mj_weird: v[0] })} max={3000} step={50} className="py-1" />
-              </div>
-            </div>
-
-            {/* Live Prompt Suffix Preview Box */}
-            <div className="bg-muted/70 rounded-lg p-2.5 border border-border/40 text-xs">
-              <div className="flex items-center justify-between text-muted-foreground text-[9px] uppercase tracking-wider mb-1">
-                <span className="flex items-center gap-1 font-mono"><Eye className="w-3 h-3" /> Live Midjourney Suffix</span>
+        <CollapsibleSection title="Image & Lyrics Flavor Themes" badge="GUI Mode" titleIcon={Settings}>
+          {/* Prepackaged Theme Presets */}
+          <div className="mb-4">
+            <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Prepackaged Theme Presets</div>
+            <div className="flex flex-wrap gap-1">
+              {Object.keys(THEME_PRESETS).map(p => (
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(mjParams);
-                    toast.success("Suffix copied to clipboard!");
-                  }}
-                  className="hover:text-primary transition-colors flex items-center gap-1 font-mono text-[9px]"
+                  key={p}
+                  type="button"
+                  onClick={() => applyThemePreset(THEME_PRESETS[p])}
+                  className="text-[9px] font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded hover:bg-primary hover:text-primary-foreground transition-colors"
                 >
-                  <Copy className="w-3 h-3" /> Copy
+                  {p}
                 </button>
-              </div>
-              <div className="font-mono text-[10px] text-primary break-all leading-tight bg-background/50 p-1.5 rounded border border-border/20">
-                {mjParams}
-              </div>
-            </div>
-          </div>
-
-          {/* STYLE KEYWORDS & STYLE PACKS */}
-          <div className="border-t border-border/50 pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Style Keywords & Packs</div>
-              <button onClick={clearKw} className="text-[9px] font-mono text-muted-foreground hover:text-destructive flex items-center gap-0.5"><X className="w-2.5 h-2.5" /> Clear All</button>
-            </div>
-            
-            {/* Custom Keyword Input */}
-            <div className="flex gap-2">
-              <Input
-                placeholder="type custom keyword (e.g. 'cinematic light')"
-                value={customKw}
-                onChange={(e) => setCustomKw(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCustomKw();
-                  }
-                }}
-                className="h-8 text-xs"
-              />
-              <Button size="sm" className="h-8 text-xs" onClick={addCustomKw}>Add</Button>
-            </div>
-
-            <div>
-              <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Presets Packs (click to add)</div>
-              <div className="flex flex-wrap gap-1">
-                {Object.keys(STYLE_PACKS).map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    data-testid={`composer-pack-${p}`}
-                    onClick={() => applyPack(p)}
-                    className="text-[9px] font-mono px-2 py-0.5 bg-muted rounded hover:bg-primary hover:text-primary-foreground border border-border/40 transition-colors"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Active Prompt Suffix Keywords</div>
-              <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto scroll-thin">
-                {(cfg.style_keywords || []).map((k, i) => (
-                  <button
-                    key={k + i}
-                    type="button"
-                    onClick={() => toggleKw(k)}
-                    className="text-[10px] text-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded flex items-center gap-1 hover:bg-destructive hover:text-destructive-foreground hover:border-destructive transition-all"
-                  >
-                    {k}
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                ))}
-                {!(cfg.style_keywords || []).length && (
-                  <span className="text-[10px] text-muted-foreground italic">No style keywords active</span>
-                )}
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* RIGHT — chapter + sections + targets + output */}
-        <div className="lg:col-span-2 space-y-5">
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Bible chapter ({chapterRef || "no ref"})</div>
-              <Button size="sm" variant="ghost" onClick={()=>nav("/bible")}>Pick from Bible Sources <ArrowRight className="w-3 h-3 ml-1" /></Button>
-            </div>
-            <Textarea data-testid="composer-chapter-textarea" ref={taRef} rows={10} value={chapterText} onChange={e=>setChapterText(e.target.value)} onSelect={onTextSelect}
-              placeholder="Paste a chapter or use 'Bible Sources' to load one. Then select text below and click Add Section." className="text-sm leading-relaxed" />
-            <div className="mt-3 flex gap-2 items-center">
-              <Input data-testid="composer-section-idea" placeholder="image idea for this section (e.g. 'sun rising over Jordan')" value={sectionIdea} onChange={e=>setSectionIdea(e.target.value)} />
-              <Button size="sm" data-testid="composer-add-section" onClick={addSection}><Plus className="w-3 h-3 mr-1" />Add</Button>
-            </div>
-          </Card>
-
-          <Card className="p-5">
-            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">Authored sections ({(cfg.sections||[]).length})</div>
-            <div className="space-y-2 max-h-48 overflow-auto scroll-thin">
-              {(cfg.sections||[]).map((s, i) => (
-                <div key={i} data-testid={`composer-section-${i}`} className="flex items-start gap-2 text-sm border border-border rounded p-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="truncate font-medium">{s.text}</div>
-                    {s.idea && <div className="text-xs text-primary italic">{s.idea}</div>}
-                  </div>
-                  <button onClick={()=>removeSection(i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
-                </div>
               ))}
-              {!cfg.sections?.length && <div className="text-xs text-muted-foreground">No sections yet — select text above and add.</div>}
             </div>
-          </Card>
+          </div>
 
-          {/* DYNAMIC TARGETS (LANGUAGE × SUNO AI STYLE) */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                <Music className="w-4 h-4 text-primary animate-pulse" /> Targets (Channel × Language × Suno AI Styles)
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={syncTargetsFromChannels}>Sync from Channels</Button>
-                <Button size="sm" variant="secondary" data-testid="composer-add-target" onClick={addTarget}><Plus className="w-3 h-3 mr-1" />Add Channel</Button>
-              </div>
+          {/* Custom User Theme Presets CRUD */}
+          <div className="bg-muted/40 p-2 rounded-lg border border-border/40 space-y-2 mb-4">
+            <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground">Save Current Theme as Preset</div>
+            <div className="flex gap-1.5">
+              <Input placeholder="preset name..." value={newPresetName} onChange={e => setNewPresetName(e.target.value)} className="h-7 text-xs" />
+              <Button size="sm" onClick={saveCustomThemePreset} className="h-7 text-xs px-2.5">Save</Button>
             </div>
-            
-            <div className="space-y-3.5">
-              {(cfg.targets||[]).map((t, i) => {
-                const isCustomLang = !LANGUAGES.includes(t.language);
-                return (
-                  <div key={i} className="border border-border/80 rounded-xl p-3.5 bg-muted/20 space-y-3 relative group">
-                    <div className="absolute top-2.5 right-2.5">
-                      <button onClick={()=>removeTarget(i)} className="text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-
-                    <div className="grid md:grid-cols-12 gap-3 items-end">
-                      {/* Language Select Dropdown */}
-                      <div className="md:col-span-3 space-y-1">
-                        <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Language</span>
-                        <Select 
-                          value={isCustomLang && t.language ? "custom" : t.language} 
-                          onValueChange={(val) => {
-                            if (val === "custom") {
-                              updateTarget(i, "language", "");
-                            } else {
-                              updateTarget(i, "language", val);
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="h-8 text-xs bg-background">
-                            <SelectValue placeholder="Select Language" />
-                          </SelectTrigger>
-                          <SelectContent className="text-xs">
-                            {LANGUAGES.map(lang => (
-                              <SelectItem key={lang} value={lang} className="text-xs">{lang}</SelectItem>
-                            ))}
-                            <SelectItem value="custom" className="text-xs font-semibold">Custom (Type below)...</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Suno AI Styles Input */}
-                      <div className="md:col-span-7 space-y-1">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground flex items-center gap-1">Suno AI Style CSV</span>
-                          <button 
-                            type="button" 
-                            onClick={() => setActiveSunoHelperIdx(activeSunoHelperIdx === i ? null : i)}
-                            className="text-[9px] text-primary font-semibold hover:underline flex items-center gap-0.5"
-                          >
-                            <Sparkles className="w-2.5 h-2.5" /> 
-                            {activeSunoHelperIdx === i ? "Hide Genre Mixes" : "Genre Presets Helper"}
-                          </button>
-                        </div>
-                        <Input 
-                          data-testid={`composer-target-style-${i}`} 
-                          value={t.styles} 
-                          onChange={e=>updateTarget(i,"styles",e.target.value)} 
-                          placeholder="e.g. messianic liquid drum and bass, 174 bpm" 
-                          className="h-8 text-xs bg-background" 
-                        />
-                      </div>
-
-                      {/* Channel title trigger display */}
-                      <div className="md:col-span-2 text-center">
-                        <Badge variant="outline" className="h-8 font-mono text-[9px] block text-center truncate pt-2">Channel {i+1}</Badge>
-                      </div>
-                    </div>
-
-                    {/* Conditional Custom Language input */}
-                    {isCustomLang && (
-                      <div className="w-1/2 space-y-1">
-                        <span className="text-[9px] text-mono uppercase text-muted-foreground">Type Custom Language</span>
-                        <Input 
-                          value={t.language}
-                          onChange={e => updateTarget(i, "language", e.target.value)}
-                          placeholder="e.g. Yiddish"
-                          className="h-7 text-xs"
-                        />
-                      </div>
-                    )}
-
-                    {/* COLLAPSIBLE SUNO GENRE PRESETS HELPER */}
-                    {activeSunoHelperIdx === i && (
-                      <div className="bg-background border border-border rounded-lg p-3 mt-2 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                        <div className="flex justify-between items-center text-[10px] text-mono uppercase tracking-widest text-muted-foreground border-b border-border/40 pb-1.5">
-                          <span className="flex items-center gap-1 font-semibold text-primary"><Music className="w-3 h-3" /> Suno Style Prepackaged Genre Mixes</span>
-                          <span>Click to Apply</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto scroll-thin">
-                          {Object.entries(SUNO_GENRES).map(([genreName, csvContent]) => renderSunoGenreButton(i, genreName, csvContent))}
-                        </div>
-                      </div>
-                    )}
+            {Object.keys(customThemePresets).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {Object.keys(customThemePresets).map(name => (
+                  <div key={name} className="flex items-center gap-1 bg-background border border-border/60 rounded px-1.5 py-0.5">
+                    <button type="button" onClick={() => applyThemePreset(customThemePresets[name])} className="text-[9px] font-mono text-muted-foreground hover:text-primary">{name}</button>
+                    <button onClick={() => deleteCustomThemePreset(name)} className="text-muted-foreground hover:text-destructive"><X className="w-2.5 h-2.5" /></button>
                   </div>
-                );
-              })}
-              {!cfg.targets?.length && (
-                <div className="text-xs text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">No targets added. Click 'Add Channel' above.</div>
-              )}
-            </div>
-          </Card>
-
-          {/* GENERATED RESULTS WORKSPACE */}
-          <Card className="p-5">
-            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3 flex items-center justify-between gap-3">
-              <span>Generated Results ({items.length})</span>
-              <div className="flex items-center gap-2">
-                {restoredItems && <Badge variant="outline" className="text-[9px] text-foreground">Restored from previous session</Badge>}
-                {items.length > 0 && <span className="text-[9px] text-emerald-500 font-mono">Ready to import</span>}
-              </div>
-            </div>
-            {items.length > 0 ? (
-              <div className="space-y-4">
-                <div className="space-y-2 max-h-80 overflow-y-auto scroll-thin">
-                  {items.map((item, idx) => (
-                    <div key={idx} className="border border-border/80 rounded-lg p-3 bg-muted/20 text-xs space-y-2">
-                      <div className="flex justify-between items-center font-bold">
-                        <span className="text-primary truncate max-w-[200px]">{item.title}</span>
-                        <Badge variant="secondary" className="font-mono text-[9px]">{item.language}</Badge>
-                      </div>
-                      {item.styles && <div className="text-muted-foreground italic text-[10px]">Style: {item.styles}</div>}
-                      <div className="max-h-24 overflow-y-auto bg-background/50 border border-border/30 rounded p-1.5 text-mono font-mono text-[9px] leading-relaxed scroll-thin">
-                        {Array.isArray(item.lyrics) ? item.lyrics.map((l, lIdx) => (
-                          <div key={lIdx} className="mb-1">
-                            <span className="text-primary/75 font-semibold">[{l.section}]</span> {l.lines}
-                          </div>
-                        )) : (
-                          <div className="text-muted-foreground italic">{String(item.lyrics || "")}</div>
-                        )}
-                      </div>
-                      {item.image_prompt && (
-                        <div className="p-1.5 bg-background border border-border/30 rounded text-[9px] font-mono break-all text-muted-foreground">
-                          <span className="font-semibold text-primary">Prompt:</span> {item.image_prompt}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <Button size="sm" variant="ghost" onClick={downloadJson}><Download className="w-3.5 h-3.5 mr-2" />Save as JSON file</Button>
-                  <Button size="sm" variant="secondary" onClick={clearGenerated}><X className="w-3.5 h-3.5 mr-2" />Clear results</Button>
-                  <Button size="sm" onClick={sendToLyrics}><ArrowRight className="w-3.5 h-3.5 mr-2" />Send to Studio Lyrics Editor</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border rounded-lg">
-                <Bot className="w-8 h-8 mx-auto text-muted-foreground/60 mb-2" />
-                No results generated yet. Load bible text and click 'Generate' above.
+                ))}
               </div>
             )}
-          </Card>
-        </div>
-      </div>
+          </div>
+
+          {/* 1. Global Theme */}
+          <div className="mb-4">
+            <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">1. Global Theme Flavor</div>
+            <Input data-testid="composer-theme-global" placeholder="e.g. sacred, hopeful, divine light" value={cfg.themes.global} onChange={e=>setCfg({...cfg, themes:{...cfg.themes, global:e.target.value}})} className="h-8 text-xs max-w-lg" />
+          </div>
+
+          {/* 2. Per-Language Themes */}
+          <div className="mb-4">
+            <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">2. Per-Language Themes</div>
+            <div className="space-y-1 max-h-32 overflow-y-auto scroll-thin mb-2">
+              {Object.entries(cfg.themes.per_language || {}).map(([lang, theme]) => (
+                <div key={lang} className="flex items-center justify-between text-xs bg-muted/65 p-1.5 rounded border border-border/30 max-w-md">
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="secondary" className="text-[9px] font-mono">{lang}</Badge>
+                    <span className="text-muted-foreground font-mono text-[10px] truncate max-w-[130px]">{theme}</span>
+                  </div>
+                  <button type="button" onClick={() => handleRemovePerLang(lang)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+              {!Object.keys(cfg.themes.per_language || {}).length && <div className="text-[10px] text-muted-foreground italic">No language themes added yet</div>}
+            </div>
+            <div className="grid grid-cols-12 gap-1.5 bg-muted/30 p-2 rounded border border-border/10 max-w-lg">
+              <div className="col-span-5">
+                <Select value={addLangKey} onValueChange={setAddLangKey}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Lang" /></SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGES.map(l => (<SelectItem key={l} value={l} className="text-xs">{l}</SelectItem>))}
+                    <SelectItem value="custom" className="text-xs">Custom...</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-5">
+                <Input placeholder="Theme flavor" value={addLangVal} onChange={e => setAddLangVal(e.target.value)} className="h-7 text-xs" />
+              </div>
+              <div className="col-span-2">
+                <Button type="button" size="sm" onClick={handleAddPerLang} className="w-full h-7 px-1 text-xs"><Plus className="w-3.5 h-3.5" /></Button>
+              </div>
+              {addLangKey === "custom" && (
+                <div className="col-span-12 mt-1">
+                  <Input placeholder="Type custom language..." value={addLangCustom} onChange={e => setAddLangCustom(e.target.value)} className="h-7 text-xs" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 3. Per-Channel Themes */}
+          <div className="mb-2">
+            <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">3. Per-Channel Themes</div>
+            <div className="space-y-1 max-h-32 overflow-y-auto scroll-thin mb-2">
+              {Object.entries(cfg.themes.per_channel || {}).map(([chan, theme]) => (
+                <div key={chan} className="flex items-center justify-between text-xs bg-muted/65 p-1.5 rounded border border-border/30 max-w-md">
+                  <div className="flex items-center gap-1.5">
+                    <Badge className="text-[9px] font-mono bg-primary/20 text-primary hover:bg-primary/20">{chan}</Badge>
+                    <span className="text-muted-foreground font-mono text-[10px] truncate max-w-[130px]">{theme}</span>
+                  </div>
+                  <button type="button" onClick={() => handleRemovePerChan(chan)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+              {!Object.keys(cfg.themes.per_channel || {}).length && <div className="text-[10px] text-muted-foreground italic">No channel themes added yet</div>}
+            </div>
+            <div className="grid grid-cols-12 gap-1.5 bg-muted/30 p-2 rounded border border-border/10 max-w-lg">
+              <div className="col-span-5"><Input placeholder="Channel (e.g. DnB)" value={addChanKey} onChange={e => setAddChanKey(e.target.value)} className="h-7 text-xs" /></div>
+              <div className="col-span-5"><Input placeholder="Theme flavor" value={addChanVal} onChange={e => setAddChanVal(e.target.value)} className="h-7 text-xs" /></div>
+              <div className="col-span-2"><Button type="button" size="sm" onClick={handleAddPerChan} className="w-full h-7 px-1 text-xs"><Plus className="w-3.5 h-3.5" /></Button></div>
+            </div>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Image & Video Options" badge="v7 & v8.1 Ready" titleIcon={Film}>
+          {/* Mode Toggle: Image vs Video */}
+          <div className="flex items-center justify-between bg-muted/40 p-2.5 rounded-lg border border-border/40 mb-4">
+            <div className="space-y-0.5">
+              <div className="text-xs font-semibold flex items-center gap-1.5">
+                {cfg.mj_video ? <Film className="w-3.5 h-3.5 text-primary" /> : <Image className="w-3.5 h-3.5 text-primary" />}
+                {cfg.mj_video ? "Midjourney Video Mode" : "Midjourney Image Mode"}
+              </div>
+              <div className="text-[9px] text-muted-foreground">Generates a video process or tileable flat canvas</div>
+            </div>
+            <Switch checked={cfg.mj_video} onCheckedChange={(val) => setCfg(prev => ({ ...prev, mj_video: val }))} />
+          </div>
+
+          <div className="flex items-center justify-between text-xs mb-4">
+            <span className="font-mono text-[10px] text-muted-foreground">Tileable Seamless Pattern (--tile)</span>
+            <Switch checked={cfg.mj_tile} onCheckedChange={(val) => setCfg(prev => ({ ...prev, mj_tile: val }))} />
+          </div>
+
+          <div className="mb-4">
+            <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Model Version</div>
+            <div className="flex flex-wrap gap-1.5">
+              {["8.1", "7", "6.1", "6.0", "5.2", "niji 6"].map((v) => (
+                <button key={v} type="button" onClick={() => setCfg({ ...cfg, mj_v: v })}
+                  className={`text-xs px-2 py-0.5 rounded border transition-all ${cfg.mj_v === v ? "bg-primary text-primary-foreground border-primary font-medium" : "bg-muted hover:bg-secondary border-border text-muted-foreground"}`}>
+                  {v === "8.1" || v === "7" ? `✨ ${v}` : v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Aspect Ratio</div>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {["16:9", "9:16", "1:1", "4:5"].map((ar) => (
+                <button key={ar} type="button" onClick={() => setCfg({ ...cfg, mj_ar: ar })}
+                  className={`text-xs px-2.5 py-1 rounded border transition-all ${cfg.mj_ar === ar ? "bg-primary text-primary-foreground border-primary font-medium" : "bg-muted hover:bg-secondary border-border text-muted-foreground"}`}>
+                  {ar} {ar === "16:9" ? "🖥️" : ar === "9:16" ? "📱" : ar === "1:1" ? "🔲" : "📸"}
+                </button>
+              ))}
+              <Input className="h-7 w-20 text-xs text-mono" placeholder="Custom" value={cfg.mj_ar} onChange={(e) => setCfg({ ...cfg, mj_ar: e.target.value })} />
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground mb-1">Rendering Quality (--quality)</div>
+            <Select value={cfg.mj_quality || "1"} onValueChange={(val) => setCfg(prev => ({ ...prev, mj_quality: val }))}>
+              <SelectTrigger className="h-8 text-xs max-w-xs"><SelectValue placeholder="Select quality..." /></SelectTrigger>
+              <SelectContent className="text-xs">
+                <SelectItem value="0.25">0.25 (Fast/Rough drafts)</SelectItem>
+                <SelectItem value="0.5">0.5 (Standard speed draft)</SelectItem>
+                <SelectItem value="1">1.0 (Full standard beauty)</SelectItem>
+                <SelectItem value="2">2.0 (Double detailed beauty)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <div className="space-y-1">
+              <span className="text-[9px] text-mono uppercase text-muted-foreground">Seed Value (--seed)</span>
+              <Input type="number" placeholder="e.g. 1948" value={cfg.mj_seed || ""} onChange={e => setCfg(prev => ({ ...prev, mj_seed: e.target.value }))} className="h-7 text-xs font-mono" />
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] text-mono uppercase text-muted-foreground">Negative (--no)</span>
+              <Input placeholder="e.g. text, watermark" value={cfg.mj_no || ""} onChange={e => setCfg(prev => ({ ...prev, mj_no: e.target.value }))} className="h-7 text-xs" />
+            </div>
+          </div>
+
+          <div className="space-y-3.5 mb-4">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Chaos: <span className="font-semibold text-primary">{cfg.mj_chaos}</span></span>
+                <span className="text-[9px] text-muted-foreground italic">Variety & surprise</span>
+              </div>
+              <Slider value={[cfg.mj_chaos]} onValueChange={(v) => setCfg({ ...cfg, mj_chaos: v[0] })} max={100} step={1} className="py-1 max-w-md" />
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Stylize: <span className="font-semibold text-primary">{cfg.mj_stylize}</span></span>
+                <span className="text-[9px] text-muted-foreground italic">Artistic flare</span>
+              </div>
+              <Slider value={[cfg.mj_stylize]} onValueChange={(v) => setCfg({ ...cfg, mj_stylize: v[0] })} max={1000} step={10} className="py-1 max-w-md" />
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Weird: <span className="font-semibold text-primary">{cfg.mj_weird}</span></span>
+                <span className="text-[9px] text-muted-foreground italic">Quirky & unusual</span>
+              </div>
+              <Slider value={[cfg.mj_weird]} onValueChange={(v) => setCfg({ ...cfg, mj_weird: v[0] })} max={3000} step={50} className="py-1 max-w-md" />
+            </div>
+          </div>
+
+          <div className="bg-muted/70 rounded-lg p-2.5 border border-border/40 text-xs">
+            <div className="flex items-center justify-between text-muted-foreground text-[9px] uppercase tracking-wider mb-1">
+              <span className="flex items-center gap-1 font-mono"><Eye className="w-3 h-3" /> Live Midjourney Suffix</span>
+              <button onClick={() => { navigator.clipboard.writeText(mjParams); toast.success("Suffix copied to clipboard!"); }} className="hover:text-primary transition-colors flex items-center gap-1 font-mono text-[9px]">
+                <Copy className="w-3 h-3" /> Copy
+              </button>
+            </div>
+            <div className="font-mono text-[10px] text-primary break-all leading-tight bg-background/50 p-1.5 rounded border border-border/20">{mjParams}</div>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Style Keywords & Packs" actions={
+          <button onClick={clearKw} className="text-[9px] font-mono text-muted-foreground hover:text-destructive flex items-center gap-0.5"><X className="w-2.5 h-2.5" /> Clear All</button>
+        }>
+          <div className="flex gap-2 mb-3">
+            <Input placeholder="type custom keyword (e.g. 'cinematic light')" value={customKw} onChange={(e) => setCustomKw(e.target.value)} className="h-8 text-xs"
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomKw(); } }} />
+            <Button size="sm" className="h-8 text-xs" onClick={addCustomKw}>Add</Button>
+          </div>
+          <div className="mb-3">
+            <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Presets Packs (click to add)</div>
+            <div className="flex flex-wrap gap-1">
+              {Object.keys(STYLE_PACKS).map(p => (
+                <button key={p} type="button" data-testid={`composer-pack-${p}`} onClick={() => applyPack(p)}
+                  className="text-[9px] font-mono px-2 py-0.5 bg-muted rounded hover:bg-primary hover:text-primary-foreground border border-border/40 transition-colors">{p}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Active Prompt Suffix Keywords</div>
+            <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto scroll-thin">
+              {(cfg.style_keywords || []).map((k, i) => (
+                <button key={k + i} type="button" onClick={() => toggleKw(k)}
+                  className="text-[10px] text-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded flex items-center gap-1 hover:bg-destructive hover:text-destructive-foreground hover:border-destructive transition-all">
+                  {k} <X className="w-2.5 h-2.5" />
+                </button>
+              ))}
+              {!(cfg.style_keywords || []).length && <span className="text-[10px] text-muted-foreground italic">No style keywords active</span>}
+            </div>
+          </div>
+        </CollapsibleSection>
+
+          </div>{/* end master content */}
+        </div>{/* end master collapse div */}
+      </Card>{/* end master toggle card */}
+
+        {/* Bible chapter section */}
+        <CollapsibleSection title={`Bible chapter (${chapterRef || "no ref"})`} actions={
+          <Button size="sm" variant="ghost" onClick={()=>nav("/bible")}>Pick from Bible Sources <ArrowRight className="w-3 h-3 ml-1" /></Button>
+        }>
+          <Textarea data-testid="composer-chapter-textarea" ref={taRef} rows={10} value={chapterText} onChange={e=>setChapterText(e.target.value)} onSelect={onTextSelect}
+            placeholder="Paste a chapter or use 'Bible Sources' to load one. Then select text below and click Add Section." className="text-sm leading-relaxed" />
+          <div className="mt-3 flex gap-2 items-center">
+            <Input data-testid="composer-section-idea" placeholder="image idea for this section (e.g. 'sun rising over Jordan')" value={sectionIdea} onChange={e=>setSectionIdea(e.target.value)} />
+            <Button size="sm" data-testid="composer-add-section" onClick={addSection}><Plus className="w-3 h-3 mr-1" />Add</Button>
+          </div>
+        </CollapsibleSection>
+
+        {/* Authored sections */}
+        <CollapsibleSection title={`Authored sections (${(cfg.sections||[]).length})`}>
+          <div className="space-y-2 max-h-48 overflow-auto scroll-thin">
+            {(cfg.sections||[]).map((s, i) => (
+              <div key={i} data-testid={`composer-section-${i}`} className="flex items-start gap-2 text-sm border border-border rounded p-2">
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-medium">{s.text}</div>
+                  {s.idea && <div className="text-xs text-primary italic">{s.idea}</div>}
+                </div>
+                <button onClick={()=>removeSection(i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
+              </div>
+            ))}
+            {!cfg.sections?.length && <div className="text-xs text-muted-foreground">No sections yet — select text above and add.</div>}
+          </div>
+        </CollapsibleSection>
+
+        {/* DYNAMIC TARGETS (LANGUAGE × SUNO AI STYLE) */}
+        <CollapsibleSection title="Targets (Channel × Language × Suno AI Styles)" badge={`${(cfg.targets||[]).length} channels`} titleIcon={Music} actions={
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={syncTargetsFromChannels}>Sync from Channels</Button>
+            <Button size="sm" variant="secondary" data-testid="composer-add-target" onClick={addTarget}><Plus className="w-3 h-3 mr-1" />Add Channel</Button>
+          </div>
+        }>
+          <div className="space-y-3.5">
+            {(cfg.targets||[]).map((t, i) => {
+              const isCustomLang = !LANGUAGES.includes(t.language);
+              return (
+                <div key={i} className="border border-border/80 rounded-xl p-3.5 bg-muted/20 space-y-3 relative group">
+                  <div className="absolute top-2.5 right-2.5">
+                    <button onClick={()=>removeTarget(i)} className="text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+
+                  <div className="grid md:grid-cols-12 gap-3 items-end">
+                    <div className="md:col-span-3 space-y-1">
+                      <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Language</span>
+                      <Select value={isCustomLang && t.language ? "custom" : t.language} onValueChange={(val) => { if (val === "custom") { updateTarget(i, "language", ""); } else { updateTarget(i, "language", val); } }}>
+                        <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Language" /></SelectTrigger>
+                        <SelectContent className="text-xs">
+                          {LANGUAGES.map(lang => (<SelectItem key={lang} value={lang} className="text-xs">{lang}</SelectItem>))}
+                          <SelectItem value="custom" className="text-xs font-semibold">Custom (Type below)...</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="md:col-span-7 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground flex items-center gap-1">Suno AI Style CSV</span>
+                        <button type="button" onClick={() => setActiveSunoHelperIdx(activeSunoHelperIdx === i ? null : i)}
+                          className="text-[9px] text-primary font-semibold hover:underline flex items-center gap-0.5">
+                          <Sparkles className="w-2.5 h-2.5" /> 
+                          {activeSunoHelperIdx === i ? "Hide Genre Mixes" : "Genre Presets Helper"}
+                        </button>
+                      </div>
+                      <Input data-testid={`composer-target-style-${i}`} value={t.styles} onChange={e=>updateTarget(i,"styles",e.target.value)} placeholder="e.g. messianic liquid drum and bass, 174 bpm" className="h-8 text-xs bg-background" />
+                    </div>
+
+                    <div className="md:col-span-2 text-center">
+                      <Badge variant="outline" className="h-8 font-mono text-[9px] block text-center truncate pt-2">Channel {i+1}</Badge>
+                    </div>
+                  </div>
+
+                  {isCustomLang && (
+                    <div className="w-1/2 space-y-1">
+                      <span className="text-[9px] text-mono uppercase text-muted-foreground">Type Custom Language</span>
+                      <Input value={t.language} onChange={e => updateTarget(i, "language", e.target.value)} placeholder="e.g. Yiddish" className="h-7 text-xs" />
+                    </div>
+                  )}
+
+                  {activeSunoHelperIdx === i && (
+                    <div className="bg-background border border-border rounded-lg p-3 mt-2 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                      <div className="flex justify-between items-center text-[10px] text-mono uppercase tracking-widest text-muted-foreground border-b border-border/40 pb-1.5">
+                        <span className="flex items-center gap-1 font-semibold text-primary"><Music className="w-3 h-3" /> Suno Style Prepackaged Genre Mixes</span>
+                        <span>Click to Apply</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto scroll-thin">
+                        {Object.entries(SUNO_GENRES).map(([genreName, csvContent]) => renderSunoGenreButton(i, genreName, csvContent))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {!cfg.targets?.length && (
+              <div className="text-xs text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">No targets added. Click 'Add Channel' above.</div>
+            )}
+          </div>
+        </CollapsibleSection>
+
+        {/* GENERATED RESULTS WORKSPACE */}
+        <CollapsibleSection title={`Generated Results (${items.length})`} badge={restoredItems ? "Restored from previous session" : items.length > 0 ? "Ready to import" : undefined}>
+          {items.length > 0 ? (
+            <div className="space-y-4">
+              <div className="space-y-2 max-h-80 overflow-y-auto scroll-thin">
+                {items.map((item, idx) => (
+                  <div key={idx} className="border border-border/80 rounded-lg p-3 bg-muted/20 text-xs space-y-2">
+                    <div className="flex justify-between items-center font-bold">
+                      <span className="text-primary truncate max-w-[200px]">{item.title}</span>
+                      <Badge variant="secondary" className="font-mono text-[9px]">{item.language}</Badge>
+                    </div>
+                    {item.styles && <div className="text-muted-foreground italic text-[10px]">Style: {item.styles}</div>}
+                    <div className="max-h-24 overflow-y-auto bg-background/50 border border-border/30 rounded p-1.5 text-mono font-mono text-[9px] leading-relaxed scroll-thin">
+                      {Array.isArray(item.lyrics) ? item.lyrics.map((l, lIdx) => (
+                        <div key={lIdx} className="mb-1"><span className="text-primary/75 font-semibold">[{l.section}]</span> {l.lines}</div>
+                      )) : (
+                        <div className="text-muted-foreground italic">{String(item.lyrics || "")}</div>
+                      )}
+                    </div>
+                    {item.image_prompt && (
+                      <div className="p-1.5 bg-background border border-border/30 rounded text-[9px] font-mono break-all text-muted-foreground">
+                        <span className="font-semibold text-primary">Prompt:</span> {item.image_prompt}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2 justify-end">
+                <Button size="sm" variant="ghost" onClick={downloadJson}><Download className="w-3.5 h-3.5 mr-2" />Save as JSON file</Button>
+                <Button size="sm" variant="secondary" onClick={clearGenerated}><X className="w-3.5 h-3.5 mr-2" />Clear results</Button>
+                <Button size="sm" onClick={sendToLyrics}><ArrowRight className="w-3.5 h-3.5 mr-2" />Send to Studio Lyrics Editor</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border rounded-lg">
+              <Bot className="w-8 h-8 mx-auto text-muted-foreground/60 mb-2" />
+              No results generated yet. Load bible text and click 'Generate' above.
+            </div>
+          )}
+        </CollapsibleSection>
     </div>
   );
 }

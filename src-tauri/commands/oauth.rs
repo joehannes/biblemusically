@@ -8,6 +8,8 @@ use serde_json::Value;
 use tauri::State;
 use uuid::Uuid;
 use std::collections::HashMap;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use url::Url;
 use open;
@@ -16,7 +18,7 @@ use warp::Filter;
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
-fn bson_to_value(doc: Document) -> Value {
+pub fn bson_to_value(doc: Document) -> Value {
     let mut m = serde_json::Map::new();
     for (k, v) in doc {
         if k == "_id" { continue; }
@@ -42,12 +44,22 @@ pub async fn list_oauth_clients(state: State<'_, AppState>) -> Res<Vec<Value>> {
 
 #[tauri::command]
 pub async fn create_oauth_client(state: State<'_, AppState>, body: OAuthClientCreate) -> Res<Value> {
+    // Validate required fields before writing to DB
+    if body.client_id.trim().is_empty() {
+        return Err("client_id is required and cannot be empty".into());
+    }
+    if body.client_secret.trim().is_empty() {
+        return Err("client_secret is required and cannot be empty".into());
+    }
+    if body.redirect_uri.trim().is_empty() {
+        return Err("redirect_uri is required and cannot be empty".into());
+    }
     let c = OAuthClient {
         id: Uuid::new_v4().to_string(),
         label: body.label,
-        client_id: body.client_id,
-        client_secret: body.client_secret,
-        redirect_uri: body.redirect_uri,
+        client_id: body.client_id.trim().to_string(),
+        client_secret: body.client_secret.trim().to_string(),
+        redirect_uri: body.redirect_uri.trim().to_string(),
         languages: body.languages,
         notes: body.notes,
         created_at: now_iso(),
@@ -69,7 +81,15 @@ pub async fn update_oauth_client(
         obj.remove("created_at");
         // ignore masked secret
         if let Some(s) = obj.get("client_secret").and_then(|v| v.as_str()) {
-            if s.starts_with('•') { obj.remove("client_secret"); }
+            if s.trim().is_empty() || s.starts_with('•') { obj.remove("client_secret"); }
+        }
+        // Protect client_id: skip update if empty
+        if let Some(s) = obj.get("client_id").and_then(|v| v.as_str()) {
+            if s.trim().is_empty() { obj.remove("client_id"); }
+        }
+        // Protect redirect_uri: skip update if empty
+        if let Some(s) = obj.get("redirect_uri").and_then(|v| v.as_str()) {
+            if s.trim().is_empty() { obj.remove("redirect_uri"); }
         }
     }
     let bson = bson::to_bson(&body).map_err(e)?;
@@ -102,6 +122,33 @@ pub async fn channel_picked_client(state: State<'_, AppState>, cid: String) -> R
         &state.db, &ch, ch["oauth_client_id"].as_str()
     ).await.map(mask_secret);
     Ok(serde_json::json!({ "client": client }))
+}
+
+// ────────────────────────────────────────────────────────────────
+// Validate OAuth client — checks that the stored client has all
+// required fields non-empty. Returns { ok: true/false, missing: [...] }
+// ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn validate_oauth_client(state: State<'_, AppState>, oid: String) -> Res<Value> {
+    let doc = state.db.collection::<Document>("oauth_clients")
+        .find_one(doc! { "id": &oid }).await.map_err(e)?
+        .ok_or_else(|| "OAuth client not found".to_string())?;
+    let client = bson_to_value(doc);
+    let mut missing = Vec::new();
+    let cid = client["client_id"].as_str().unwrap_or("");
+    if cid.trim().is_empty() { missing.push("client_id"); }
+    let csec = client["client_secret"].as_str().unwrap_or("");
+    if csec.trim().is_empty() || csec.starts_with('•') { missing.push("client_secret"); }
+    let redirect = client["redirect_uri"].as_str().unwrap_or("");
+    if redirect.trim().is_empty() { missing.push("redirect_uri"); }
+    let ok = missing.is_empty();
+    Ok(serde_json::json!({
+        "ok": ok,
+        "missing": missing,
+        "id": oid,
+        "label": client["label"],
+    }))
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -187,7 +234,17 @@ pub async fn oauth_callback(
         ])
         .send().await.map_err(e)?;
     if !tr.status().is_success() {
-        return Err(format!("Token exchange failed: {}", tr.text().await.unwrap_or_default()));
+        let error_body = tr.text().await.unwrap_or_default();
+        let diagnostic = if error_body.contains("invalid_client") {
+            "Your OAuth client_id or client_secret is invalid. Make sure you're using a 'Desktop App' type credential in Google Cloud Console.".to_string()
+        } else if error_body.contains("redirect_uri_mismatch") {
+            format!("Redirect URI mismatch. In Google Cloud Console, under 'Authorized redirect URIs', add: {}", ruri)
+        } else if error_body.contains("invalid_grant") {
+            "The authorization code expired or was already used. Try re-authorizing.".to_string()
+        } else {
+            format!("Token exchange failed: {}", error_body)
+        };
+        return Err(diagnostic);
     }
     let tokens: Value = tr.json().await.map_err(e)?;
     let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
@@ -290,16 +347,31 @@ pub async fn oauth_start_for_channel(
         .and(warp::query::<HashMap<String, String>>())
         .and(tx_filter.clone())
         .and_then(|_full: warp::path::FullPath, qs: HashMap<String, String>, tx: mpsc::Sender<HashMap<String, String>>| async move {
-            let _ = tx.try_send(qs);
+            if qs.contains_key("code") || qs.contains_key("error") {
+                let _ = tx.try_send(qs);
+            }
             let body = "<html><body style='font-family:sans-serif;text-align:center;padding:60px'><h2>✓ Authentication complete</h2><p>You can close this window and return to the app.</p></body></html>";
             Ok::<_, std::convert::Infallible>(warp::reply::html(body))
         });
 
-    // Bind to port from redirect URI, or let OS pick one
+    // Bind to port from redirect URI — use TcpListener so we get a clean
+    // error if the port is already in use instead of a panic.
     let port = parsed.port().unwrap_or(0);
-    let (addr, server) = warp::serve(callback_route).bind_ephemeral(([127, 0, 0, 1], port));
-    tokio::task::spawn(server);
-    let bound_port = addr.port();
+    let bind_addr: SocketAddr = format!("127.0.0.1:{}", port).parse().map_err(e)?;
+    let tcp = TcpListener::bind(bind_addr).await
+        .map_err(|err| format!("Cannot bind OAuth callback port {}: {}. Another process may already be using it — restart the app and try again.", port, err))?;
+    let bound_port = tcp.local_addr().map_err(e)?.port();
+    let std_listener = tcp.into_std().map_err(e)?;
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = warp::serve(callback_route)
+        .serve_incoming_with_graceful_shutdown(
+            tokio_stream::wrappers::TcpListenerStream::new(
+                TcpListener::from_std(std_listener).map_err(e)?
+            ),
+            async move { shutdown_rx.await.ok(); },
+        );
+    let server_task = tokio::task::spawn(server);
 
     // Reconstruct redirect URI with actual bound port
     let mut redirect_used = parsed.clone();
@@ -320,7 +392,7 @@ pub async fn oauth_start_for_channel(
     let _ = open::that(auth_url.clone());
 
     // Wait for the callback (120s timeout)
-    match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
+    let result = match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
         Ok(Some(qs)) => {
             if let Some(err) = qs.get("error") {
                 return Err(format!("OAuth error: {}", err));
@@ -343,7 +415,17 @@ pub async fn oauth_start_for_channel(
                 ])
                 .send().await.map_err(e)?;
             if !tr.status().is_success() {
-                return Err(format!("Token exchange failed: {}", tr.text().await.unwrap_or_default()));
+                let error_body = tr.text().await.unwrap_or_default();
+                let diagnostic = if error_body.contains("invalid_client") {
+                    "Your OAuth client_id or client_secret is invalid. Make sure you're using a 'Desktop App' type credential in Google Cloud Console.".to_string()
+                } else if error_body.contains("redirect_uri_mismatch") {
+                    format!("Redirect URI mismatch. In Google Cloud Console, under 'Authorized redirect URIs', add: {}", redirect_used_str)
+                } else if error_body.contains("invalid_grant") {
+                    "The authorization code expired or was already used. Try re-authorizing.".to_string()
+                } else {
+                    format!("Token exchange failed: {}", error_body)
+                };
+                return Err(diagnostic);
             }
             let tokens: Value = tr.json().await.map_err(e)?;
 
@@ -398,7 +480,10 @@ pub async fn oauth_start_for_channel(
         }
         Ok(None) => Err("Callback receiver closed".into()),
         Err(_) => Err("Timed out waiting for OAuth callback (120s)".into()),
-    }
+    };
+    // Always shut down the local server after the flow completes or times out
+    let _ = shutdown_tx.send(());
+    result
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -449,16 +534,31 @@ pub async fn perform_oauth_loopback(db: &mongodb::Database, oauth_client_db_id: 
         .and(warp::query::<HashMap<String, String>>())
         .and(tx_filter.clone())
         .and_then(|_full: warp::path::FullPath, qs: HashMap<String, String>, tx: mpsc::Sender<HashMap<String, String>>| async move {
-            let _ = tx.try_send(qs);
+            if qs.contains_key("code") || qs.contains_key("error") {
+                let _ = tx.try_send(qs);
+            }
             let body = "<html><body><h2>Authentication complete — you can close this window.</h2></body></html>";
             Ok::<_, std::convert::Infallible>(warp::reply::html(body))
         });
 
-    // Determine port to bind: use port from redirect if present, otherwise let OS pick one
+    // Determine port to bind — use TcpListener so we get a clean error if the
+    // port is already in use instead of a panic.
     let port = parsed.port().unwrap_or(0);
-    let (addr, server) = warp::serve(callback_route).bind_ephemeral(([127, 0, 0, 1], port));
-    tokio::task::spawn(server);
-    let bound_port = addr.port();
+    let bind_addr: SocketAddr = format!("127.0.0.1:{}", port).parse().map_err(e)?;
+    let tcp = TcpListener::bind(bind_addr).await
+        .map_err(|err| format!("Cannot bind OAuth callback port {}: {}. Another process may already be using it — restart the app and try again.", port, err))?;
+    let bound_port = tcp.local_addr().map_err(e)?.port();
+    let std_listener = tcp.into_std().map_err(e)?;
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = warp::serve(callback_route)
+        .serve_incoming_with_graceful_shutdown(
+            tokio_stream::wrappers::TcpListenerStream::new(
+                TcpListener::from_std(std_listener).map_err(e)?
+            ),
+            async move { shutdown_rx.await.ok(); },
+        );
+    let server_task = tokio::task::spawn(server);
 
     // Reconstruct redirect URI to use for this auth request (in case port was 0)
     let mut redirect_used = parsed.clone();
@@ -479,7 +579,7 @@ pub async fn perform_oauth_loopback(db: &mongodb::Database, oauth_client_db_id: 
     let _ = open::that(auth_url.clone());
 
     // Wait for the callback (120s)
-    match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
+    let result = match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
         Ok(Some(qs)) => {
             if let Some(err) = qs.get("error") {
                 return Err(format!("OAuth error: {}", err));
@@ -502,13 +602,27 @@ pub async fn perform_oauth_loopback(db: &mongodb::Database, oauth_client_db_id: 
                 ])
                 .send().await.map_err(e)?;
             if !tr.status().is_success() {
-                return Err(format!("Token exchange failed: {}", tr.text().await.unwrap_or_default()));
+                let error_body = tr.text().await.unwrap_or_default();
+                // Provide helpful diagnostics based on common Google OAuth errors
+                let diagnostic = if error_body.contains("invalid_client") {
+                    "Your OAuth client_id or client_secret is invalid. Make sure you're using a 'Desktop App' type credential in Google Cloud Console — 'Web Application' credentials do not work with local loopback redirects. Also verify the client_secret is correct (not masked).".to_string()
+                } else if error_body.contains("redirect_uri_mismatch") {
+                    format!("Redirect URI mismatch. The registered redirect URI '{}' does not match the callback used. In Google Cloud Console, under 'Authorized redirect URIs', add: {}", redirect, redirect_used_str)
+                } else if error_body.contains("invalid_grant") {
+                    "The authorization code expired or was already used. This can happen if you took too long to authorize, or if your OAuth client configuration uses a 'Web Application' credential with a loopback redirect (which is blocked by Google). Create a 'Desktop App' credential instead.".to_string()
+                } else {
+                    format!("Token exchange failed: {}", error_body)
+                };
+                return Err(diagnostic);
             }
             let tokens: Value = tr.json().await.map_err(e)?;
 
             // Persist refresh token (if present) into settings for later use
             let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
             let access = tokens["access_token"].as_str().unwrap_or("").to_string();
+            if access.is_empty() {
+                return Err("OAuth token exchange succeeded but no access_token was returned. This usually indicates a scope permission issue — check that your Google Cloud Console OAuth consent screen includes the YouTube Data API v3 scopes, and that your test user email is added to the Test Users list.".into());
+            }
             if !refresh.is_empty() {
                 let coll = db.collection::<Document>("settings");
                 let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "suno_google_refresh_token": refresh.clone(), "suno_google_access_token": access.clone() } }).await;
@@ -518,5 +632,8 @@ pub async fn perform_oauth_loopback(db: &mongodb::Database, oauth_client_db_id: 
         }
         Ok(None) => Err("Callback receiver closed".into()),
         Err(_) => Err("Timed out waiting for OAuth callback".into()),
-    }
+    };
+    // Always shut down the local server after the flow completes or times out
+    let _ = shutdown_tx.send(());
+    result
 }

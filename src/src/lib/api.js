@@ -110,6 +110,8 @@ export const api = {
   listChannels: () => invokeCommand("list_channels"),
   createChannel: (b) => invokeCommand("create_channel", { body: b }),
   deleteChannel: (id) => invokeCommand("delete_channel", { cid: id }),
+  discoverFromChannelSwitcher: (profileDir, timeoutSec) =>
+    invokeCommand("discover_from_channel_switcher", { profile_dir: profileDir, timeout_sec: timeoutSec }),
   oauthStart: (id, oauth_client_id) =>
     invokeCommand("oauth_start", { cid: id, ...(oauth_client_id ? { body: { oauth_client_id } } : {}) }),
   oauthStartForChannel: (id, oauth_client_id) =>
@@ -118,14 +120,16 @@ export const api = {
   channelPickedClient: (id) => invokeCommand("channel_picked_client", { cid: id }),
   discoverYoutubeChannels: (users, timeoutSec) => invokeCommand("discover_youtube_channels", { users, timeout_sec: timeoutSec }),
   importDiscoveredChannels: (channels) => invokeCommand("import_discovered_channels", { channels }),
+  connectAllChannelsOneShot: (oauthClientId) => invokeCommand("connect_all_channels_one_shot", { oauth_client_id: oauthClientId }),
   refreshAllChannelMetadata: () => invokeCommand("refresh_all_channel_metadata"),
-  importFromGoogleAccount: (oauthClientId) => invokeCommand("import_from_google_account", { oauth_client_id: oauthClientId }),
+  importFromGoogleAccount: (oauthClientId) => invokeCommand("import_from_google_account", { oauthClientId: oauthClientId }),
 
   // ============ OAuth Clients ============
   listOauthClients: () => invokeCommand("list_oauth_clients"),
   createOauthClient: (b) => invokeCommand("create_oauth_client", { body: b }),
   updateOauthClient: (id, b) => invokeCommand("update_oauth_client", { oid: id, body: b }),
   deleteOauthClient: (id) => invokeCommand("delete_oauth_client", { oid: id }),
+  validateOauthClient: (id) => invokeCommand("validate_oauth_client", { oid: id }),
 
   // ============ Bible ============
   bibleTranslations: () => invokeCommand("list_translations"),

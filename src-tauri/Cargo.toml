@@ -1,6 +1,6 @@
 [package]
 name = "ai-music-video-studio"
-version = "0.10.6"
+version = "0.18.0"
 edition = "2021"
 
 [lib]
@@ -25,6 +25,7 @@ bson             = { version = "2", features = ["chrono-0_4"] }
 
 # Async runtime
 tokio            = { version = "1", features = ["full"] }
+tokio-stream     = { version = "0.1", features = ["net"] }
 futures-util     = "0.3"
 
 # HTTP client

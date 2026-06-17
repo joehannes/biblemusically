@@ -49,6 +49,7 @@ static BIBLE_TRANSLATIONS: Lazy<Value> = Lazy::new(|| json!({
         {"id":"bbe",    "name":"Bible in Basic English (BBE) — plain English",   "source":"bible-api"},
         {"id":"ENGWEBP","name":"WEB w/ apocrypha (helloao)",                     "source":"helloao"},
         {"id":"oeb-cw", "name":"Open English Bible (OEB-CW)",                    "source":"bible-api"},
+        {"id":"eng_cpb","name":"Chinese Pitman Bible (English parallel)",        "source":"helloao"},
     ],
     "English (literal / original-meaning)": [
         {"id":"ylt",    "name":"Young's Literal Translation (YLT)",              "source":"bible-api"},
@@ -59,39 +60,76 @@ static BIBLE_TRANSLATIONS: Lazy<Value> = Lazy::new(|| json!({
         {"id":"eng_lxu","name":"Septuagint in British English (LXX2012)",        "source":"helloao"},
         {"id":"asv",    "name":"American Standard Version (ASV) 1901",           "source":"bible-api"},
         {"id":"kjv",    "name":"King James Version (KJV) 1611",                  "source":"bible-api"},
+        {"id":"eng_wyb","name":"WEB (Westcott), literal study variant",          "source":"helloao"},
     ],
     "Greek (Koine / NT)": [
         {"id":"GHTG",   "name":"Garth's Hyper-literal (Greek interlinear-style)","source":"helloao"},
         {"id":"grc_byz","name":"Byzantine Greek New Testament",                  "source":"helloao"},
         {"id":"grc_bre","name":"Septuagint (Greek OT, LXX)",                    "source":"helloao"},
+        {"id":"grc_sbl","name":"SBL Greek New Testament",                        "source":"helloao"},
+        {"id":"grc_tbt","name":"Textus Receptus (Greek NT)",                     "source":"helloao"},
     ],
     "Hebrew (OT)": [
         {"id":"heb_mod","name":"Modern Hebrew Bible",                            "source":"helloao"},
         {"id":"heb_scg","name":"Salkinson-Ginsburg Hebrew NT",                   "source":"helloao"},
+        {"id":"heb_wlc","name":"Westminster Leningrad Codex (WLC)",              "source":"helloao"},
     ],
     "German": [
         {"id":"deu_l12","name":"Luther 1912",                                    "source":"helloao"},
         {"id":"deu_sch","name":"Schlachter 1951",                                "source":"helloao"},
         {"id":"deu_elo","name":"Elberfelder (Darby)",                            "source":"helloao"},
+        {"id":"deu_zb1","name":"Zürcher Bibel (Swiss German)",                   "source":"helloao"},
     ],
     "Italian": [
         {"id":"ita_dio","name":"Diodati 1885",                                   "source":"helloao"},
         {"id":"ita_riv","name":"Riveduta 1927",                                  "source":"helloao"},
+        {"id":"ita_nvi","name":"Nuova Riveduta 2006",                            "source":"helloao"},
     ],
     "Russian": [
         {"id":"rus_syn","name":"Синодальный перевод (Synodal)",                  "source":"helloao"},
+        {"id":"rus_cas","name":"Современный перевод (CAS)",                      "source":"helloao"},
     ],
     "Spanish": [
         {"id":"spa_r09","name":"Reina-Valera 1909",                              "source":"helloao"},
         {"id":"spa_blm","name":"Santa Biblia libre para el mundo",               "source":"helloao"},
+        {"id":"spa_nvi","name":"Nueva Versión Internacional (NVI)",              "source":"helloao"},
+        {"id":"spa_rv6","name":"Reina-Valera 1960",                              "source":"helloao"},
     ],
     "French": [
         {"id":"fra_lsg","name":"Louis Segond 1910",                              "source":"helloao"},
         {"id":"fra_ost","name":"Sainte Bible Ostervald",                         "source":"helloao"},
+        {"id":"fra_f33","name":"French Standard (LSG 1910 variant)",              "source":"helloao"},
+        {"id":"fra_bdm","name":"Bible du Semeur (easy modern French)",           "source":"helloao"},
     ],
     "Portuguese": [
         {"id":"por_blj","name":"Bíblia Livre",                                   "source":"helloao"},
         {"id":"por_bsl","name":"Bíblia Portuguesa Mundial",                      "source":"helloao"},
+        {"id":"por_nvt","name":"Nova Versão Tradução (NVT)",                     "source":"helloao"},
+    ],
+    "Arabic": [
+        {"id":"arb_iba","name":"Smith & Van Dyke Arabic Bible",                  "source":"helloao"},
+    ],
+    "Korean": [
+        {"id":"kor_kor","name":"Korean Revised Version (KRV)",                   "source":"helloao"},
+    ],
+    "Japanese": [
+        {"id":"jpn_jsh","name":"Shinkaiyaku (New Japanese)",                     "source":"helloao"},
+    ],
+    "Chinese": [
+        {"id":"zho_cuv","name":"Chinese Union Version (CUV)",                    "source":"helloao"},
+        {"id":"zho_cns","name":"Chinese Standard Bible (CSB)",                   "source":"helloao"},
+    ],
+    "Dutch": [
+        {"id":"nld_nbg","name":"Nieuwe Bijbelvertaling (NBV)",                   "source":"helloao"},
+    ],
+    "Turkish": [
+        {"id":"tur_tnt","name":"Türkçe Bilimsel Meal",                           "source":"helloao"},
+    ],
+    "Polish": [
+        {"id":"pol_bgk","name":"Biblia Gdańska (Polish)",                        "source":"helloao"},
+    ],
+    "Indonesian": [
+        {"id":"ind_abt","name":"Alkitab Terjemahan Baru (ATB)",                  "source":"helloao"},
     ],
 }));
 

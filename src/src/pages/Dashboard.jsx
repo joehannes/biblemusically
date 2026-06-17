@@ -136,15 +136,15 @@ export default function Dashboard() {
             <div className="text-sm text-muted-foreground">Create a project and export / import it later with all related data.</div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <TemplatesManager onChange={(ps)=>setLocalPresets(ps)} />
             <Button variant="outline" onClick={importProject}><Upload className="w-4 h-4 mr-2" />Import project</Button>
             <Button variant="secondary" onClick={exportActive} disabled={!activeProjectId}><Download className="w-4 h-4 mr-2" />Export active project</Button>
           </div>
         </div>
-        <div className="grid md:grid-cols-12 gap-3">
+        <div className="grid md:grid-cols-12 gap-3 items-center">
           <div className="md:col-span-3">
-            <div className="text-[11px] text-muted-foreground mb-1">Template</div>
             <Select value={template} onValueChange={v=>setTemplate(v)}>
-              <SelectTrigger className="w-full h-9">
+              <SelectTrigger className="w-full h-10">
                 <SelectValue placeholder="Choose template" />
               </SelectTrigger>
               <SelectContent>
@@ -153,18 +153,15 @@ export default function Dashboard() {
                 ))}
               </SelectContent>
             </Select>
-            {localPresets.find(p => p.id === template)?.description && (
-              <p className="mt-2 text-xs text-muted-foreground">{localPresets.find(p => p.id === template)?.description}</p>
-            )}
           </div>
-          <div className="md:col-span-1 flex items-end">
-            <TemplatesManager onChange={(ps)=>setLocalPresets(ps)} />
-          </div>
-          <Input data-testid="project-name-input" placeholder="Project name (e.g. John 1 Multilingual)" value={name} onChange={e=>setName(e.target.value)} className="md:col-span-3" />
-          <Input data-testid="project-topic-input" placeholder="Topic / theme" value={topic} onChange={e=>setTopic(e.target.value)} className="md:col-span-3" />
-          <Input data-testid="project-schedule-input" placeholder="Schedule (e.g. weekly Sunday 9am)" value={schedule} onChange={e=>setSchedule(e.target.value)} className="md:col-span-2" />
-          <Button data-testid="project-create-btn" onClick={create} className="md:col-span-1"><Plus className="w-4 h-4" /></Button>
+          <Input data-testid="project-name-input" placeholder="Project name (e.g. John 1 Multilingual)" value={name} onChange={e=>setName(e.target.value)} className="md:col-span-3 h-10" />
+          <Input data-testid="project-topic-input" placeholder="Topic / theme" value={topic} onChange={e=>setTopic(e.target.value)} className="md:col-span-3 h-10" />
+          <Input data-testid="project-schedule-input" placeholder="Schedule (e.g. weekly Sunday 9am)" value={schedule} onChange={e=>setSchedule(e.target.value)} className="md:col-span-2 h-10" />
+          <Button data-testid="project-create-btn" onClick={create} className="md:col-span-1 h-10"><Plus className="w-4 h-4" /></Button>
         </div>
+        {localPresets.find(p => p.id === template)?.description && (
+          <p className="mt-2 text-xs text-muted-foreground">{localPresets.find(p => p.id === template)?.description}</p>
+        )}
         <div className="mt-3 grid md:grid-cols-12 gap-2 items-center">
           <Input placeholder="Import preset JSON from URL" value={remotePresetUrl} onChange={e=>setRemotePresetUrl(e.target.value)} className="md:col-span-9" />
           <Button className="md:col-span-3" onClick={async ()=>{
