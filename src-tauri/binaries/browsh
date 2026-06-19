@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Placeholder stub for packaging/build checks (tauri looks under src-tauri/binaries).
-# Replace this file with the real browsh binary for packaging.
-echo "browsh stub binary (src-tauri): replace with real browsh executable for packaging" >&2
-exit 0

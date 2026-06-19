@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Placeholder stub for packaging/build checks.
-# Replace this file with the real browsh binary for packaging.
-echo "browsh stub binary: replace with real browsh executable for packaging" >&2
-exit 0
