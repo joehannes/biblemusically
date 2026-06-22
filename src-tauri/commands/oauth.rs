@@ -395,11 +395,17 @@ pub async fn oauth_start_for_channel(
     let result = match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
         Ok(Some(qs)) => {
             if let Some(err) = qs.get("error") {
+                // Shut down server before returning error
+                let _ = shutdown_tx.send(());
+                let _ = server_task.await;
                 return Err(format!("OAuth error: {}", err));
             }
             let code = qs.get("code").cloned().unwrap_or_default();
             let returned_state = qs.get("state").cloned().unwrap_or_default();
             if code.is_empty() || returned_state != state_param {
+                // Shut down server before returning error
+                let _ = shutdown_tx.send(());
+                let _ = server_task.await;
                 return Err("Missing code or invalid state in callback".into());
             }
 
@@ -425,6 +431,9 @@ pub async fn oauth_start_for_channel(
                 } else {
                     format!("Token exchange failed: {}", error_body)
                 };
+                // Shut down server before returning error
+                let _ = shutdown_tx.send(());
+                let _ = server_task.await;
                 return Err(diagnostic);
             }
             let tokens: Value = tr.json().await.map_err(e)?;
@@ -470,19 +479,32 @@ pub async fn oauth_start_for_channel(
                 .update_one(doc! { "id": &cid }, doc! { "$set": update })
                 .await.map_err(e)?;
 
-            Ok(serde_json::json!({
+            let success_result = Ok(serde_json::json!({
                 "ok": true,
                 "channel_title": chan_title,
                 "youtube_channel_id": yt_channel_id,
                 "oauth_client_id": client["id"],
                 "label": client["label"],
-            }))
+            }));
+            
+            // Shut down server gracefully and wait for it to finish
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+            success_result
         }
-        Ok(None) => Err("Callback receiver closed".into()),
-        Err(_) => Err("Timed out waiting for OAuth callback (120s)".into()),
+        Ok(None) => {
+            // Shut down server before returning error
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+            Err("Callback receiver closed".into())
+        }
+        Err(_) => {
+            // Shut down server before returning error
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+            Err("Timed out waiting for OAuth callback (120s)".into())
+        }
     };
-    // Always shut down the local server after the flow completes or times out
-    let _ = shutdown_tx.send(());
     result
 }
 
