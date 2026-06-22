@@ -113,6 +113,102 @@ code, .mono { font-family: var(--font-mono); }
     --ring: 18 70% 40%;
     color-scheme: light;
   }
+
+  /* Dawn: soft morning warmth - gentle sunrise colors */
+  html[data-theme="dawn"] {
+    --background: 30 40% 94%;
+    --foreground: 28 25% 15%;
+    --card: 35 45% 97%;
+    --card-foreground: 28 25% 15%;
+    --popover: 35 45% 97%;
+    --popover-foreground: 28 25% 15%;
+    --primary: 25 75% 55%;
+    --primary-foreground: 35 45% 98%;
+    --secondary: 35 35% 88%;
+    --secondary-foreground: 28 25% 15%;
+    --muted: 35 30% 90%;
+    --muted-foreground: 28 20% 45%;
+    --accent: 195 65% 55%;
+    --accent-foreground: 35 45% 98%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 35 25% 82%;
+    --input: 35 25% 82%;
+    --ring: 25 75% 55%;
+    color-scheme: light;
+  }
+
+  /* Daybreak: bright energizing daylight - clear sky blues */
+  html[data-theme="daybreak"] {
+    --background: 210 40% 96%;
+    --foreground: 215 25% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 18%;
+    --primary: 200 80% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 30% 90%;
+    --secondary-foreground: 215 25% 18%;
+    --muted: 210 25% 92%;
+    --muted-foreground: 215 15% 45%;
+    --accent: 35 90% 55%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 210 20% 85%;
+    --input: 210 20% 85%;
+    --ring: 200 80% 45%;
+    color-scheme: light;
+  }
+
+  /* Twilight: evening transition - purple and orange sunset */
+  html[data-theme="twilight"] {
+    --background: 260 25% 12%;
+    --foreground: 280 20% 88%;
+    --card: 260 25% 15%;
+    --card-foreground: 280 20% 88%;
+    --popover: 260 25% 14%;
+    --popover-foreground: 280 20% 88%;
+    --primary: 280 70% 60%;
+    --primary-foreground: 260 25% 12%;
+    --secondary: 260 20% 20%;
+    --secondary-foreground: 280 20% 88%;
+    --muted: 260 20% 20%;
+    --muted-foreground: 270 15% 65%;
+    --accent: 30 85% 55%;
+    --accent-foreground: 260 25% 12%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 260 18% 25%;
+    --input: 260 18% 25%;
+    --ring: 280 70% 60%;
+    color-scheme: dark;
+  }
+
+  /* Midnight: deep night - cool navy blues */
+  html[data-theme="midnight"] {
+    --background: 240 35% 6%;
+    --foreground: 220 20% 85%;
+    --card: 240 30% 10%;
+    --card-foreground: 220 20% 85%;
+    --popover: 240 30% 9%;
+    --popover-foreground: 220 20% 85%;
+    --primary: 210 75% 55%;
+    --primary-foreground: 240 35% 6%;
+    --secondary: 240 25% 14%;
+    --secondary-foreground: 220 20% 85%;
+    --muted: 240 25% 14%;
+    --muted-foreground: 230 15% 55%;
+    --accent: 280 60% 55%;
+    --accent-foreground: 240 35% 6%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 20% 18%;
+    --input: 240 20% 18%;
+    --ring: 210 75% 55%;
+    color-scheme: dark;
+  }
 }
 
 @layer base {
