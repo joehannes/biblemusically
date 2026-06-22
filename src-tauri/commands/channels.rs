@@ -11,7 +11,7 @@ use uuid::Uuid;
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
-fn bson_to_value(doc: Document) -> Value {
+pub fn bson_to_value(doc: Document) -> Value {
     let mut m = serde_json::Map::new();
     for (k, v) in doc {
         if k == "_id" { continue; }
