@@ -1,0 +1,79 @@
+presets:
+  epic_orchestral:
+    base_prompt: "epic orchestral, full symphony, cinematic, hans zimmer style"
+    negative_prompt: "electronic, pop, simple, lo-fi"
+    tempo_bpm: 120
+    key: "C minor"
+    instrumentation: "strings, brass, timpani, choir"
+  
+  synthwave_retro:
+    base_prompt: "80s synthwave, retro analog synths, driving bassline, drum machine"
+    negative_prompt: "acoustic, orchestral, vocals"
+    tempo_bpm: 110
+    key: "F minor"
+    instrumentation: "analog synths, gated drums, bass synth"
+  
+  lofi_hiphop:
+    base_prompt: "lofi hip hop, chill beats, vinyl crackle, relaxed groove"
+    negative_prompt: "loud, aggressive, electronic dance"
+    tempo_bpm: 85
+    key: "A major"
+    instrumentation: "boom bap drums, Rhodes piano, bass guitar"
+  
+  ambient_electronic:
+    base_prompt: "ambient electronic, atmospheric pads, ethereal textures, slow evolving"
+    negative_prompt: "rhythmic, percussive, vocals"
+    tempo_bpm: 70
+    key: "D major"
+    instrumentation: "synth pads, field recordings, soft bells"
+  
+  rock_alternative:
+    base_prompt: "alternative rock, electric guitars, dynamic drums, energetic"
+    negative_prompt: "orchestral, electronic, soft"
+    tempo_bpm: 130
+    key: "E minor"
+    instrumentation: "distorted guitars, bass, live drums"
+  
+  jazz_smooth:
+    base_prompt: "smooth jazz, saxophone, upright bass, brushed drums, sophisticated"
+    negative_prompt: "electronic, rock, aggressive"
+    tempo_bpm: 95
+    key: "Bb major"
+    instrumentation: "saxophone, piano, upright bass, brushes"
+  
+  cinematic_trailer:
+    base_prompt: "cinematic trailer music, epic hits, rising tension, dramatic strings"
+    negative_prompt: "soft, quiet, minimalist"
+    tempo_bpm: 140
+    key: "C minor"
+    instrumentation: "orchestral hits, hybrid synths, percussion"
+  
+  pop_upbeat:
+    base_prompt: "upbeat pop, catchy melodies, bright production, radio friendly"
+    negative_prompt: "dark, slow, experimental"
+    tempo_bpm: 125
+    key: "G major"
+    instrumentation: "synths, programmed drums, bass, vocal chops"
+
+# Section-specific energy modifiers
+section_modifiers:
+  intro:
+    energy_level: 0.6
+    prompt_additions: "building up, introductory, setting the mood"
+    duration_ratio: 0.1
+  verse:
+    energy_level: 0.7
+    prompt_additions: "steady rhythm, focused, narrative feel"
+    duration_ratio: 0.25
+  chorus:
+    energy_level: 0.95
+    prompt_additions: "high energy, full instrumentation, soaring, anthemic"
+    duration_ratio: 0.25
+  bridge:
+    energy_level: 0.8
+    prompt_additions: "shifting tone, building tension, transitional"
+    duration_ratio: 0.15
+  outro:
+    energy_level: 0.5
+    prompt_additions: "fading out, resolving, conclusive"
+    duration_ratio: 0.1

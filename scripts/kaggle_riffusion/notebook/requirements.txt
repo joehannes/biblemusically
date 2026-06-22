@@ -1,0 +1,37 @@
+# Riffusion Kaggle Song Studio - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core ML/DL
+torch>=2.0.0
+torchaudio>=2.0.0
+transformers>=4.30.0
+diffusers>=0.20.0
+accelerate>=0.20.0
+
+# Audio processing
+pydub>=0.25.1
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# API Server
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+python-multipart>=0.0.6
+
+# Configuration
+pyyaml>=6.0
+
+# Utilities
+requests>=2.31.0
+pillow>=9.5.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# For audio conversion (system package, listed for reference)
+# ffmpeg - install via: apt-get install ffmpeg
+
+# Optional: Better audio normalization
+# pyloudnorm>=0.1.0
+
+# Optional: XFormers for memory-efficient attention (Kaggle compatible)
+# xformers>=0.0.20
