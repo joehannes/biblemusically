@@ -8,7 +8,6 @@ use bson::{doc, Document};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::State;
-use uuid::Uuid;
 
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
@@ -301,7 +300,7 @@ pub async fn translate_and_apply_settings(
                                 .filter_map(|v| v.as_str())
                                 .collect::<Vec<_>>()
                             )
-                            .unwrap_or(global_settings.default_tags.clone()),
+                            .unwrap_or_else(|| global_settings.default_tags.iter().map(|s| s.as_str()).collect()),
                         "translated_branding": translated.get("branding_text")
                             .and_then(|v| v.as_str())
                             .unwrap_or(&global_settings.branding_text),
@@ -453,7 +452,7 @@ pub async fn sync_channel_to_youtube(
     let oauth_client_id = channel["oauth_client_id"].as_str();
     let client = crate::jobs::pick_oauth_client(&state.db, &channel, oauth_client_id)
         .await
-        .ok_or_else(|| "No OAuth client configured for this channel".into())?;
+        .ok_or_else(|| -> String { "No OAuth client configured for this channel".to_string() })?;
     
     let client_id = client["client_id"].as_str().unwrap_or("");
     let client_secret = client["client_secret"].as_str().unwrap_or("");
