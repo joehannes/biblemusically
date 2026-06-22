@@ -507,7 +507,7 @@ export default function Shell({ children }) {
               <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                 <Palette className="w-3 h-3" /> Theme
               </div>
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-wrap gap-2 mt-2">
                 <ThemeBtn
                   id="obsidian"
                   label="Obsidian"
@@ -523,6 +523,30 @@ export default function Shell({ children }) {
                 <ThemeBtn
                   id="vellum"
                   label="Vellum"
+                  current={theme}
+                  setTheme={setTheme}
+                />
+                <ThemeBtn
+                  id="dawn"
+                  label="Dawn"
+                  current={theme}
+                  setTheme={setTheme}
+                />
+                <ThemeBtn
+                  id="daybreak"
+                  label="Daybreak"
+                  current={theme}
+                  setTheme={setTheme}
+                />
+                <ThemeBtn
+                  id="twilight"
+                  label="Twilight"
+                  current={theme}
+                  setTheme={setTheme}
+                />
+                <ThemeBtn
+                  id="midnight"
+                  label="Midnight"
                   current={theme}
                   setTheme={setTheme}
                 />
