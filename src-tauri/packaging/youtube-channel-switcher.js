@@ -65,13 +65,25 @@ function extractChannelsFromInitialData(body) {
     let endPos = 0;
     for (let i = 0; i < jsonStr.length; i++) {
       const ch = jsonStr[i];
-      if (escaped) { escaped = false; continue; }
-      if (ch === "\\") { escaped = true; continue; }
-      if (ch === '"') { inString = !inString; continue; }
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
       if (inString) continue;
       if (ch === "{") depth++;
       if (ch === "}") depth--;
-      if (depth === 0) { endPos = i + 1; break; }
+      if (depth === 0) {
+        endPos = i + 1;
+        break;
+      }
     }
     if (endPos === 0) continue;
 
@@ -97,7 +109,8 @@ function walkChannels(data) {
     if (!obj || typeof obj !== "object") return;
 
     // Look for accountChannelSwitcherRenderer or channelSwitcherRenderer
-    const switcher = obj.accountChannelSwitcherRenderer || obj.channelSwitcherRenderer;
+    const switcher =
+      obj.accountChannelSwitcherRenderer || obj.channelSwitcherRenderer;
     if (switcher && switcher.contents) {
       const items = switcher.contents;
       if (Array.isArray(items)) {
@@ -107,19 +120,21 @@ function walkChannels(data) {
           if (ch) {
             const channelId = ch.channelId || "";
             const title =
-              (ch.title?.simpleText) ||
-              (ch.title?.runs?.[0]?.text) ||
-              "";
+              ch.title?.simpleText || ch.title?.runs?.[0]?.text || "";
             let handle = "";
             // Handle often appears in subscriberCountText or navigationEndpoint
-            if (ch.navigationEndpoint?.commandMetadata?.webCommandMetadata?.url) {
-              const url = ch.navigationEndpoint.commandMetadata.webCommandMetadata.url;
+            if (
+              ch.navigationEndpoint?.commandMetadata?.webCommandMetadata?.url
+            ) {
+              const url =
+                ch.navigationEndpoint.commandMetadata.webCommandMetadata.url;
               const handleMatch = url.match(/^\/(@[\w.-]+)/);
               if (handleMatch) handle = handleMatch[1];
             }
             // Also try to get it from subscriberCountText or description
             if (!handle && ch.subscriberCountText?.simpleText) {
-              const htMatch = ch.subscriberCountText.simpleText.match(/@[\w.-]+/);
+              const htMatch =
+                ch.subscriberCountText.simpleText.match(/@[\w.-]+/);
               if (htMatch) handle = htMatch[0];
             }
             if (!handle && ch.description?.simpleText) {
@@ -128,7 +143,8 @@ function walkChannels(data) {
             }
 
             const avatar =
-              ch.thumbnail?.thumbnails?.[ch.thumbnail.thumbnails.length - 1]?.url || "";
+              ch.thumbnail?.thumbnails?.[ch.thumbnail.thumbnails.length - 1]
+                ?.url || "";
 
             if (channelId || title) {
               channels.push({
@@ -172,10 +188,45 @@ async function main() {
 
   try {
     // Navigate to channel_switcher
-    await page.goto(TARGET_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.goto(TARGET_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
 
     // Wait a moment for the page to render fully
     await page.waitForTimeout(2000);
+
+    // Check if we were redirected to a sign-in page
+    const currentUrl = page.url();
+    const pageContent = await page.content();
+    const isSignInPage =
+      currentUrl.includes("accounts.google.com") ||
+      currentUrl.includes("signin") ||
+      pageContent.includes('id="identifierId"') ||
+      pageContent.includes("data-signin-recaptcha-option");
+
+    if (isSignInPage) {
+      // User needs to sign in — wait for redirect back to YouTube after authentication
+      // This gives the user time to enter their credentials without the browser closing
+      try {
+        await page.waitForURL(
+          (url) => {
+            const hostname = url.hostname();
+            return (
+              hostname.includes("youtube.com") &&
+              !url.pathname().includes("signin")
+            );
+          },
+          { timeout: 110000 }, // Leave ~10s buffer within the 120s overall timeout
+        );
+        // Wait for the page to fully load after redirect
+        await page.waitForTimeout(3000);
+      } catch (e) {
+        throw new Error(
+          "Sign-in timeout: Please complete the Google sign-in within the time limit, or use a Chrome profile that is already logged into YouTube.",
+        );
+      }
+    }
 
     // Try method 1: Extract from ytInitialData in page source
     const html = await page.content();
@@ -196,7 +247,7 @@ async function main() {
         // Look for channel links in the switcher page
         const channelElements = document.querySelectorAll(
           'a[href*="/channel/"], a[href*="/@"], yt-channel-switcher-renderer a, ' +
-          '#channel-switcher-container a, [channel-id], yt-simple-endpoint'
+            "#channel-switcher-container a, [channel-id], yt-simple-endpoint",
         );
 
         for (const el of channelElements) {
@@ -204,7 +255,9 @@ async function main() {
           const channelIdMatch = href.match(/\/channel\/(UC[\w-]+)/);
           const handleMatch = href.match(/\/(@[\w.-]+)/);
           const title =
-            el.querySelector("#channel-title, #text, .channel-title")?.textContent?.trim() ||
+            el
+              .querySelector("#channel-title, #text, .channel-title")
+              ?.textContent?.trim() ||
             el.textContent?.trim() ||
             "";
           const avatarEl = el.querySelector("img");

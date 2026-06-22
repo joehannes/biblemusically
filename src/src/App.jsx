@@ -12,6 +12,7 @@ import Composer from "./pages/Composer";
 import BibleSources from "./pages/BibleSources";
 import AIComposer from "./pages/AIComposer";
 import Channels from "./pages/Channels";
+import Characters from "./pages/Characters";
 import Upload from "./pages/Upload";
 import Jobs from "./pages/Jobs";
 import Settings from "./pages/Settings";
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/images" element={<Images />} />
             <Route path="/video" element={<Composer />} />
             <Route path="/channels" element={<Channels />} />
+            <Route path="/characters" element={<Characters />} />
             <Route path="/upload" element={<Upload />} />
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/settings" element={<Settings />} />

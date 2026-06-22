@@ -187,5 +187,20 @@ export const api = {
       return { error: "AI Composer is not available on this backend." };
     }
   },
+  composeAssist: async (payload) => {
+    if (!isTauri) {
+      return {
+        error: "Tauri invoke is unavailable. Run this app through Tauri to use Qwen assist.",
+        text: "",
+        json: null,
+      };
+    }
+    try {
+      return await invokeCommand("compose_assist", { payload });
+    } catch (error) {
+      console.warn("[Tauri API] compose_assist unavailable or failed:", error);
+      return { error: "Qwen assist is not available on this backend.", text: "", json: null };
+    }
+  },
 
 };

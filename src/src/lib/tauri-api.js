@@ -6,8 +6,12 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const localComposeConfigKey = "studio:composer-config";
-const hasLocalStorage = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
-const isTauri = typeof window !== "undefined" && (typeof window.__TAURI__ !== "undefined" || typeof window.__TAURI_IPC__ !== "undefined");
+const hasLocalStorage =
+  typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+const isTauri =
+  typeof window !== "undefined" &&
+  (typeof window.__TAURI__ !== "undefined" ||
+    typeof window.__TAURI_IPC__ !== "undefined");
 
 const loadComposeConfigFromStorage = () => {
   if (!hasLocalStorage) return {};
@@ -53,16 +57,23 @@ export const api = {
   testSuno: () => invokeCommand("test_suno"),
   testMj: () => invokeCommand("test_mj"),
   ensureMjAutostart: () => invokeCommand("ensure_mj_autostart"),
-  mjAutoLogin: (account, password, twofa) => invokeCommand("mj_auto_login", { login_account: account, login_password: password, login_2fa: twofa }),
+  mjAutoLogin: (account, password, twofa) =>
+    invokeCommand("mj_auto_login", {
+      login_account: account,
+      login_password: password,
+      login_2fa: twofa,
+    }),
   testFfmpeg: () => invokeCommand("test_ffmpeg"),
 
   // ============ Projects ============
   listProjects: () => invokeCommand("list_projects"),
   createProject: (b) => invokeCommand("create_project", { body: b }),
   getProject: (id) => invokeCommand("get_project", { pid: id }),
-  updateProject: (id, b) => invokeCommand("update_project", { pid: id, body: b }),
+  updateProject: (id, b) =>
+    invokeCommand("update_project", { pid: id, body: b }),
   deleteProject: (id) => invokeCommand("delete_project", { pid: id }),
-  importLyrics: (id, items) => invokeCommand("import_lyrics", { pid: id, body: { items } }),
+  importLyrics: (id, items) =>
+    invokeCommand("import_lyrics", { pid: id, body: { items } }),
 
   // ============ Songs ============
   listSongs: (id) => invokeCommand("list_songs", { pid: id }),
@@ -86,14 +97,19 @@ export const api = {
   createChannel: (b) => invokeCommand("create_channel", { body: b }),
   deleteChannel: (id) => invokeCommand("delete_channel", { id }),
   oauthStart: (id, oauth_client_id) =>
-    invokeCommand("oauth_start", { id, ...(oauth_client_id ? { oauth_client_id } : {}) }),
-  oauthComplete: (id, b) => invokeCommand("oauth_complete_channel", { id, body: b }),
+    invokeCommand("oauth_start", {
+      id,
+      ...(oauth_client_id ? { oauth_client_id } : {}),
+    }),
+  oauthComplete: (id, b) =>
+    invokeCommand("oauth_complete_channel", { id, body: b }),
   channelPickedClient: (id) => invokeCommand("channel_picked_client", { id }),
 
   // ============ OAuth Clients ============
   listOauthClients: () => invokeCommand("list_oauth_clients"),
   createOauthClient: (b) => invokeCommand("create_oauth_client", { body: b }),
-  updateOauthClient: (id, b) => invokeCommand("update_oauth_client", { id, body: b }),
+  updateOauthClient: (id, b) =>
+    invokeCommand("update_oauth_client", { id, body: b }),
   deleteOauthClient: (id) => invokeCommand("delete_oauth_client", { id }),
 
   // ============ Bible ============
@@ -120,6 +136,32 @@ export const api = {
   aiEnrich: (b) => invokeCommand("ai_enrich_uploads", { body: b }),
   connectAllUrls: () => invokeCommand("channels_connect_all_urls"),
 
+  // ============ Characters ============
+  listCharacters: (songId) =>
+    invokeCommand("list_characters", songId ? { song_id: songId } : {}),
+  createCharacter: (body) => invokeCommand("create_character", { body }),
+  updateCharacter: (id, body) =>
+    invokeCommand("update_character", { char_id: id, body }),
+  deleteCharacter: (id) => invokeCommand("delete_character", { char_id: id }),
+  generateCharacterImage: (id) =>
+    invokeCommand("generate_character_image", { char_id: id }),
+  varyCharacterImage: (id) =>
+    invokeCommand("vary_character_image", { char_id: id }),
+  selectCharacterVariant: (id, idx) =>
+    invokeCommand("select_character_variant", {
+      char_id: id,
+      variant_index: idx,
+    }),
+  discardCharacterVariant: (id, idx) =>
+    invokeCommand("discard_character_variant", {
+      char_id: id,
+      variant_index: idx,
+    }),
+  discardAllCharacterVariants: (id) =>
+    invokeCommand("discard_all_character_variants", { char_id: id }),
+  proposeCharacters: (songId) =>
+    invokeCommand("propose_characters", { song_id: songId }),
+
   // ============ AI Composer ============
   getComposeConfig: async () => {
     if (!isTauri) return loadComposeConfigFromStorage();
@@ -141,7 +183,8 @@ export const api = {
   composeLyrics: async (payload) => {
     if (!isTauri) {
       return {
-        error: "Tauri invoke is unavailable. Run this app through Tauri or configure a backend that exposes compose_lyrics.",
+        error:
+          "Tauri invoke is unavailable. Run this app through Tauri or configure a backend that exposes compose_lyrics.",
       };
     }
     try {

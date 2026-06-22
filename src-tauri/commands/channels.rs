@@ -505,43 +505,6 @@ pub async fn import_from_google_account(
     }))
 }
 
-/// Locate a resource file (same as locate_resource_file in settings.rs)
-fn locate_switcher_script(name: &str) -> Option<std::path::PathBuf> {
-    // Current working directory (dev mode from project root)
-    if let Ok(cwd) = std::env::current_dir() {
-        let p = cwd.join("src-tauri").join("packaging").join(name);
-        if p.exists() { return Some(p); }
-    }
-    // TAURI_RESOURCE_DIR env var
-    if let Ok(rd) = std::env::var("TAURI_RESOURCE_DIR") {
-        let p = std::path::PathBuf::from(&rd).join(name);
-        if p.exists() { return Some(p); }
-        let p2 = std::path::PathBuf::from(&rd).join("packaging").join(name);
-        if p2.exists() { return Some(p2); }
-    }
-    // Walk up from executable
-    if let Ok(exe) = std::env::current_exe() {
-        let mut path = exe.parent();
-        while let Some(dir) = path {
-            let checks = [
-                dir.join("resources").join(name),
-                dir.join(name),
-                dir.join("packaging").join(name),
-                dir.join("_up_").join("src-tauri").join("packaging").join(name),
-                dir.join("_up_").join("packaging").join(name),
-            ];
-            for p in &checks {
-                if p.exists() { return Some(p.clone()); }
-            }
-            if let Some(parent) = dir.parent() {
-                let p2 = parent.join("src-tauri").join("packaging").join(name);
-                if p2.exists() { return Some(p2); }
-            }
-            path = dir.parent();
-        }
-    }
-    None
-}
 
 /// Connect ALL not-connected channels with a single OAuth flow.
 /// Does one OAuth loopback, gets all channels from the YouTube API,
@@ -713,7 +676,7 @@ pub async fn discover_from_channel_switcher(
     use crate::helpers::resolve_node_executable;
     use tokio::process::Command;
 
-    let script = locate_switcher_script("youtube-channel-switcher.js")
+    let script = crate::helpers::locate_resource_file("youtube-channel-switcher.js")
         .ok_or_else(|| "youtube-channel-switcher.js not found in resources/packaging".to_string())?;
     let node = resolve_node_executable()
         .ok_or_else(|| "Node.js is required for channel switcher discovery. Install Node.js and npm.".to_string())?;

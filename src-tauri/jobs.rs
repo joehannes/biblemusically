@@ -934,6 +934,41 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 serde_json::json!({ "sections": count })
             }
 
+            // ── CHARACTER IMAGE ────────────────────────────────────────
+            "character_image" => {
+                let character = fetch_doc(db, "characters", "id", tgt).await;
+                let prompt = character["image_prompt"].as_str()
+                    .filter(|s| !s.is_empty())
+                    .or(character["description"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let v = real_mj(&prompt, &settings_doc, job_id, db).await
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "Midjourney character image generation failed. Verify: (1) Proxy URL is set, (2) Discord token is valid, (3) Firewall allows outbound HTTPS."
+                    ))?;
+
+                db_log(db, job_id, &format!("mj: received {} character image variants", v.len())).await;
+                // Update character with new variants (append to existing)
+                let existing: Vec<String> = character["image_variants"].as_array()
+                    .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let mut all_variants = existing.clone();
+                for url in &v {
+                    if !all_variants.contains(url) {
+                        all_variants.push(url.clone());
+                    }
+                }
+                let bson_variants: Vec<bson::Bson> = all_variants.iter().map(|s| bson::Bson::String(s.clone())).collect();
+                db.collection::<Document>("characters").update_one(
+                    doc! { "id": tgt },
+                    doc! { "$set": {
+                        "image_url": &v[0],
+                        "image_variants": bson_variants,
+                    }},
+                ).await?;
+                serde_json::json!({ "variants": v.len(), "total_variants": all_variants.len(), "real": true })
+            }
+
             // ── IMAGE ──────────────────────────────────────────────────
             "image" => {
                 let sec = fetch_doc(db, "sections", "id", tgt).await;

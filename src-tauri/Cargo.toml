@@ -1,6 +1,6 @@
-[package]
+    [package]
 name = "ai-music-video-studio"
-version = "0.18.0"
+version = "0.24.1"
 edition = "2021"
 
 [lib]

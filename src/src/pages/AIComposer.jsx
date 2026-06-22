@@ -12,7 +12,8 @@ import { Slider } from "../components/ui/slider";
 import { 
   Bot, Plus, X, Save, Upload, Download, Sparkles, FlaskConical, 
   ArrowRight, Wand2, Trash2, Copy, Keyboard, Eye, HelpCircle, 
-  Film, Image, Settings, Music, ChevronDown, Check, Info
+  Film, Image, Settings, Music, ChevronDown, Check, Info,
+  ClipboardCheck, ListChecks, RefreshCw, SlidersHorizontal
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -102,6 +103,58 @@ const DEFAULT_CFG = {
     { language: "German", styles: "Messianic Alpine Electronic Folk" },
   ],
   sections: [],
+};
+
+const ASSIST_PRESETS = {
+  chapter_lens: {
+    label: "Chapter Lens",
+    icon: Eye,
+    jsonMode: false,
+    temperature: 0.45,
+    task: "Create a compact creative brief for this Bible chapter: central movement, emotional arc, recurring image motifs, words to avoid overusing, and 3 practical music-video hooks.",
+  },
+  section_cuts: {
+    label: "Section Cuts",
+    icon: ListChecks,
+    jsonMode: true,
+    temperature: 0.35,
+    task: "Suggest 5 to 8 lyric/video sections from the chapter. Return JSON exactly as {\"sections\":[{\"text\":\"short exact quote or verse range from the source\",\"idea\":\"specific visual idea for this section\"}]}",
+  },
+  theme_remix: {
+    label: "Theme Remix",
+    icon: Wand2,
+    jsonMode: false,
+    temperature: 0.65,
+    task: "Rewrite the global theme into one vivid but restrained prompt phrase. Include optional per-language and per-channel theme ideas when useful.",
+  },
+  suno_style_csv: {
+    label: "Suno Style CSV",
+    icon: Music,
+    jsonMode: false,
+    temperature: 0.55,
+    task: "Return one Suno-ready comma-separated style line for the selected target. Keep it musical, specific, and under 32 comma-separated phrases.",
+  },
+  image_prompt_bank: {
+    label: "Image Prompt Bank",
+    icon: Image,
+    jsonMode: true,
+    temperature: 0.6,
+    task: "Return JSON exactly as {\"keywords\":[\"...\"],\"negative\":\"...\",\"prompts\":[\"...\"]}. Keywords should be reusable Midjourney suffix terms for this chapter and current style.",
+  },
+  upload_metadata: {
+    label: "Upload Metadata",
+    icon: ClipboardCheck,
+    jsonMode: true,
+    temperature: 0.45,
+    task: "Return JSON exactly as {\"title\":\"...\",\"description\":\"...\",\"tags\":[\"...\"]} for a YouTube music video based on the current project context.",
+  },
+  quality_review: {
+    label: "Quality Review",
+    icon: HelpCircle,
+    jsonMode: false,
+    temperature: 0.35,
+    task: "Review the current composer setup before final generation. Flag confusing style conflicts, weak prompts, missing sections, mobile/video aspect mismatch, and quick fixes.",
+  },
 };
 
 // ── Collapsible Section Component (supports both internal state and controlled mode) ──
@@ -206,6 +259,12 @@ export default function AIComposer() {
   const [addChanVal, setAddChanVal] = useState("");
 
   const [activeSunoHelperIdx, setActiveSunoHelperIdx] = useState(null);
+  const [assistPreset, setAssistPreset] = useState("chapter_lens");
+  const [assistPrompt, setAssistPrompt] = useState("");
+  const [assistTemperature, setAssistTemperature] = useState([ASSIST_PRESETS.chapter_lens.temperature]);
+  const [assistJsonMode, setAssistJsonMode] = useState(ASSIST_PRESETS.chapter_lens.jsonMode);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistResult, setAssistResult] = useState(null);
 
   const composerState = { cfg, chapterRef, chapterText, chapterLang, chapterBook, chapterNum };
   const { status: asStatus, lastSaved, restore: restoreDraft } = useAutoSave("ai-composer", composerState, { delay: 800 });
@@ -418,6 +477,129 @@ export default function AIComposer() {
 
   const mjParams = `--ar ${cfg.mj_ar} --v ${cfg.mj_v}${cfg.mj_chaos ? ` --chaos ${cfg.mj_chaos}` : ""}${cfg.mj_stylize !== 100 ? ` --stylize ${cfg.mj_stylize}` : ""}${cfg.mj_weird ? ` --weird ${cfg.mj_weird}` : ""}${cfg.mj_video ? " --video" : ""}${cfg.mj_tile ? " --tile" : ""}${cfg.mj_quality && cfg.mj_quality !== "1" ? ` --quality ${cfg.mj_quality}` : ""}${cfg.mj_no ? ` --no "${cfg.mj_no}"` : ""}${cfg.mj_seed ? ` --seed ${cfg.mj_seed}` : ""}`;
 
+  const selectedText = chapterText.slice(selStart, selEnd).trim();
+  const targetCount = (cfg.targets || []).length;
+  const selectedTargetIndex = targetCount ? Math.min(activeSunoHelperIdx ?? 0, targetCount - 1) : 0;
+  const selectedTarget = cfg.targets?.[selectedTargetIndex] || cfg.targets?.[0] || {};
+  const currentAssist = ASSIST_PRESETS[assistPreset] || ASSIST_PRESETS.chapter_lens;
+
+  const setPreset = (key) => {
+    const preset = ASSIST_PRESETS[key] || ASSIST_PRESETS.chapter_lens;
+    setAssistPreset(key);
+    setAssistJsonMode(preset.jsonMode);
+    setAssistTemperature([preset.temperature]);
+  };
+
+  const compactLines = (value) => String(value || "")
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  const splitKeywords = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(String);
+    return String(value)
+      .split(/[\n,;]+/)
+      .map((s) => s.replace(/^[-*"\s]+|["\s]+$/g, "").trim())
+      .filter((s) => s.length > 2)
+      .slice(0, 40);
+  };
+
+  const assistContext = () => ({
+    chapter_ref: chapterRef,
+    chapter_language: chapterLang,
+    chapter_text: chapterText.slice(0, 12000),
+    selected_text: selectedText,
+    selected_target_index: selectedTargetIndex,
+    selected_target: selectedTarget,
+    themes: cfg.themes,
+    targets: cfg.targets,
+    sections: cfg.sections,
+    style_keywords: cfg.style_keywords,
+    midjourney_suffix: mjParams,
+    generation_toggles: cfg.generate,
+  });
+
+  const runAssist = async () => {
+    if (!chapterText.trim() && assistPreset !== "suno_style_csv") {
+      return toast.error("Load or paste a chapter before asking Qwen for context-aware help.");
+    }
+    setAssistBusy(true);
+    setAssistResult(null);
+    try {
+      const result = await api.composeAssist({
+        preset: currentAssist.label,
+        task: currentAssist.task,
+        user_prompt: assistPrompt,
+        context: assistContext(),
+        json_mode: assistJsonMode,
+        temperature: assistTemperature[0],
+      });
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        setAssistResult(result);
+        toast.success(`Qwen assist finished via ${result.model || "OpenRouter"}`);
+      }
+    } catch (error) {
+      console.error("Qwen assist failed", error);
+      toast.error("Qwen assist failed.");
+    } finally {
+      setAssistBusy(false);
+    }
+  };
+
+  const copyAssist = async () => {
+    if (!assistResult?.text) return;
+    await navigator.clipboard.writeText(assistResult.text);
+    toast.success("Assist output copied");
+  };
+
+  const applyAssist = (kind) => {
+    const text = compactLines(assistResult?.text);
+    const json = assistResult?.json;
+    if (!text && !json) return toast.error("Run an assist preset first.");
+
+    if (kind === "theme") {
+      const nextTheme = json?.global || json?.theme || text.split("\n").find(Boolean) || text;
+      setCfg(prev => ({ ...prev, themes: { ...prev.themes, global: String(nextTheme).trim() } }));
+      toast.success("Applied assist output to global theme");
+      return;
+    }
+
+    if (kind === "target") {
+      const csv = json?.styles || json?.style || json?.suno_style || text.split("\n").find(line => line.includes(",")) || text;
+      if (!cfg.targets?.length) return toast.error("Add a target first.");
+      updateTarget(selectedTargetIndex, "styles", String(csv).trim());
+      toast.success(`Applied style CSV to target ${selectedTargetIndex + 1}`);
+      return;
+    }
+
+    if (kind === "keywords") {
+      const keywords = splitKeywords(json?.keywords || json?.style_keywords || text);
+      if (!keywords.length) return toast.error("No keywords found in assist output.");
+      setCfg(prev => ({ ...prev, style_keywords: Array.from(new Set([...(prev.style_keywords || []), ...keywords])) }));
+      toast.success(`Added ${keywords.length} prompt keywords`);
+      return;
+    }
+
+    if (kind === "sections") {
+      const sectionList = Array.isArray(json?.sections) ? json.sections : Array.isArray(json) ? json : [];
+      if (!sectionList.length) return toast.error("Assist output did not contain a sections array.");
+      const normalized = sectionList
+        .map((s) => ({ text: String(s.text || s.verse || s.reference || "").trim(), idea: String(s.idea || s.prompt || "").trim() }))
+        .filter((s) => s.text || s.idea);
+      setCfg(prev => ({ ...prev, sections: [...(prev.sections || []), ...normalized] }));
+      toast.success(`Added ${normalized.length} suggested sections`);
+      return;
+    }
+
+    if (kind === "sectionIdea") {
+      setSectionIdea(text.split("\n").find(Boolean) || text);
+      toast.success("Placed assist output in the section idea field");
+    }
+  };
+
   const applyThemePreset = (presetData) => {
     setCfg(prev => ({
       ...prev,
@@ -542,23 +724,156 @@ export default function AIComposer() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-3 sm:px-4 py-5 sm:py-8 space-y-5 sm:space-y-6">
       {/* HEADER SECTION */}
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
-        <h1 className="text-4xl sm:text-5xl font-bold">AI Composer</h1>
-        <div className="flex items-center gap-3">
+      <div className="flex items-start sm:items-center justify-between mb-2 flex-col sm:flex-row gap-3">
+        <h1 className="text-3xl sm:text-5xl font-bold">AI Composer</h1>
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           <AutoSaveChip status={asStatus} lastSaved={lastSaved} />
-          <Button size="sm" variant="secondary" data-testid="composer-save-cfg" onClick={saveCfg}>
+          <Button size="sm" variant="secondary" data-testid="composer-save-cfg" onClick={saveCfg} className="shrink-0">
             <Save className="w-3 h-3 mr-2" />
             Save config <kbd className="ml-1.5 hidden sm:inline text-[9px] font-mono opacity-70 bg-background px-1 py-0.5 rounded border border-border">Ctrl+S</kbd>
           </Button>
-          <Button data-testid="composer-generate-btn" onClick={generate} disabled={busy}>
+          <Button data-testid="composer-generate-btn" onClick={generate} disabled={busy} className="shrink-0">
             {busy ? <FlaskConical className="w-4 h-4 mr-2 animate-pulse" /> : <Sparkles className="w-4 h-4 mr-2" />}
             Generate <kbd className="ml-1.5 hidden sm:inline text-[9px] font-mono opacity-70 bg-primary-foreground/20 px-1 py-0.5 rounded">Ctrl+Enter</kbd>
           </Button>
         </div>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Authors a multi-channel <span className="text-mono">lyrics.json</span> from your bible chapter + themes + section ideas. Powered by OpenRouter Qwen (free tier).</p>
+
+      <CollapsibleSection
+        title="Qwen Assist Workbench"
+        badge="intermediate AI"
+        titleIcon={Bot}
+        actions={
+          <Button size="sm" onClick={runAssist} disabled={assistBusy}>
+            {assistBusy ? <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-2" />}
+            Run
+          </Button>
+        }
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="space-y-4">
+            <div>
+              <div className="text-[10px] text-mono uppercase text-muted-foreground mb-2">Assist preset</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {Object.entries(ASSIST_PRESETS).map(([key, preset]) => {
+                  const Icon = preset.icon;
+                  const active = assistPreset === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setPreset(key)}
+                      className={`min-h-10 rounded-md border px-2.5 py-2 text-left text-xs transition-colors ${
+                        active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-muted/20 text-muted-foreground hover:text-foreground hover:border-primary/60"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <Icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{preset.label}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <div className="text-[10px] text-mono uppercase text-muted-foreground">Selected target</div>
+                <Select
+                  value={String(Math.min(selectedTargetIndex, Math.max((cfg.targets || []).length - 1, 0)))}
+                  onValueChange={(v) => setActiveSunoHelperIdx(Number(v))}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Target" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(cfg.targets || []).map((target, idx) => (
+                      <SelectItem key={`${target.language}-${idx}`} value={String(idx)} className="text-xs">
+                        {idx + 1}. {target.language || "Language"} {target.styles ? `- ${target.styles.slice(0, 34)}` : ""}
+                      </SelectItem>
+                    ))}
+                    {!(cfg.targets || []).length && <SelectItem value="0">No target yet</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
+                <span className="text-xs">
+                  <span className="flex items-center gap-1.5 font-medium"><SlidersHorizontal className="w-3.5 h-3.5" /> JSON mode</span>
+                  <span className="block text-[10px] text-muted-foreground">Use when applying structured output</span>
+                </span>
+                <Switch checked={assistJsonMode} onCheckedChange={setAssistJsonMode} />
+              </label>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-mono uppercase text-muted-foreground">Creativity: {assistTemperature[0].toFixed(2)}</span>
+                <span className="text-[10px] text-muted-foreground">Lower is stricter</span>
+              </div>
+              <Slider value={assistTemperature} min={0} max={1.2} step={0.05} onValueChange={setAssistTemperature} />
+            </div>
+
+            <Textarea
+              rows={4}
+              value={assistPrompt}
+              onChange={(e) => setAssistPrompt(e.target.value)}
+              placeholder="Optional instructions for this run, e.g. make the images less literal, aim for German-speaking worship channels, or keep it child-safe."
+              className="text-sm"
+            />
+
+            <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
+              <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+                <div className="text-mono uppercase">Chapter</div>
+                <div className="truncate">{chapterRef || "No chapter loaded"}</div>
+              </div>
+              <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+                <div className="text-mono uppercase">Selection</div>
+                <div className="truncate">{selectedText ? `${selectedText.length} chars selected` : "No selected text"}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 min-w-0">
+            <div className="rounded-md border border-border bg-background/50 min-h-64 max-h-96 overflow-y-auto p-3 scroll-thin">
+              {assistResult?.text ? (
+                <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed font-sans">{assistResult.text}</pre>
+              ) : (
+                <div className="h-56 flex flex-col items-center justify-center text-center text-muted-foreground">
+                  <Bot className="w-8 h-8 mb-2 opacity-60" />
+                  <div className="text-sm font-medium">Run a focused Qwen pass</div>
+                  <div className="text-xs max-w-sm mt-1">Use it for one practical step, then apply the useful bits into the composer controls.</div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" onClick={copyAssist} disabled={!assistResult?.text}>
+                <Copy className="w-3.5 h-3.5 mr-2" />Copy
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => applyAssist("theme")} disabled={!assistResult}>
+                <Wand2 className="w-3.5 h-3.5 mr-2" />Theme
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => applyAssist("target")} disabled={!assistResult || !(cfg.targets || []).length}>
+                <Music className="w-3.5 h-3.5 mr-2" />Target style
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => applyAssist("keywords")} disabled={!assistResult}>
+                <Image className="w-3.5 h-3.5 mr-2" />Keywords
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => applyAssist("sections")} disabled={!assistResult}>
+                <ListChecks className="w-3.5 h-3.5 mr-2" />Sections
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => applyAssist("sectionIdea")} disabled={!assistResult}>
+                <Plus className="w-3.5 h-3.5 mr-2" />Section idea
+              </Button>
+            </div>
+          </div>
+        </div>
+      </CollapsibleSection>
 
       {/* ── Master Toggle: Show/Hide all config sections ── */}
       <Card className="overflow-hidden border-primary/30">
@@ -746,7 +1061,7 @@ export default function AIComposer() {
               {["8.1", "7", "6.1", "6.0", "5.2", "niji 6"].map((v) => (
                 <button key={v} type="button" onClick={() => setCfg({ ...cfg, mj_v: v })}
                   className={`text-xs px-2 py-0.5 rounded border transition-all ${cfg.mj_v === v ? "bg-primary text-primary-foreground border-primary font-medium" : "bg-muted hover:bg-secondary border-border text-muted-foreground"}`}>
-                  {v === "8.1" || v === "7" ? `✨ ${v}` : v}
+                  {v}
                 </button>
               ))}
             </div>
@@ -758,7 +1073,7 @@ export default function AIComposer() {
               {["16:9", "9:16", "1:1", "4:5"].map((ar) => (
                 <button key={ar} type="button" onClick={() => setCfg({ ...cfg, mj_ar: ar })}
                   className={`text-xs px-2.5 py-1 rounded border transition-all ${cfg.mj_ar === ar ? "bg-primary text-primary-foreground border-primary font-medium" : "bg-muted hover:bg-secondary border-border text-muted-foreground"}`}>
-                  {ar} {ar === "16:9" ? "🖥️" : ar === "9:16" ? "📱" : ar === "1:1" ? "🔲" : "📸"}
+                  {ar}
                 </button>
               ))}
               <Input className="h-7 w-20 text-xs text-mono" placeholder="Custom" value={cfg.mj_ar} onChange={(e) => setCfg({ ...cfg, mj_ar: e.target.value })} />
@@ -865,9 +1180,9 @@ export default function AIComposer() {
         }>
           <Textarea data-testid="composer-chapter-textarea" ref={taRef} rows={10} value={chapterText} onChange={e=>setChapterText(e.target.value)} onSelect={onTextSelect}
             placeholder="Paste a chapter or use 'Bible Sources' to load one. Then select text below and click Add Section." className="text-sm leading-relaxed" />
-          <div className="mt-3 flex gap-2 items-center">
+          <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-center">
             <Input data-testid="composer-section-idea" placeholder="image idea for this section (e.g. 'sun rising over Jordan')" value={sectionIdea} onChange={e=>setSectionIdea(e.target.value)} />
-            <Button size="sm" data-testid="composer-add-section" onClick={addSection}><Plus className="w-3 h-3 mr-1" />Add</Button>
+            <Button size="sm" data-testid="composer-add-section" onClick={addSection} className="w-full sm:w-auto"><Plus className="w-3 h-3 mr-1" />Add</Button>
           </div>
         </CollapsibleSection>
 
@@ -889,9 +1204,9 @@ export default function AIComposer() {
 
         {/* DYNAMIC TARGETS (LANGUAGE × SUNO AI STYLE) */}
         <CollapsibleSection title="Targets (Channel × Language × Suno AI Styles)" badge={`${(cfg.targets||[]).length} channels`} titleIcon={Music} actions={
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={syncTargetsFromChannels}>Sync from Channels</Button>
-            <Button size="sm" variant="secondary" data-testid="composer-add-target" onClick={addTarget}><Plus className="w-3 h-3 mr-1" />Add Channel</Button>
+          <div className="flex gap-2 overflow-x-auto max-w-[58vw] sm:max-w-none">
+            <Button size="sm" variant="outline" onClick={syncTargetsFromChannels} className="shrink-0">Sync from Channels</Button>
+            <Button size="sm" variant="secondary" data-testid="composer-add-target" onClick={addTarget} className="shrink-0"><Plus className="w-3 h-3 mr-1" />Add Channel</Button>
           </div>
         }>
           <div className="space-y-3.5">
@@ -933,7 +1248,7 @@ export default function AIComposer() {
                   </div>
 
                   {isCustomLang && (
-                    <div className="w-1/2 space-y-1">
+                    <div className="w-full sm:w-1/2 space-y-1">
                       <span className="text-[9px] text-mono uppercase text-muted-foreground">Type Custom Language</span>
                       <Input value={t.language} onChange={e => updateTarget(i, "language", e.target.value)} placeholder="e.g. Yiddish" className="h-7 text-xs" />
                     </div>

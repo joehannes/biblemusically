@@ -66,6 +66,214 @@ pub struct ComposeRequest {
     pub artist: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComposerAssistRequest {
+    #[serde(default)]
+    pub preset: String,
+    #[serde(default)]
+    pub task: String,
+    #[serde(default)]
+    pub system_prompt: String,
+    #[serde(default)]
+    pub user_prompt: String,
+    #[serde(default)]
+    pub context: Value,
+    #[serde(default)]
+    pub json_mode: bool,
+    #[serde(default = "default_assist_temperature")]
+    pub temperature: f32,
+}
+
+fn default_assist_temperature() -> f32 { 0.55 }
+
+/// Public helper: call OpenRouter with a system prompt and user message,
+/// accepting a DB reference (not Tauri State) so it can be used from
+/// other modules like characters.rs.
+pub async fn call_openrouter(
+    db: &mongodb::Database,
+    system: &str,
+    user: &str,
+    temperature: f32,
+    json_mode: bool,
+) -> Result<Value, String> {
+    let settings_doc = db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" })
+        .with_options(proj0())
+        .await.map_err(e)?
+        .map(bson_to_value)
+        .unwrap_or_default();
+
+    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
+    let model = settings_doc["openrouter_model"].as_str()
+        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
+        .to_string();
+
+    if key.is_empty() {
+        return Err("Configure openrouter_api_key in Settings (get one free at openrouter.ai/keys).".to_string());
+    }
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .user_agent("Lightkid AI Studio")
+        .build()
+        .map_err(e)?;
+
+    let user_email = settings_doc["openrouter_email"].as_str().unwrap_or("").trim().to_string();
+
+    let mut body = serde_json::json!({
+        "model": model,
+        "temperature": temperature.clamp(0.0, 1.5),
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ]
+    });
+
+    if json_mode {
+        body["response_format"] = serde_json::json!({ "type": "json_object" });
+    }
+
+    let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")
+        .header("Authorization", format!("Bearer {key}"))
+        .header("HTTP-Referer", "https://lightkid.studio")
+        .header("X-Title", "Lightkid AI Studio");
+
+    if !user_email.is_empty() {
+        req_builder = req_builder.header("X-User-Email", &user_email);
+    }
+
+    let r = req_builder.json(&body).send().await.map_err(e)?;
+    if !r.status().is_success() {
+        let status = r.status();
+        let txt = r.text().await.unwrap_or_default();
+        let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
+        return Err(format!("OpenRouter HTTP {status}: {safe_txt}"));
+    }
+
+    let res_json: Value = r.json().await.map_err(e)?;
+    let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
+    Ok(serde_json::json!({
+        "text": content,
+        "model": model,
+    }))
+}
+
+fn raw_preview(content: &str) -> String {
+    if content.len() > 1200 { content[..1200].to_string() } else { content.to_string() }
+}
+
+fn extract_json_value(content: &str) -> Option<Value> {
+    let re = Regex::new(r"(?s)(\{.*\}|\[.*\])").ok()?;
+    let mat = re.find(content)?;
+    serde_json::from_str::<Value>(mat.as_str()).ok()
+}
+
+async fn openrouter_text(
+    state: &State<'_, AppState>,
+    system: &str,
+    user: &str,
+    temperature: f32,
+    json_mode: bool,
+) -> Res<(String, String)> {
+    let settings_doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" })
+        .with_options(proj0())
+        .await.map_err(e)?
+        .map(bson_to_value)
+        .unwrap_or_default();
+
+    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
+    let model = settings_doc["openrouter_model"].as_str()
+        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
+        .to_string();
+
+    if key.is_empty() {
+        return Err("Configure openrouter_api_key in Settings (get one free at openrouter.ai/keys).".to_string());
+    }
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .user_agent("Lightkid AI Studio")
+        .build()
+        .map_err(e)?;
+
+    let user_email = settings_doc["openrouter_email"].as_str().unwrap_or("").trim().to_string();
+
+    let mut body = serde_json::json!({
+        "model": model,
+        "temperature": temperature.clamp(0.0, 1.5),
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ]
+    });
+
+    if json_mode {
+        body["response_format"] = serde_json::json!({ "type": "json_object" });
+    }
+
+    let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")
+        .header("Authorization", format!("Bearer {key}"))
+        .header("HTTP-Referer", "https://lightkid.studio")
+        .header("X-Title", "Lightkid AI Studio");
+
+    if !user_email.is_empty() {
+        req_builder = req_builder.header("X-User-Email", &user_email);
+    }
+
+    let r = req_builder.json(&body).send().await.map_err(e)?;
+    if !r.status().is_success() {
+        let status = r.status();
+        let txt = r.text().await.unwrap_or_default();
+        let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
+        return Err(format!("OpenRouter HTTP {status}: {safe_txt}"));
+    }
+
+    let res_json: Value = r.json().await.map_err(e)?;
+    let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
+    Ok((content, model))
+}
+
+#[tauri::command]
+pub async fn compose_assist(state: State<'_, AppState>, payload: ComposerAssistRequest) -> Res<Value> {
+    let context = serde_json::to_string_pretty(&payload.context).unwrap_or_else(|_| "{}".to_string());
+    let system = if payload.system_prompt.trim().is_empty() {
+        "You are a practical creative assistant for a Bible music-video production studio. \
+         Help with the current small step only. Prefer concise, directly usable output. \
+         When asked for JSON, return valid JSON with no markdown fences."
+    } else {
+        payload.system_prompt.trim()
+    };
+    let mut user = String::new();
+    if !payload.preset.trim().is_empty() {
+        user.push_str(&format!("Preset: {}\n", payload.preset.trim()));
+    }
+    if !payload.task.trim().is_empty() {
+        user.push_str(&format!("Task:\n{}\n\n", payload.task.trim()));
+    }
+    user.push_str(&format!("Context JSON:\n{}\n\n", context));
+    if !payload.user_prompt.trim().is_empty() {
+        user.push_str(&format!("User instructions:\n{}\n", payload.user_prompt.trim()));
+    }
+
+    match openrouter_text(&state, system, &user, payload.temperature, payload.json_mode).await {
+        Ok((text, model)) => {
+            Ok(serde_json::json!({
+                "text": text,
+                "json": extract_json_value(&text),
+                "model": model,
+                "preset": payload.preset,
+            }))
+        }
+        Err(err) => Ok(serde_json::json!({
+            "error": err,
+            "text": "",
+            "json": null,
+            "preset": payload.preset,
+        })),
+    }
+}
+
 #[tauri::command]
 pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest) -> Res<Value> {
     // 1. Fetch settings to get openrouter_api_key and openrouter_model
@@ -234,10 +442,6 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
         // Try the repaired version
         serde_json::from_str::<Value>(&repaired).map_err(|e| e.to_string())
     }
-
-    let raw_preview = |content: &str| -> String {
-        if content.len() > 800 { content[..800].to_string() } else { content.to_string() }
-    };
 
     match m {
         Some(mat) => {

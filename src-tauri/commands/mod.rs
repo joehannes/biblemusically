@@ -8,6 +8,7 @@ pub mod jobs_cmd;
 pub mod uploads;
 pub mod bible;
 pub mod ai;
+pub mod characters;
 
 pub use settings::*;
 pub use projects::*;
@@ -19,3 +20,4 @@ pub use jobs_cmd::*;
 pub use uploads::*;
 pub use bible::*;
 pub use ai::*;
+pub use characters::*;

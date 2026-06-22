@@ -37,6 +37,8 @@ pub struct Settings {
     pub qwen_endpoint: String,
     #[serde(default)]
     pub openrouter_api_key: String,
+    #[serde(default)]
+    pub openrouter_email: String,
     #[serde(default = "default_model")]
     pub openrouter_model: String,
     #[serde(default)]
@@ -313,6 +315,46 @@ pub struct ComposeRequest {
     pub title_pattern: String,
     #[serde(default = "default_artist")]
     pub artist: String,
+}
+
+// ────────────────────────────────────────────────────────────────
+// Character
+// ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Character {
+    #[serde(default = "default_uuid")]
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub song_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub image_prompt: String,
+    #[serde(default)]
+    pub image_url: Option<String>,
+    #[serde(default)]
+    pub image_variants: Vec<String>,
+    #[serde(default)]
+    pub selected_variant: i32,
+    #[serde(default = "now_iso")]
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterCreate {
+    pub name: String,
+    #[serde(default)]
+    pub song_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub image_prompt: Option<String>,
 }
 
 fn default_mj_params()     -> String { "--ar 16:9 --v 8.1".into() }

@@ -277,6 +277,17 @@ pub fn run() {
             commands::import_discovered_channels,
             commands::refresh_all_channel_metadata,
             commands::import_from_google_account,
+            // Characters commands
+            commands::list_characters,
+            commands::create_character,
+            commands::update_character,
+            commands::delete_character,
+            commands::generate_character_image,
+            commands::vary_character_image,
+            commands::select_character_variant,
+            commands::discard_character_variant,
+            commands::discard_all_character_variants,
+            commands::propose_characters,
             // OAuth commands
             commands::list_oauth_clients,
             commands::create_oauth_client,
@@ -311,6 +322,7 @@ pub fn run() {
             // AI commands
             commands::get_compose_config,
             commands::save_compose_config,
+            commands::compose_assist,
             commands::compose_lyrics,
         ])
         .run(tauri::generate_context!())
