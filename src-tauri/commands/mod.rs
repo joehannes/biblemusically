@@ -9,6 +9,8 @@ pub mod uploads;
 pub mod bible;
 pub mod ai;
 pub mod characters;
+pub mod channel_creation;
+pub mod channel_settings;
 
 pub use settings::*;
 pub use projects::*;
@@ -21,3 +23,5 @@ pub use uploads::*;
 pub use bible::*;
 pub use ai::*;
 pub use characters::*;
+pub use channel_creation::*;
+pub use channel_settings::*;
