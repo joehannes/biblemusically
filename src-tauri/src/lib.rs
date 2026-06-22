@@ -277,6 +277,16 @@ pub fn run() {
             commands::import_discovered_channels,
             commands::refresh_all_channel_metadata,
             commands::import_from_google_account,
+            // Channel creation watcher commands
+            commands::start_channel_creation_watcher,
+            commands::inject_channel_handle,
+            // Channel settings commands (AI translation, global settings, overrides)
+            commands::get_global_channel_settings,
+            commands::save_global_channel_settings,
+            commands::translate_and_apply_settings,
+            commands::get_channel_settings,
+            commands::update_channel_overrides,
+            commands::sync_channel_to_youtube,
             // Characters commands
             commands::list_characters,
             commands::create_character,

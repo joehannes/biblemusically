@@ -1,16 +1,55 @@
 ```
-# Build artifacts
-target/
-**/target/
-
 # Dependencies
+node_modules/
+target/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+.venv.*
+pyvenv.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+.DS_Store
+Thumbs.db
+
+# Rust/Cargo
 Cargo.lock
-**/Cargo.lock
-
-# Tauri specific
-src-tauri/target/
-**/src-tauri/target/
-
-# Rust build artifacts
+target/
 **/*.rs.bk
+$CARGO_HOME/
+.cargo/
+
+# Tauri-specific
+src-tauri/target/
+src-tauri/Cargo.lock
 ```
