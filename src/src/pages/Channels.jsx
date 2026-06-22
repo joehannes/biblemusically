@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "../lib/api";
 import OAuthClientsPanel from "../components/OAuthClientsPanel";
+import ChannelSettingsPanel from "../components/ChannelSettingsPanel";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import {
   Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound,
   RefreshCw, User, AtSign, Globe, Hash, Mail, Sparkles, Info,
-  ChevronDown, X, Lightbulb, Search,
+  ChevronDown, X, Lightbulb, Search, Settings, Languages,
 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
@@ -203,6 +204,9 @@ export default function Channels() {
   const [selectedImportClient, setSelectedImportClient] = useState("");
   const [selectedClientValid, setSelectedClientValid] = useState(null); // null | 'loading' | { ok, missing } | { error }
   const [importError, setImportError] = useState(null);
+  
+  // Channel settings panel state
+  const [showChannelSettings, setShowChannelSettings] = useState(false);
 
   const load = async () => setChannels(await api.listChannels());
   useEffect(() => { load(); }, []);
@@ -522,6 +526,10 @@ export default function Channels() {
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Channel Manager</h1>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowChannelSettings(!showChannelSettings)} className="gap-2">
+            <Settings className="w-4 h-4" />
+            {showChannelSettings ? "Hide" : "Channel Settings"}
+          </Button>
           <Button variant="outline" size="sm" onClick={refreshMetadata} disabled={isRefreshing}>
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />Refresh metadata
           </Button>
@@ -789,6 +797,21 @@ export default function Channels() {
         })}
         {!channels.length && <Card className="p-10 col-span-full text-center text-muted-foreground border-dashed">No channels yet.</Card>}
       </div>
+
+      {/* Channel Settings Panel (Global settings, AI translation, overrides) */}
+      {showChannelSettings && (
+        <div className="mt-8 fade-in">
+          <div className="flex items-center gap-2 mb-4">
+            <Languages className="w-5 h-5 text-primary" />
+            <h2 className="text-2xl font-bold">AI Translation & Channel Settings</h2>
+          </div>
+          <ChannelSettingsPanel
+            projectId={null}
+            channels={channels}
+            onRefresh={load}
+          />
+        </div>
+      )}
 
       {/* ── OAuth manual fallback dialog ── */}
       <Dialog open={!!oauthDialog} onOpenChange={(v) => !v && setOauthDialog(null)}>

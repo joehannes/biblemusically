@@ -124,6 +124,18 @@ export const api = {
   refreshAllChannelMetadata: () => invokeCommand("refresh_all_channel_metadata"),
   importFromGoogleAccount: (oauthClientId) => invokeCommand("import_from_google_account", { oauthClientId: oauthClientId }),
 
+  // ============ Channel Creation Watcher ============
+  startChannelCreationWatcher: (port) => invokeCommand("start_channel_creation_watcher", { port }),
+  injectChannelHandle: (handle) => invokeCommand("inject_channel_handle", { handle }),
+
+  // ============ Channel Settings & AI Translation ============
+  getGlobalChannelSettings: (projectId) => invokeCommand("get_global_channel_settings", { project_id: projectId }),
+  saveGlobalChannelSettings: (projectId, settings) => invokeCommand("save_global_channel_settings", { project_id: projectId, settings }),
+  translateAndApplySettings: (projectId, channelIds) => invokeCommand("translate_and_apply_settings", { project_id: projectId, channel_ids: channelIds }),
+  getChannelSettings: (channelId) => invokeCommand("get_channel_settings", { channel_id: channelId }),
+  updateChannelOverrides: (channelId, overrides) => invokeCommand("update_channel_overrides", { channel_id: channelId, overrides }),
+  syncChannelToYouTube: (channelId) => invokeCommand("sync_channel_to_youtube", { channel_id: channelId }),
+
   // ============ OAuth Clients ============
   listOauthClients: () => invokeCommand("list_oauth_clients"),
   createOauthClient: (b) => invokeCommand("create_oauth_client", { body: b }),
