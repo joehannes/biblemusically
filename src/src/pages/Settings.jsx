@@ -372,9 +372,9 @@ const SettingsComponent = () => {
               value={FREE_MODELS.some(m => m.id === s.openrouter_model) ? s.openrouter_model : (s.openrouter_model ? "custom" : "qwen/qwen3-next-80b-a3b-instruct:free")} 
               onValueChange={(val) => {
                 if (val === "custom") {
-                  setS({ ...s, openrouter_model: "" });
+                  updateS({ openrouter_model: "" });
                 } else {
-                  setS({ ...s, openrouter_model: val });
+                  updateS({ openrouter_model: val });
                 }
               }}
             >
@@ -397,7 +397,7 @@ const SettingsComponent = () => {
             <Input 
               data-testid="settings-openrouter-model" 
               value={s.openrouter_model || ""} 
-              onChange={e => setS({ ...s, openrouter_model: e.target.value })} 
+              onChange={e => updateS({ openrouter_model: e.target.value })} 
               placeholder="e.g. google/gemma-4-31b-it:free" 
             />
           </div>
