@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, memo, useRef } from "react";
 import appPkg from "../../package.json";
 import { api } from "../lib/api";
-import { useBackgroundSave } from "../lib/hooks";
+import { useBackgroundSave, restore } from "../lib/hooks";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -98,7 +98,17 @@ const SettingsComponent = () => {
     (async () => {
       try {
         const settings = await api.getSettings();
-        setS(prev => ({ ...prev, ...initialSettings, ...settings }));
+        
+        // Try to restore any auto-saved draft first (for persistence across tab switches)
+        let restored = null;
+        try {
+          restored = await restore("settings-mirror");
+        } catch (e) {
+          console.error("Failed to restore settings draft", e);
+        }
+        
+        // Merge: initialSettings -> saved settings -> restored draft (draft takes precedence)
+        setS(prev => ({ ...prev, ...initialSettings, ...settings, ...(restored || {}) });
 
         let clients = await api.listOauthClients();
         setOauthClients(clients || []);
@@ -167,6 +177,8 @@ const SettingsComponent = () => {
       } catch (e) {
         console.error("Failed to sync settings to oauth pool", e);
       }
+      // Clear the auto-saved draft after successful explicit save
+      try { localStorage.removeItem("draft:settings-mirror"); } catch {}
       toast.success("Settings saved");
     } catch (err) {
       console.error("Failed to save settings", err);
