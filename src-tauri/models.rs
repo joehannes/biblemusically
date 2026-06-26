@@ -73,6 +73,35 @@ pub struct Project {
     pub styles: Vec<String>,
     #[serde(default = "now_iso")]
     pub created_at: String,
+    // Per-project settings (OpenRouter, Suno, MJ, etc.)
+    #[serde(default)]
+    pub openrouter_api_key: String,
+    #[serde(default)]
+    pub openrouter_email: String,
+    #[serde(default = "default_model")]
+    pub openrouter_model: String,
+    #[serde(default)]
+    pub suno_cookie: String,
+    #[serde(default)]
+    pub mj_profile_dir: String,
+    #[serde(default)]
+    pub mj_discord_token: String,
+    #[serde(default)]
+    pub google_client_id: String,
+    #[serde(default)]
+    pub google_client_secret: String,
+    #[serde(default)]
+    pub google_redirect_uri: String,
+    #[serde(default = "default_ffmpeg")]
+    pub ffmpeg_path: String,
+    #[serde(default = "default_ffprobe")]
+    pub ffprobe_path: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default)]
+    pub qwen_endpoint: String,
+    #[serde(default)]
+    pub mj_proxy_url: String,
 }
 
 fn yes() -> bool { true }
