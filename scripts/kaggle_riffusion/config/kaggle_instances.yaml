@@ -1,0 +1,43 @@
+# kaggle_instances.yaml
+# Configuration for Kaggle notebook instances
+
+# Default configuration for Riffusion Song Studio
+default:
+  gpu_type: "T4 x2"  # Kaggle provides dual T4 GPUs
+  session_timeout_hours: 12
+  output_dir: "/kaggle/working/riffusion_output"
+  checkpoint_enabled: true
+  
+  # API Server settings
+  server:
+    port: 8000
+    host: "0.0.0.0"
+    log_level: "info"
+  
+  # Generation defaults
+  generation:
+    max_duration_minutes: 10.0
+    min_duration_minutes: 5.0
+    default_seed: 42
+    crossfade_seconds: 1.0
+    normalize_dbfs: -16.0
+  
+  # Tunnel settings
+  tunnel:
+    provider: "cloudflare"  # cloudflare or ngrok
+    quick_tunnel: true  # Use anonymous quick tunnels
+
+# Development/testing instance
+development:
+  extends: default
+  gpu_type: "none"  # CPU-only for testing
+  generation:
+    max_duration_minutes: 2.0  # Shorter for testing
+
+# Production instance (long-form songs)
+production:
+  extends: default
+  gpu_type: "T4 x2"
+  generation:
+    max_duration_minutes: 10.0
+    checkpoint_interval_sections: 1  # Checkpoint after each section
