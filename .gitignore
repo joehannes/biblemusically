@@ -1,8 +1,11 @@
 ```
-# Logs and temp files
-*.log
-build.log
+# Rust/Cargo
+target/
+Cargo.lock
+**/*.rs.bk
 
-# Dependencies
-yarn.lock
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+**/tauri.conf.json
 ```
