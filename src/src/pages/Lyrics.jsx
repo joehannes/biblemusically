@@ -1,19 +1,34 @@
 import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
-import { Upload, FileJson, CheckCheck, Trash2, Copy, Download, X } from "lucide-react";
+import { Upload, FileJson, CheckCheck, Trash2, Copy, Download, X, Mic2 } from "lucide-react";
 import { toast } from "sonner";
 import { getStepForPath } from "../lib/pageSteps";
 
 export default function Lyrics() {
+  const nav = useNavigate();
   const { activeProjectId, refreshSongs, songs } = useStudio();
   const [items, setItems] = useState([]);
   const [raw, setRaw] = useState("");
   const fileRef = useRef();
+
+  // Lyrics should always be a plain string (see the fixed AI prompt in commands/ai.rs), but a
+  // JSON file exported before that fix — or any other producer that didn't follow the shape —
+  // can still hold an array of {section, lines} objects. Rendering that array directly as a
+  // JSX child throws "Objects are not valid as a React child" and blanks the whole page, which
+  // is exactly the reported crash; this keeps the preview safe regardless of shape.
+  const lyricsText = (lyrics) => {
+    if (typeof lyrics === "string") return lyrics;
+    if (Array.isArray(lyrics)) {
+      return lyrics.map((l) => `[${l?.section || ""}]\n${l?.lines || ""}`).join("\n\n");
+    }
+    return "";
+  };
 
   const parse = (text) => {
     try {
@@ -45,17 +60,19 @@ export default function Lyrics() {
     }
   };
 
-  const downloadJSON = () => {
+  // Saves straight into the active project's own ~/Documents folder — no save dialog (kept
+  // deliberately simple), just a semantically named file instead of one dropped in Downloads.
+  const downloadJSON = async () => {
     if (!items.length) return toast.error("Nothing to export");
-    const json = JSON.stringify(items, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `lyrics-export-${new Date().toISOString().split("T")[0]}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success("Downloaded");
+    if (!activeProjectId) return toast.error("Select a project first — exports save into that project's own folder.");
+    const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 16);
+    const filename = `lyrics-import_${items.length}-songs_${stamp}.json`;
+    try {
+      const res = await api.saveProjectFile(activeProjectId, filename, JSON.stringify(items, null, 2));
+      toast.success(`Saved to ${res.path}`);
+    } catch (err) {
+      toast.error("Failed to save: " + err);
+    }
   };
 
   const selectAllText = () => {
@@ -77,6 +94,17 @@ export default function Lyrics() {
     const res = await api.importLyrics(activeProjectId, items);
     toast.success(`Imported ${res.created} songs`);
     await refreshSongs();
+  };
+
+  // Explicit "put these on the Music Generation tiles" action — imports, then jumps straight
+  // to the Music Studio page where the resulting song tiles actually show up.
+  const sendToMusicGen = async () => {
+    if (!activeProjectId) return toast.error("Select a project first");
+    if (!items.length) return toast.error("Nothing to import");
+    const res = await api.importLyrics(activeProjectId, items);
+    toast.success(`Sent ${res.created} song${res.created === 1 ? "" : "s"} to Music Generation`);
+    await refreshSongs();
+    nav("/music");
   };
 
   const clearImportedSongs = async () => {
@@ -117,6 +145,9 @@ export default function Lyrics() {
           <div className="flex gap-2 mt-3">
             <Button data-testid="lyrics-parse-btn" onClick={()=>parse(raw)} variant="secondary"><FileJson className="w-4 h-4 mr-2" />Parse</Button>
             <Button data-testid="lyrics-import-btn" onClick={importAll} disabled={!items.length}><CheckCheck className="w-4 h-4 mr-2" />Import {items.length || ""}</Button>
+            <Button data-testid="lyrics-sendmusicgen-btn" onClick={sendToMusicGen} disabled={!items.length} title="Import and go straight to the tiles in Music Generation">
+              <Mic2 className="w-4 h-4 mr-2" />Send to Music Generation
+            </Button>
             <Button data-testid="lyrics-download-btn" onClick={downloadJSON} disabled={!items.length} variant="secondary"><Download className="w-4 h-4 mr-2" />Export</Button>
             <Button data-testid="lyrics-select-btn" onClick={selectAllText} size="sm" variant="ghost">Select All</Button>
           </div>
@@ -135,7 +166,7 @@ export default function Lyrics() {
                   <Badge variant="secondary" className="text-[10px]">{it.language}</Badge>
                 </div>
                 <div className="text-xs text-muted-foreground italic mb-1">{it.styles}</div>
-                <div className="text-xs text-foreground/80 line-clamp-3">{it.lyrics}</div>
+                <div className="text-xs text-foreground/80 line-clamp-3">{lyricsText(it.lyrics)}</div>
               </div>
             ))}
             {!items.length && <div className="text-muted-foreground text-sm">Nothing parsed yet.</div>}

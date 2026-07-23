@@ -1,3 +1,9 @@
+// deprecated???: the actual frontend build/dev pipeline is the root vite.config.ts
+// (root: "src", used by `npm run dev` / `npm run build` / Tauri's beforeDevCommand), which
+// doesn't invoke craco at all. This file, src/package.json's craco start/build/test scripts,
+// and src/plugins/health-check/ look like leftovers from an earlier Create React App setup
+// (predating the Tauri+Vite migration). Verify nothing still calls `craco` before deleting.
+// See TODOS.md.
 // craco.config.js
 const path = require("path");
 require("dotenv").config();

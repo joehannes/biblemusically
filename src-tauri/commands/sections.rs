@@ -31,6 +31,21 @@ pub async fn list_sections(state: State<'_, AppState>, sid: String) -> Res<Vec<V
     Ok(out)
 }
 
+/// Bulk-set the per-section transition (used by the Transitions editor / AI suggester).
+/// `updates` is a list of `{ id, transition }`.
+#[tauri::command]
+pub async fn set_section_transitions(state: State<'_, AppState>, updates: Vec<Value>) -> Res<Value> {
+    let coll = state.db.collection::<Document>("sections");
+    let mut n = 0u64;
+    for u in &updates {
+        if let (Some(id), Some(tr)) = (u["id"].as_str(), u["transition"].as_str()) {
+            let r = coll.update_one(doc! { "id": id }, doc! { "$set": { "transition": tr } }).await.map_err(e)?;
+            n += r.modified_count;
+        }
+    }
+    Ok(serde_json::json!({ "ok": true, "updated": n }))
+}
+
 #[tauri::command]
 pub async fn update_section(
     state: State<'_, AppState>,
@@ -86,10 +101,16 @@ pub async fn batch_generate_images(
 }
 
 
+/// Queues a Midjourney image job for every section, optionally scoped to one project.
+/// Renamed from `bulk_generate_all_songs` (which was misleading — it generates *images*, not
+/// music) and now takes an optional `project_id` so the Settings-page "Generate All Images"
+/// button doesn't silently reach across every project in the database. Passing no project_id
+/// preserves the old unscoped behavior for any caller that genuinely wants everything.
 #[tauri::command]
-pub async fn bulk_generate_all_songs(
+pub async fn bulk_generate_all_images(
     state: State<'_, AppState>,
     state_arc: State<'_, Arc<AppState>>,
+    project_id: Option<String>,
 ) -> Res<Value> {
     use futures_util::StreamExt;
     // Ensure Playwright profile configured
@@ -100,7 +121,19 @@ pub async fn bulk_generate_all_songs(
         return Err("mj_profile_dir is not configured. Capture a Playwright profile first.".to_string());
     }
 
-    let mut cursor = state.db.collection::<Document>("sections").find(doc! {}).await.map_err(e)?;
+    let section_filter = if let Some(pid) = project_id.as_deref().filter(|p| !p.is_empty()) {
+        let mut song_cursor = state.db.collection::<Document>("songs")
+            .find(doc! { "project_id": pid }).await.map_err(e)?;
+        let mut song_ids = Vec::new();
+        while let Some(Ok(d)) = song_cursor.next().await {
+            if let Ok(sid) = d.get_str("id") { song_ids.push(sid.to_string()); }
+        }
+        doc! { "song_id": { "$in": song_ids } }
+    } else {
+        doc! {}
+    };
+
+    let mut cursor = state.db.collection::<Document>("sections").find(section_filter).await.map_err(e)?;
     let mut jobs = Vec::new();
     while let Some(Ok(d)) = cursor.next().await {
         if let Ok(sec_id) = d.get_str("id") {

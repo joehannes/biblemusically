@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import OAuthClientsPanel from "../components/OAuthClientsPanel";
 import ChannelSettingsPanel from "../components/ChannelSettingsPanel";
@@ -183,6 +184,9 @@ function AddTagDropdown({ onAdd }) {
 // Main Channels component
 // ══════════════════════════════════════════════════════════════════
 export default function Channels() {
+  const [params, setParams] = useSearchParams();
+  const discoverySectionRef = useRef(null);
+  const autoFlowRef = useRef(false);
   const [channels, setChannels] = useState([]);
   const [oauthClients, setOauthClients] = useState([]);
   const [name, setName] = useState(""); const [ytId, setYtId] = useState(""); const [lang, setLang] = useState(""); const [region, setRegion] = useState("");
@@ -213,6 +217,57 @@ export default function Channels() {
 
   // Persist tags whenever they change
   useEffect(() => { persistTags(discoveryTags); }, [discoveryTags]);
+
+  // Deep link from the Browser tab's "List channels" (channel_switcher scrape):
+  //   /channels?importHandles=@a,@b&autoDiscover=1&autoImport=1
+  // Adds the scraped handles as discovery tags, scrolls to this section, then — since the
+  // whole point is a one-click "scrape → import" round trip — runs Discover and Import
+  // automatically instead of leaving the user to press both buttons themselves.
+  useEffect(() => {
+    const importHandles = params.get("importHandles");
+    if (!importHandles || autoFlowRef.current) return;
+    autoFlowRef.current = true;
+
+    const handles = importHandles.split(",").map((h) => h.trim()).filter(Boolean)
+      .map((h) => (h.startsWith("@") ? h : `@${h}`));
+    const autoDiscover = params.get("autoDiscover") === "1";
+    const autoImport = params.get("autoImport") === "1";
+
+    // Clear the params immediately so a refresh/navigation doesn't replay this.
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.delete("importHandles"); p.delete("autoDiscover"); p.delete("autoImport");
+      return p;
+    }, { replace: true });
+
+    if (!handles.length) return;
+
+    setDiscoveryTags((prev) => {
+      const next = [...prev];
+      for (const value of handles) {
+        if (next.some((t) => t.category === "handle" && t.value.toLowerCase() === value.toLowerCase())) continue;
+        next.push(makeTag("handle", value));
+      }
+      return next;
+    });
+
+    requestAnimationFrame(() => {
+      discoverySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    toast.success(`Added ${handles.length} channel handle${handles.length > 1 ? "s" : ""} from the channel switcher.`);
+
+    if (!autoDiscover) return;
+    (async () => {
+      const discovered = await discoverChannels(handles);
+      if (!autoImport) return;
+      if (discovered.length) await importDiscoveredChannels(discovered);
+      else toast.warning("Auto discover found no matching channels — nothing to auto-import.");
+    })();
+    // Runs once per incoming deep link (guarded by autoFlowRef); discoverChannels/
+    // importDiscoveredChannels are stable enough within that single run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   // Re-resolve picked clients for each channel
   useEffect(() => {
@@ -334,9 +389,14 @@ export default function Channels() {
   };
 
   // ── Discovery ──
-  const discoverChannels = async () => {
-    const queries = discoveryTags.map((t) => t.value).filter(Boolean);
-    if (!queries.length) return toast.error("Add at least one handle, URL, channel ID, or email first.");
+  // `queryOverride` lets callers (the channel-switcher auto-import flow below) run this against
+  // a specific handle list without waiting for `discoveryTags` state to have committed yet.
+  const discoverChannels = async (queryOverride) => {
+    const queries = queryOverride || discoveryTags.map((t) => t.value).filter(Boolean);
+    if (!queries.length) {
+      toast.error("Add at least one handle, URL, channel ID, or email first.");
+      return [];
+    }
     setIsDiscovering(true);
     setDiscoverStatus("Scanning YouTube for channels...");
     setDiscoverErrors([]);
@@ -344,7 +404,8 @@ export default function Channels() {
       const result = await api.discoverYoutubeChannels(queries, 240);
       if (!result?.ok) {
         setDiscoverStatus("Discovery failed.");
-        return toast.error(result?.error || "YouTube discovery failed.");
+        toast.error(result?.error || "YouTube discovery failed.");
+        return [];
       }
       const discovered = Array.isArray(result.discovered)
         ? result.discovered.flatMap((entry) => entry.channels.map((ch) => ({ ...ch, query: entry.query, source: entry.final_url || entry.source })))
@@ -352,10 +413,12 @@ export default function Channels() {
       setDiscoverResults(discovered);
       setDiscoverStatus(`Found ${discovered.length} channels across ${queries.length} entries.`);
       setDiscoverErrors(Array.isArray(result.errors) ? result.errors : []);
+      return discovered;
     } catch (err) {
       console.error(err);
       setDiscoverStatus("Discovery failed.");
       toast.error(err?.toString?.() || "Discovery failed.");
+      return [];
     } finally {
       setIsDiscovering(false);
     }
@@ -400,10 +463,13 @@ export default function Channels() {
     }
   };
 
-  const importDiscoveredChannels = async () => {
-    if (!discoverResults.length) return toast.error("No discovered channels to import.");
+  // `resultsOverride` lets the auto-import flow below import what discovery just returned
+  // without waiting on the `discoverResults` state update to land first.
+  const importDiscoveredChannels = async (resultsOverride) => {
+    const results = resultsOverride || discoverResults;
+    if (!results.length) return toast.error("No discovered channels to import.");
     try {
-      const res = await api.importDiscoveredChannels(discoverResults);
+      const res = await api.importDiscoveredChannels(results);
       await load();
       toast.success(`Imported ${res.inserted || 0} channels. ${res.skipped || 0} skipped.`);
     } catch (err) {
@@ -664,20 +730,20 @@ export default function Channels() {
       </Card>
 
       {/* ── YouTube Channel Discovery (tag-based input) ── */}
-      <Card className="p-5 mb-6">
+      <Card ref={discoverySectionRef} className="p-5 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
           <div>
             <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">YouTube channel discovery</div>
             <div className="text-sm text-muted-foreground max-w-2xl">Add handles, URLs, channel IDs, or Gmail addresses to discover and import channels.</div>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button size="sm" onClick={discoverChannels} disabled={isDiscovering || !discoveryTags.length}>
+            <Button size="sm" onClick={() => discoverChannels()} disabled={isDiscovering || !discoveryTags.length}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isDiscovering ? "animate-spin" : ""}`} />{isDiscovering ? "Discovering…" : "Discover channels"}
             </Button>
             <Button size="sm" variant="secondary" onClick={discoverChannelSwitcher} disabled={isDiscoveringSwitcher}>
               <Search className={`w-4 h-4 mr-2 ${isDiscoveringSwitcher ? "animate-pulse" : ""}`} />{isDiscoveringSwitcher ? "Opening channel switcher…" : "Auto Discover (Available Channels)"}
             </Button>
-            <Button size="sm" variant="secondary" onClick={importDiscoveredChannels} disabled={!discoverResults.length}>
+            <Button size="sm" variant="secondary" onClick={() => importDiscoveredChannels()} disabled={!discoverResults.length}>
               Import discovered
             </Button>
             <Button size="sm" variant="ghost" onClick={clearAllTags}>Clear</Button>

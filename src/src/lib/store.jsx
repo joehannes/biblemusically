@@ -1,7 +1,19 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { api } from "./api";
 
 const Ctx = createContext(null);
+
+const JOB_LABEL = {
+  music: "Music generation",
+  analysis: "Analysis",
+  image: "Image generation",
+  character_image: "Character image",
+  video: "Video compose",
+  overlay: "Overlay",
+  upload: "Upload",
+};
+const jobLabel = (k) => JOB_LABEL[k] || k;
 
 export function StudioProvider({ children }) {
   const [theme, setThemeState] = useState(() => localStorage.getItem("studio:theme") || "obsidian");
@@ -90,6 +102,34 @@ export function StudioProvider({ children }) {
     const t = setInterval(refreshJobs, 2500);
     return () => clearInterval(t);
   }, [refreshJobs]);
+
+  // ── Global job notifications ──────────────────────────────────────────────
+  // A song render runs for many minutes in the background, so the user is usually looking at some
+  // other page when it lands. Watch the polled job list for status transitions and toast once per
+  // job, wherever they are. The ref is seeded (not fired) on the first poll so a page reload
+  // doesn't replay toasts for jobs that finished hours ago.
+  const seenJobStatus = useRef(null);
+  useEffect(() => {
+    if (!jobs.length) return;
+    const next = new Map(jobs.map((j) => [j.id, j.status]));
+    const prev = seenJobStatus.current;
+    seenJobStatus.current = next;
+    if (prev === null) return; // first poll — seed only
+
+    for (const job of jobs) {
+      if (prev.get(job.id) === job.status) continue;
+      if (job.status === "done") {
+        toast.success(
+          job.kind === "music" ? "Track ready to preview" : `${jobLabel(job.kind)} finished`
+        );
+      } else if (job.status === "failed") {
+        toast.error(`${jobLabel(job.kind)} failed`, {
+          description: job.error || job.stage_message || "See the Jobs monitor for details.",
+          duration: 9000,
+        });
+      }
+    }
+  }, [jobs]);
 
   const value = {
     theme, setTheme,

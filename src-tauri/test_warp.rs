@@ -1,3 +1,7 @@
+// deprecated???: standalone scratch file, not declared as a module anywhere (no `mod test_warp`
+// in lib.rs/main.rs) and not part of the compiled crate. Looks like a one-off experiment for
+// verifying warp's graceful-shutdown API before it was wired into oauth.rs/projects.rs. Safe to
+// delete once confirmed unused. See TODOS.md.
 #[tokio::main]
 async fn main() {
     let route = warp::any().map(|| "Hello");

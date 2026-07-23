@@ -698,11 +698,40 @@ pub async fn discover_from_channel_switcher(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Try stdout first (the script writes errors to stdout as well)
+        if let Ok(err_json) = serde_json::from_str::<Value>(&stdout) {
+            if err_json["ok"].as_bool() == Some(false) {
+                let detail = err_json["detail"].as_str().unwrap_or("");
+                if !detail.is_empty() {
+                    return Err(detail.to_string());
+                }
+                if let Some(err_msg) = err_json["error"].as_str() {
+                    return Err(format!("Channel switcher error: {}", err_msg));
+                }
+            }
+        }
         // Try to parse stderr as JSON error
         if let Ok(err_json) = serde_json::from_str::<Value>(&stderr) {
+            if let Some(detail) = err_json["detail"].as_str() {
+                return Err(detail.to_string());
+            }
+            if let Some(err_msg) = err_json["error"].as_str() {
+                return Err(format!("Channel switcher error: {}", err_msg));
+            }
             return Err(err_json["detail"].as_str().unwrap_or(&stderr).to_string());
         }
-        return Err(format!("Channel switcher script failed: {}", stderr));
+        // If stderr is non-empty, use it as the error message
+        let stderr_trimmed = stderr.trim();
+        if !stderr_trimmed.is_empty() {
+            return Err(format!("Channel switcher script failed: {}", stderr_trimmed));
+        }
+        // If stdout has content we can't parse as JSON, include it
+        let stdout_trimmed = stdout.trim();
+        if !stdout_trimmed.is_empty() {
+            return Err(format!("Channel switcher script failed (stdout): {}", stdout_trimmed.chars().take(500).collect::<String>()));
+        }
+        return Err("Channel switcher script failed with unknown error".to_string());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);

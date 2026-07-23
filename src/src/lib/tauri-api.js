@@ -1,3 +1,6 @@
+// deprecated???: superseded by ./api.js (nothing imports "lib/tauri-api" anymore — verified via
+// repo-wide grep). Appears to be an earlier draft of the same Tauri invoke wrapper. Safe to
+// delete once confirmed no dynamic import references it. See TODOS.md.
 /**
  * Tauri-based API wrapper for the AI Music Video Studio
  * Maps frontend API calls to Tauri commands instead of HTTP endpoints
@@ -55,6 +58,10 @@ export const api = {
   getSettings: () => invokeCommand("get_settings"),
   saveSettings: (s) => invokeCommand("update_settings", { payload: s }),
   testSuno: () => invokeCommand("test_suno"),
+  testAcestep: () => invokeCommand("test_acestep"),
+  testHeartmula: () => invokeCommand("test_heartmula"),
+  testFlux: () => invokeCommand("test_flux"),
+  testComfy: () => invokeCommand("test_comfy"),
   testMj: () => invokeCommand("test_mj"),
   ensureMjAutostart: () => invokeCommand("ensure_mj_autostart"),
   mjAutoLogin: (account, password, twofa) =>

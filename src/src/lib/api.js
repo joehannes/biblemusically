@@ -41,14 +41,86 @@ const invokeCommand = async (command, payload = null) => {
   }
 };
 
+// Rects go to the backend as CSS pixels straight from getBoundingClientRect(). On Linux the
+// backend places the webviews through GTK, whose units are logical pixels — the same size as a
+// CSS pixel, since WebKitGTK derives devicePixelRatio from the very GDK scale factor GTK
+// positions in. So no conversion belongs here.
+const asRect = (rect) => ({
+  x: rect.x,
+  y: rect.y,
+  width: Math.max(1, rect.width),
+  height: Math.max(1, rect.height),
+});
+
 export const api = {
+  // ============ Embedded browser webview (multi-page) ============
+  // pageId identifies a browser "tab" (its own native child webview). Omitting it targets
+  // the active page (open falls back to a "default" page).
+  webviewOpen: (url, rect, pageId) => invokeCommand("webview_open", { url, pageId, rect: asRect(rect) }),
+  // `url` lets the backend create the page if it isn't open yet (cold start / restored tab)
+  // instead of throwing.
+  webviewShowPage: (pageId, rect, url) => invokeCommand("webview_show_page", { pageId, rect: asRect(rect), url: url ?? null }),
+  webviewClosePage: (pageId) => invokeCommand("webview_close_page", { pageId }),
+  webviewListPages: () => invokeCommand("webview_list_pages"),
+  webviewSetRect: (rect) => invokeCommand("webview_set_rect", { rect: asRect(rect) }),
+  webviewHide: () => invokeCommand("webview_hide"),
+  webviewNavigate: (url, pageId) => invokeCommand("webview_navigate", { url, pageId }),
+  webviewEval: (js, pageId) => invokeCommand("webview_eval", { js, pageId }),
+  webviewCurrentUrl: (pageId) => invokeCommand("webview_current_url", { pageId }),
+  webviewTakeScrape: (key) => invokeCommand("webview_take_scrape", { key }),
+  // Redirects the next native browser download into ~/Documents/BibleMusically/MacroDownloads/
+  // <folderName>/<filename or the site's own suggested name> — see the "download" macro step.
+  webviewArmDownload: (folderName, filename, resultKey) =>
+    invokeCommand("webview_arm_download", { folderName, filename: filename || null, resultKey }),
+
+  // ============ AI macro recorder (embedded browser) ============
+  macroStart: () => invokeCommand("macro_start"),
+  macroStop: () => invokeCommand("macro_stop"),
+  macroStatus: () => invokeCommand("macro_status"),
+
+  // ============ Webview session capture (Suno / Midjourney) ============
+  // Lift session cookies out of the embedded webview after an in-app login; the MJ
+  // variant also seeds the Playwright profile the remote-chrome scripts drive.
+  webviewCaptureSunoSession: () => invokeCommand("webview_capture_suno_session"),
+  webviewCaptureMjSession: (probeOnly = false) => invokeCommand("webview_capture_mj_session", { probeOnly }),
+
   // ============ Settings ============
-  getSettings: () => invokeCommand("get_settings"),
-  saveSettings: (s) => invokeCommand("update_settings", { payload: s }),
+  getSettings: (projectId) => invokeCommand("get_settings", { projectId }),
+  saveSettings: (s, projectId) => invokeCommand("update_settings", { payload: s, projectId }),
   testSuno: () => invokeCommand("test_suno"),
+  testAcestep: () => invokeCommand("test_acestep"),
+  testHeartmula: () => invokeCommand("test_heartmula"),
   openSunoLogin: () => invokeCommand("open_suno_login"),
   captureSunoSession: () => invokeCommand("capture_suno_session"),
   testMj: () => invokeCommand("test_mj"),
+  testFlux: () => invokeCommand("test_flux"),
+  testComfy: () => invokeCommand("test_comfy"),
+  openKaggleNotebook: (engine) => invokeCommand("open_kaggle_notebook", { engine }),
+  openKaggleTokenPage: () => invokeCommand("open_kaggle_token_page"),
+  openKaggleLogin: () => invokeCommand("open_kaggle_login"),
+  saveKaggleToken: (tokenJson) => invokeCommand("save_kaggle_token", { tokenJson }),
+  pickDirectory: (title) => invokeCommand("pick_directory", { title }),
+  fetchKaggleUrl: (engine) => invokeCommand("fetch_kaggle_url", { engine }),
+  startKaggleServer: (engine) => invokeCommand("start_kaggle_server", { engine }),
+  supersedeKaggleSession: (engine) => invokeCommand("supersede_kaggle_session", { engine }),
+  kaggleStartMonitor: (engine, fresh = false) => invokeCommand("kaggle_start_monitor", { engine, fresh }),
+  kaggleProgress: (engine) => invokeCommand("kaggle_progress", { engine }),
+  kaggleStopMonitor: (engine) => invokeCommand("kaggle_stop_monitor", { engine }),
+  listStylePresets: () => invokeCommand("list_style_presets"),
+  saveStylePreset: (payload) => invokeCommand("save_style_preset", { payload }),
+  deleteStylePreset: (id) => invokeCommand("delete_style_preset", { id }),
+  getChannelStyle: (channelId) => invokeCommand("get_channel_style", { channelId }),
+  setChannelStyle: (channelId, payload) => invokeCommand("set_channel_style", { channelId, payload }),
+  mixGenres: (payload) => invokeCommand("mix_genres", { payload }),
+  listGenrePresets: () => invokeCommand("list_genre_presets"),
+  saveGenrePreset: (payload) => invokeCommand("save_genre_preset", { payload }),
+  deleteGenrePreset: (id) => invokeCommand("delete_genre_preset", { id }),
+  updateSongStyles: (songIds, styles) => invokeCommand("update_song_styles", { songIds, styles }),
+  listTransitionPresets: () => invokeCommand("list_transition_presets"),
+  saveTransitionPreset: (payload) => invokeCommand("save_transition_preset", { payload }),
+  deleteTransitionPreset: (id) => invokeCommand("delete_transition_preset", { id }),
+  suggestTransitions: (payload) => invokeCommand("suggest_transitions", { payload }),
+  setSectionTransitions: (updates) => invokeCommand("set_section_transitions", { updates }),
   openMjLogin: () => invokeCommand("open_midjourney_login"),
   captureMjSession: () => invokeCommand("capture_midjourney_session"),
   generateMjNow: (prompt) => invokeCommand("generate_mj_now", { prompt }),
@@ -80,27 +152,59 @@ export const api = {
   createProject: (b) => invokeCommand("create_project", { body: b }),
   getProject: (id) => invokeCommand("get_project", { pid: id }),
   updateProject: (id, b) => invokeCommand("update_project", { pid: id, body: b }),
+  // Writes straight into the project's own ~/Documents/<project> folder — no save dialog, same
+  // "just saves it" feel as a browser download, but landing next to the rest of the project's
+  // files under a name you actually chose instead of the OS Downloads folder.
+  saveProjectFile: (pid, filename, content) => invokeCommand("save_project_file", { pid, filename, content }),
   deleteProject: (id) => invokeCommand("delete_project", { pid: id }),
   exportProject: (id) => invokeCommand("export_project", { pid: id }),
   importProject: (body, sourceDir) => invokeCommand("import_project", { body, source_dir: sourceDir }),
   importLyrics: (id, items) => invokeCommand("import_lyrics", { pid: id, body: { items } }),
+  getProjectGitInfo: (projectId) => invokeCommand("get_project_git_info", { projectId }),
+  saveProjectVersion: (projectId, saveType, branchToCreate) => invokeCommand("save_project_version", { projectId, saveType, branchToCreate }),
+  checkoutProjectGitTag: (projectId, tag) => invokeCommand("checkout_project_git_tag", { projectId, tag }),
+  checkoutProjectGitBranch: (projectId, branch) => invokeCommand("checkout_project_git_branch", { projectId, branch }),
+  createProjectGitBranch: (projectId, branchName) => invokeCommand("create_project_git_branch", { projectId, branchName }),
+  authorizeProjectGDrive: (projectId) => invokeCommand("authorize_project_gdrive", { projectId }),
+
+  // ============ Scheduler ============
+  generateNextChapterNow: (projectId) => invokeCommand("generate_next_chapter_now", { projectId }),
 
   // ============ Songs ============
   listSongs: (id) => invokeCommand("list_songs", { pid: id }),
+  generateOverlay: (sid) => invokeCommand("generate_overlay", { sid }),
+  generateOverlaysBulk: (pid, force) => invokeCommand("generate_overlays_bulk", { pid, force }),
   getSong: (sid) => invokeCommand("get_song", { sid }),
+  updateSong: (sid, patch) => invokeCommand("update_song", { sid, patch }),
   deleteSong: (sid) => invokeCommand("delete_song", { sid }),
   genMusic: (sid) => invokeCommand("generate_music", { sid }),
   analyze: (sid) => invokeCommand("analyze_song", { sid }),
   downloadAudio: (audioUrl, format, filename) => invokeCommand("download_and_convert_audio", { audioUrl, format, filename }),
   downloadAllAudio: (songs) => invokeCommand("download_all_songs", { songs }),
+  // Dialog-free save for the AI generation pipeline: writes straight to
+  // <project_folder>/auto/<channel-slug>/<filename>, no native save dialog.
+  saveGeneratedAsset: (audioUrl, projectId, channelId, filename, format) =>
+    invokeCommand("save_generated_asset", { audioUrl, projectId, channelId: channelId || null, filename, format }),
   selectSongVariant: (sid, variant) => invokeCommand("select_song_variant", { sid, variant }),
+
+  // ============ Characters ============
+  listCharacters: (songId, projectId) => invokeCommand("list_characters", { songId: songId || null, projectId: projectId || null }),
+  createCharacter: (b) => invokeCommand("create_character", { body: b }),
+  updateCharacter: (id, b) => invokeCommand("update_character", { charId: id, body: b }),
+  deleteCharacter: (id) => invokeCommand("delete_character", { charId: id }),
+  generateCharacterImage: (id) => invokeCommand("generate_character_image", { charId: id }),
+  varyCharacterImage: (id) => invokeCommand("vary_character_image", { charId: id }),
+  selectCharacterVariant: (id, idx) => invokeCommand("select_character_variant", { charId: id, variantIndex: idx }),
+  discardCharacterVariant: (id, idx) => invokeCommand("discard_character_variant", { charId: id, variantIndex: idx }),
+  discardAllCharacterVariants: (id) => invokeCommand("discard_all_character_variants", { charId: id }),
+  proposeCharacters: (songId) => invokeCommand("propose_characters", { songId }),
 
   // ============ Sections ============
   listSections: (sid) => invokeCommand("list_sections", { sid }),
   updateSection: (id, b) => invokeCommand("update_section", { secid: id, body: b }),
   genImage: (id) => invokeCommand("generate_section_image", { secid: id }),
   batchImages: (sid) => invokeCommand("batch_generate_images", { sid }),
-  bulkGenerateAll: () => invokeCommand("bulk_generate_all_songs"),
+  bulkGenerateAll: (projectId) => invokeCommand("bulk_generate_all_images", { projectId }),
 
   // ============ Video / Effects ============
   effectsPresets: () => invokeCommand("get_effects_presets"),
@@ -135,6 +239,10 @@ export const api = {
   getChannelSettings: (channelId) => invokeCommand("get_channel_settings", { channel_id: channelId }),
   updateChannelOverrides: (channelId, overrides) => invokeCommand("update_channel_overrides", { channel_id: channelId, overrides }),
   syncChannelToYouTube: (channelId) => invokeCommand("sync_channel_to_youtube", { channel_id: channelId }),
+  // kind: "musical" | "visual" — culturally adapts a style descriptor for one channel's
+  // language/region via the free AI. Preview-only: never writes anything itself.
+  aiFlavorStyle: (channelId, kind, baseText) =>
+    invokeCommand("ai_flavor_style", { request: { channel_id: channelId, kind, base_text: baseText } }),
 
   // ============ OAuth Clients ============
   listOauthClients: () => invokeCommand("list_oauth_clients"),
@@ -197,6 +305,17 @@ export const api = {
     } catch (error) {
       console.warn("[Tauri API] compose_lyrics unavailable or failed:", error);
       return { error: "AI Composer is not available on this backend." };
+    }
+  },
+  composeFreeform: async (payload) => {
+    if (!isTauri) {
+      return { error: "Tauri invoke is unavailable. Run this app through Tauri to use the freeform composer.", items: [] };
+    }
+    try {
+      return await invokeCommand("compose_freeform", { payload });
+    } catch (error) {
+      console.warn("[Tauri API] compose_freeform unavailable or failed:", error);
+      return { error: "Freeform composer is not available on this backend.", items: [] };
     }
   },
   composeAssist: async (payload) => {

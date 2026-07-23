@@ -9,3 +9,11 @@ src-tauri/target/
 src-tauri/Cargo.lock
 **/tauri.conf.json
 ```
+node_modules
+
+dist/
+src-tauri/gen/
+
+# large mongod sidecar binaries (kept on disk, bundled at build time)
+binaries/mongod-x86_64-unknown-linux-gnu
+src-tauri/binaries/mongod-x86_64-unknown-linux-gnu

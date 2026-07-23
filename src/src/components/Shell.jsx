@@ -1,18 +1,27 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
+import { api } from "../lib/api";
+import { getVersion } from "@tauri-apps/api/app";
+// Fallback only, for the very first paint before getVersion() resolves — this file lives
+// under vite's project root (`src/`), which has its own long-stale package.json (it lagged
+// the real releases for months, e.g. showing 0.34.1 while the app had shipped 0.39.0), so it
+// must never be trusted as the source of truth for what's actually running. getVersion() reads
+// straight from the built app's own tauri.conf.json and is always correct.
 import appPkg from "../../package.json";
 import {
   Music2,
   LayoutDashboard,
   BookOpen,
   Bot,
+  Sparkles,
   FileJson,
   Mic2,
   Waves,
   Scissors,
   Image as ImageIcon,
   Film,
+  Clapperboard,
   Tv,
   UploadCloud,
   Activity,
@@ -26,13 +35,23 @@ import {
   ArrowLeft,
   ArrowRight,
   Save,
+  CloudUpload,
+  HardDrive,
   Download,
   X,
   Keyboard,
   Check,
   Menu,
+  GitBranch,
+  Folder,
+  Globe,
+  Wand2,
+  Workflow as WorkflowIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { open } from "@tauri-apps/plugin-dialog";
+import { PageActionsContext } from "../lib/pageActions";
+import { subscribePipeline } from "../lib/genPipeline";
 
 // ── Navigation configuration with groups ──
 const NAV = [
@@ -41,6 +60,13 @@ const NAV = [
     label: "Dashboard",
     icon: LayoutDashboard,
     testid: "nav-dashboard",
+    group: "overview",
+  },
+  {
+    to: "/workflow",
+    label: "Workflow",
+    icon: WorkflowIcon,
+    testid: "nav-workflow",
     group: "overview",
   },
   {
@@ -65,11 +91,25 @@ const NAV = [
     group: "content",
   },
   {
+    to: "/freeform",
+    label: "Freeform Composer",
+    icon: Sparkles,
+    testid: "nav-freeform",
+    group: "content",
+  },
+  {
     to: "/lyrics",
     label: "Lyrics Import",
     icon: FileJson,
     testid: "nav-lyrics",
     group: "content",
+  },
+  {
+    to: "/sound",
+    label: "Sound Studio",
+    icon: Music2,
+    testid: "nav-sound",
+    group: "ai-generate",
   },
   {
     to: "/music",
@@ -100,11 +140,32 @@ const NAV = [
     group: "ai-generate",
   },
   {
+    to: "/styles",
+    label: "Style Studio",
+    icon: Palette,
+    testid: "nav-styles",
+    group: "ai-generate",
+  },
+  {
     to: "/images",
     label: "Image Gen",
     icon: ImageIcon,
     testid: "nav-images",
     group: "ai-generate",
+  },
+  {
+    to: "/transitions",
+    label: "Transitions & FX",
+    icon: Clapperboard,
+    testid: "nav-transitions",
+    group: "publish",
+  },
+  {
+    to: "/overlays",
+    label: "Overlay Studio",
+    icon: Waves,
+    testid: "nav-overlays",
+    group: "publish",
   },
   {
     to: "/video",
@@ -119,6 +180,20 @@ const NAV = [
     icon: UploadCloud,
     testid: "nav-upload",
     group: "publish",
+  },
+  {
+    to: "/browser",
+    label: "Web Browser",
+    icon: Globe,
+    testid: "nav-browser",
+    group: "system",
+  },
+  {
+    to: "/macros",
+    label: "Macro Manager",
+    icon: Wand2,
+    testid: "nav-macros",
+    group: "system",
   },
   {
     to: "/jobs",
@@ -251,6 +326,33 @@ export default function Shell({ children }) {
   const [historyStack, setHistoryStack] = useState([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const historyNavPathRef = useRef(null);
+  // The version actually running, straight from Tauri — corrects the appPkg fallback (see
+  // import above) as soon as it resolves.
+  const [appVersion, setAppVersion] = useState(appPkg.version);
+  useEffect(() => { getVersion().then(setAppVersion).catch(() => {}); }, []);
+
+  // AI generation pipeline (genPipeline.js) runs as a module-level singleton so it survives
+  // route changes, but Suno click-automation needs the embedded Browser tab actually mounted
+  // (native webviews paint over its placeholder stage). This bounces the app to wherever the
+  // running pipeline currently needs to be visible: the Browser tab while it's loading/filling/
+  // signing in, back to Music Studio once a clip is downloaded so the preview is right there.
+  // Fires only on needsView *transitions* (idle → browser → preview → browser → …), not on
+  // every pipeline state tick or unrelated route change — so a user who manually navigates
+  // elsewhere mid-run isn't fought back to the Browser tab until the pipeline actually needs it
+  // to change again.
+  const lastNeedsViewRef = useRef(null);
+  useEffect(() => subscribePipeline((s) => {
+    if (s.needsView === lastNeedsViewRef.current) return;
+    lastNeedsViewRef.current = s.needsView;
+    if (s.needsView === "browser") navigate("/browser?site=suno&pipeline=1");
+    else if (s.needsView === "preview") navigate("/music");
+  }), [navigate]);
+  // Whatever the active page published via usePageActions() — its final Generate/Render/
+  // Publish button and other page-wide controls, rendered in the top bar below. Cleared by
+  // usePageActions' own unmount cleanup when you navigate away, so no route-based reset here
+  // is needed (a parent-owned effect on `loc.pathname` would fire after the new page's own
+  // effect and wipe out whatever it just published).
+  const [pageActions, setPageActions] = useState(null);
 
   // Track navigation history for back/forward
   useEffect(() => {
@@ -337,24 +439,87 @@ export default function Shell({ children }) {
     }
   };
 
-  // Save button visual feedback
+  // ── Save dropdown state ──
+  const [saveOpen, setSaveOpen] = useState(false);
+  const saveRef = useRef(null);
+  const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState(null);
+
   useEffect(() => {
-    const handler = () => {
-      setSaveFeedback("saved");
-      toast.success("Settings saved");
-      setTimeout(() => setSaveFeedback(null), 1500);
-    };
-    window.addEventListener("studio:save", handler);
-    return () => window.removeEventListener("studio:save", handler);
-  }, []);
+    if (!saveOpen) return;
+    const handler = (e) => { if (saveRef.current && !saveRef.current.contains(e.target)) setSaveOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [saveOpen]);
+
+  // Branch creation dialog state
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [branchDialogPendingSaveType, setBranchDialogPendingSaveType] = useState(null);
+  const [branchName, setBranchName] = useState("");
+
+  const doSave = useCallback(async (saveType, opts = {}) => {
+    if (!activeProjectId) { toast.error("No active project selected."); return; }
+    setSaving(true);
+    setSaveOpen(false);
+    try {
+      const res = await api.saveProjectVersion(activeProjectId, saveType, opts.branchToCreate || null);
+
+      if (res.status === "needs_path") {
+        // First save: ask for a folder
+        const folder = await open({ directory: true, multiple: false, title: "Choose a folder to save this project" });
+        if (!folder) { setSaving(false); return; }
+        await api.updateProject(activeProjectId, { local_path: folder });
+        // Retry now that path is set
+        const res2 = await api.saveProjectVersion(activeProjectId, saveType, opts.branchToCreate || null);
+        if (res2.status === "needs_branch_creation") {
+          setBranchDialogPendingSaveType(saveType);
+          setBranchDialogOpen(true);
+          setSaving(false);
+          return;
+        }
+        if (res2.status === "success") {
+          setSaveFeedback("saved");
+          toast.success(`Saved & tagged ${res2.tag}`);
+          setTimeout(() => setSaveFeedback(null), 2000);
+        }
+        setSaving(false);
+        return;
+      }
+
+      if (res.status === "needs_branch_creation") {
+        setBranchDialogPendingSaveType(saveType);
+        setBranchDialogOpen(true);
+        setSaving(false);
+        return;
+      }
+
+      if (res.status === "success") {
+        setSaveFeedback("saved");
+        const dest = saveType === "local" ? "Local disk" : saveType === "gdrive_exclude" ? "Google Drive (JSON only)" : "Google Drive (full)";
+        toast.success(`Saved to ${dest} — tag ${res.tag}`);
+        setTimeout(() => setSaveFeedback(null), 2000);
+      }
+    } catch (err) {
+      console.error("Save failed", err);
+      toast.error(typeof err === "string" ? err : (err?.message || "Save failed."));
+    } finally {
+      setSaving(false);
+    }
+  }, [activeProjectId]);
+
+  const handleBranchConfirm = useCallback(async () => {
+    if (!branchName.trim()) { toast.error("Branch name is required."); return; }
+    setBranchDialogOpen(false);
+    await doSave(branchDialogPendingSaveType, { branchToCreate: branchName.trim() });
+    setBranchName("");
+  }, [branchName, branchDialogPendingSaveType, doSave]);
 
   // Export all settings, configs, templates, etc.
   const handleExport = useCallback(() => {
     try {
       const exportData = {
         exportedAt: new Date().toISOString(),
-        version: appPkg.version,
+        version: appVersion,
         settings: (() => {
           try {
             return JSON.parse(localStorage.getItem("studio:settings") || "{}");
@@ -429,7 +594,7 @@ export default function Shell({ children }) {
       console.error("Export failed", err);
       toast.error("Export failed");
     }
-  }, []);
+  }, [appVersion]);
 
   useEffect(() => {
     window.addEventListener("studio:export", handleExport);
@@ -443,9 +608,13 @@ export default function Shell({ children }) {
   );
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground">
+    // h-screen + overflow-hidden pins the chrome (sidebar, header) to the viewport and makes
+    // the content area below a fixed, non-scrolling box that pages scroll *inside*. The
+    // Browser page's native child webview is positioned over a placeholder in that box, and a
+    // window-level scroll would slide the placeholder out from under it.
+    <div className="h-screen overflow-hidden flex bg-background text-foreground">
       <aside
-        className={`${collapsed ? "w-16" : "w-64"} hidden md:flex shrink-0 border-r border-border bg-card/40 flex-col sticky top-0 h-screen transition-all`}
+        className={`${collapsed ? "w-16" : "w-64"} hidden md:flex shrink-0 border-r border-border bg-card/40 flex-col h-full transition-all`}
       >
         <div className="px-3 py-3 border-b border-border flex items-center gap-2">
           <div className="w-9 h-9 flex items-center justify-center">
@@ -463,7 +632,7 @@ export default function Shell({ children }) {
               <div className="font-semibold text-base leading-tight flex items-baseline gap-2">
                 Lightkid AI{" "}
                 <span className="text-xs text-muted-foreground">
-                  v{appPkg.version}
+                  v{appVersion}
                 </span>
               </div>
             </div>
@@ -629,9 +798,9 @@ export default function Shell({ children }) {
         </div>
       )}
 
-      <main className="flex-1 flex flex-col min-w-0 pb-16 md:pb-0">
-        {/* ── Top navigation bar (sticky, always on top) ── */}
-        <header className="sticky top-0 z-30 border-b border-border bg-card shadow-sm flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 gap-3 sm:gap-4 shrink-0">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 pb-16 md:pb-0">
+        {/* ── Top navigation bar (always on top) ── */}
+        <header className="z-30 border-b border-border bg-card shadow-sm flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 gap-3 sm:gap-4 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <button
               className="p-2 rounded hover:bg-muted/30 shrink-0 md:hidden"
@@ -709,6 +878,15 @@ export default function Shell({ children }) {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Page-wide controls the active page published via usePageActions() — its final
+                Generate/Render/Publish button and the like, so it's reachable without scrolling
+                the page body. */}
+            {pageActions && (
+              <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2 mr-0.5 border-r border-border/60">
+                {pageActions}
+              </div>
+            )}
+
             {/* Running jobs indicator */}
             {running > 0 && (
               <div className="flex items-center gap-2 text-xs text-mono mr-2">
@@ -723,36 +901,132 @@ export default function Shell({ children }) {
             )}
 
             {/* Action buttons */}
-            <button
-              onClick={() =>
-                window.dispatchEvent(new CustomEvent("studio:save"))
-              }
-              className={`p-1.5 rounded transition-all duration-300 ${
-                saveFeedback === "saved"
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : "hover:bg-muted/30 text-muted-foreground hover:text-foreground"
-              }`}
-              title="Save (Ctrl+S)"
-            >
-              {saveFeedback === "saved" ? (
-                <Check className="w-4 h-4 animate-in zoom-in duration-200" />
-              ) : (
-                <Save className="w-4 h-4" />
+            {/* ── Save Dropdown ── */}
+            <div className="relative" ref={saveRef}>
+              <div className="flex items-center rounded-lg overflow-hidden border border-border/60">
+                {/* Default save action (local) */}
+                <button
+                  onClick={() => doSave("local")}
+                  disabled={saving}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${
+                    saveFeedback === "saved"
+                      ? "bg-emerald-500/20 text-emerald-400"
+                      : "bg-muted/40 hover:bg-muted/70 text-foreground"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  title="Save to local file system"
+                >
+                  {saveFeedback === "saved" ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : saving ? (
+                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  <span className="hidden sm:inline">{saving ? "Saving…" : "Save"}</span>
+                </button>
+                {/* Dropdown chevron */}
+                <button
+                  onClick={() => setSaveOpen((o) => !o)}
+                  disabled={saving}
+                  className="px-1.5 py-1.5 bg-muted/40 hover:bg-muted/70 border-l border-border/60 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                  title="More save options"
+                >
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </div>
+              {saveOpen && (
+                <div className="absolute z-[9999] top-full mt-1.5 right-0 bg-popover backdrop-blur-xl border border-border/80 rounded-xl shadow-2xl p-1.5 min-w-[230px] fade-in">
+                  <div className="px-2 py-1 mb-1">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono">
+                      {activeProjectId ? "Save Project Version" : "No active project"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => doSave("local")}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm hover:bg-accent transition-colors text-left"
+                  >
+                    <HardDrive className="w-4 h-4 text-primary shrink-0" />
+                    <div>
+                      <div className="font-medium">Save to Local Disk</div>
+                      <div className="text-[11px] text-muted-foreground">Full project as .tar archive</div>
+                    </div>
+                  </button>
+                  <div className="h-px bg-border/50 mx-2 my-1" />
+                  <button
+                    onClick={() => doSave("gdrive_exclude")}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm hover:bg-accent transition-colors text-left"
+                  >
+                    <CloudUpload className="w-4 h-4 text-blue-400 shrink-0" />
+                    <div>
+                      <div className="font-medium">Save to Google Drive</div>
+                      <div className="text-[11px] text-muted-foreground">JSON + git only (no media)</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => doSave("gdrive_include")}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm hover:bg-accent transition-colors text-left"
+                  >
+                    <CloudUpload className="w-4 h-4 text-violet-400 shrink-0" />
+                    <div>
+                      <div className="font-medium">Save to Google Drive (Full)</div>
+                      <div className="text-[11px] text-muted-foreground">Everything incl. media files</div>
+                    </div>
+                  </button>
+                  <div className="h-px bg-border/50 mx-2 my-1" />
+                  <button
+                    onClick={() => { setSaveOpen(false); window.dispatchEvent(new CustomEvent("studio:export")); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm hover:bg-accent transition-colors text-left text-muted-foreground"
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <div className="font-medium">Export Settings JSON</div>
+                  </button>
+                </div>
               )}
-            </button>
-            <button
-              onClick={() =>
-                window.dispatchEvent(new CustomEvent("studio:export"))
-              }
-              className="p-1.5 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground"
-              title="Export all settings & data"
-            >
-              <Download className="w-4 h-4" />
-            </button>
+            </div>
+
+            {/* Branch-creation modal */}
+            {branchDialogOpen && (
+              <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 fade-in">
+                  <div className="flex items-center gap-2 mb-3">
+                    <GitBranch className="w-5 h-5 text-primary" />
+                    <h2 className="font-semibold text-base">Create a Branch to Save</h2>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    You are in a detached HEAD state. To save, create a new branch from this point.
+                  </p>
+                  <input
+                    autoFocus
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm mb-4 outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="my-new-branch"
+                    value={branchName}
+                    onChange={(e) => setBranchName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleBranchConfirm(); if (e.key === "Escape") setBranchDialogOpen(false); }}
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => setBranchDialogOpen(false)}
+                      className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors"
+                    >Cancel</button>
+                    <button
+                      onClick={handleBranchConfirm}
+                      className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+                    >Create & Save</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto scroll-thin">{children}</div>
+        {/* The view box: exactly the window minus sidebar and header. Pages scroll in here;
+            a page can also fill it exactly with `h-full` (see Browser). Wrapped in the page-
+            actions provider so any page below can publish controls into the header above via
+            usePageActions() — e.g. a page-wide "Generate" button next to the running-jobs
+            indicator instead of buried in the page body. */}
+        <PageActionsContext.Provider value={setPageActions}>
+          <div className="flex-1 min-h-0 overflow-auto scroll-thin">{children}</div>
+        </PageActionsContext.Provider>
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85">

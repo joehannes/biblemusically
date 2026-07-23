@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
+import { usePageActions } from "../lib/pageActions";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -33,12 +34,18 @@ export default function Composer() {
 
   const readySongs = songs.filter(s => s.audio_url);
 
+  usePageActions(useMemo(() => (
+    <Button size="sm" data-testid="composer-render-btn" onClick={compose} disabled={!activeSongId}>
+      <Film className="w-4 h-4 mr-2" />Render
+    </Button>
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [activeSongId]));
+
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/video")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Video Composer</h1>
-        <Button data-testid="composer-render-btn" onClick={compose} disabled={!activeSongId}><Film className="w-4 h-4 mr-2" />Render</Button>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">FFmpeg stitches images to audio, applying mood-matched effects &amp; transitions. Choose target formats.</p>
 

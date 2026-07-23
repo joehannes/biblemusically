@@ -41,53 +41,74 @@ import {
 import { toast } from "sonner";
 import { getStepForPath } from "../lib/pageSteps";
 
+// Parses a comma-separated tag string into a clean array (used for appearance_tags input).
+const parseTags = (s) => (s || "").split(",").map((t) => t.trim()).filter(Boolean);
+
 export default function Characters() {
-  const { songs, activeSongId, selectSong } = useStudio();
+  const { songs, activeSongId, activeProjectId, selectSong } = useStudio();
   const [characters, setCharacters] = useState([]);
   const [loading, setLoading] = useState(false);
   const [proposing, setProposing] = useState(false);
   const [generating, setGenerating] = useState({});
+  const [search, setSearch] = useState("");
   const [editingChar, setEditingChar] = useState(null);
   const [editDraft, setEditDraft] = useState({
     name: "",
     description: "",
     image_prompt: "",
+    appearance_tags: "",
   });
   const [createOpen, setCreateOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState({
     name: "",
     description: "",
     image_prompt: "",
+    appearance_tags: "",
+    scope: "song", // "song" (tied to the selected song) or "project" (reusable project-wide)
   });
   const [viewMode, setViewMode] = useState("grid");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const chars = await api.listCharacters(activeSongId || null);
+      const chars = await api.listCharacters(activeSongId || null, activeProjectId || null);
       setCharacters(chars);
     } catch (err) {
       console.error("Failed to load characters", err);
     } finally {
       setLoading(false);
     }
-  }, [activeSongId]);
+  }, [activeSongId, activeProjectId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  const filteredCharacters = characters.filter((c) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      c.name?.toLowerCase().includes(q) ||
+      c.description?.toLowerCase().includes(q) ||
+      (c.appearance_tags || []).some((t) => t.toLowerCase().includes(q))
+    );
+  });
+
   const handleCreate = async () => {
     if (!createDraft.name.trim()) return toast.error("Character name required");
     try {
+      const isProjectScope = createDraft.scope === "project";
+      if (isProjectScope && !activeProjectId) return toast.error("Select a project first");
       await api.createCharacter({
         name: createDraft.name.trim(),
         description: createDraft.description.trim(),
         image_prompt: createDraft.image_prompt.trim(),
-        song_id: activeSongId || null,
+        appearance_tags: parseTags(createDraft.appearance_tags),
+        song_id: isProjectScope ? null : activeSongId || null,
+        project_id: isProjectScope ? activeProjectId : null,
       });
       setCreateOpen(false);
-      setCreateDraft({ name: "", description: "", image_prompt: "" });
+      setCreateDraft({ name: "", description: "", image_prompt: "", appearance_tags: "", scope: "song" });
       toast.success("Character created");
       load();
     } catch (err) {
@@ -100,7 +121,10 @@ export default function Characters() {
   const handleUpdate = async () => {
     if (!editingChar) return;
     try {
-      await api.updateCharacter(editingChar.id, editDraft);
+      await api.updateCharacter(editingChar.id, {
+        ...editDraft,
+        appearance_tags: parseTags(editDraft.appearance_tags),
+      });
       setEditingChar(null);
       toast.success("Character updated");
       load();
@@ -129,7 +153,7 @@ export default function Characters() {
       // Poll for completion
       const poll = setInterval(async () => {
         try {
-          const chars = await api.listCharacters(activeSongId || null);
+          const chars = await api.listCharacters(activeSongId || null, activeProjectId || null);
           const updated = chars.find((c) => c.id === id);
           if (updated && updated.image_variants?.length > 0) {
             setCharacters(chars);
@@ -158,7 +182,7 @@ export default function Characters() {
       toast.success("Character variation queued");
       const poll = setInterval(async () => {
         try {
-          const chars = await api.listCharacters(activeSongId || null);
+          const chars = await api.listCharacters(activeSongId || null, activeProjectId || null);
           const updated = chars.find((c) => c.id === id);
           if (
             updated &&
@@ -307,6 +331,16 @@ export default function Characters() {
         </div>
       </Card>
 
+      {/* Search / filter */}
+      <div className="mb-4">
+        <Input
+          placeholder="Search characters by name, description or appearance tag…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-md"
+        />
+      </div>
+
       {/* View toggle */}
       <Tabs value={viewMode} onValueChange={setViewMode} className="mb-4">
         <TabsList>
@@ -350,6 +384,10 @@ export default function Characters() {
             </Button>
           </div>
         </Card>
+      ) : filteredCharacters.length === 0 ? (
+        <Card className="p-10 text-center text-muted-foreground border-dashed">
+          No characters match "{search}".
+        </Card>
       ) : (
         <div
           className={
@@ -358,7 +396,7 @@ export default function Characters() {
               : "space-y-3"
           }
         >
-          {characters.map((char) => {
+          {filteredCharacters.map((char) => {
             const img = getSelectedImage(char);
             const variants = char.image_variants || [];
             const selectedIdx = char.selected_variant || 0;
@@ -432,11 +470,9 @@ export default function Characters() {
                         <User className="w-4 h-4 text-primary shrink-0" />
                         {char.name}
                       </div>
-                      {char.song_id && (
-                        <div className="text-[10px] text-muted-foreground text-mono truncate">
-                          linked to song
-                        </div>
-                      )}
+                      <div className="text-[10px] text-muted-foreground text-mono truncate">
+                        {char.song_id ? "linked to this song" : char.project_id ? "project-wide" : "global"}
+                      </div>
                     </div>
                     <button
                       onClick={() => handleDelete(char.id)}
@@ -449,6 +485,14 @@ export default function Characters() {
                   {char.description && (
                     <div className="text-xs text-muted-foreground line-clamp-2 mb-2 italic">
                       {char.description}
+                    </div>
+                  )}
+
+                  {(char.appearance_tags || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {char.appearance_tags.map((tag) => (
+                        <Badge key={tag} variant="outline" className="text-[9px] px-1.5 py-0">{tag}</Badge>
+                      ))}
                     </div>
                   )}
 
@@ -495,6 +539,7 @@ export default function Characters() {
                           name: char.name || "",
                           description: char.description || "",
                           image_prompt: char.image_prompt || "",
+                          appearance_tags: (char.appearance_tags || []).join(", "),
                         });
                       }}
                       className="text-xs"
@@ -599,6 +644,42 @@ export default function Characters() {
                 rows={3}
               />
             </div>
+            <div>
+              <div className="text-[10px] text-mono uppercase text-muted-foreground mb-1">
+                Appearance tags (comma-separated)
+              </div>
+              <Input
+                placeholder="e.g. silver beard, blue traveling cloak, golden halo"
+                value={createDraft.appearance_tags}
+                onChange={(e) => setCreateDraft({ ...createDraft, appearance_tags: e.target.value })}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Prepended to every generation and every "Vary" so regenerated portraits stay visually consistent.
+              </p>
+            </div>
+            <div>
+              <div className="text-[10px] text-mono uppercase text-muted-foreground mb-1">
+                Scope
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateDraft({ ...createDraft, scope: "song" })}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs border transition-colors ${createDraft.scope === "song" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}
+                  disabled={!activeSongId}
+                >
+                  This song only{!activeSongId && " (select a song first)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateDraft({ ...createDraft, scope: "project" })}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs border transition-colors ${createDraft.scope === "project" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}
+                  disabled={!activeProjectId}
+                >
+                  Reusable across this project{!activeProjectId && " (select a project first)"}
+                </button>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
@@ -655,6 +736,19 @@ export default function Characters() {
                 }
                 rows={3}
               />
+            </div>
+            <div>
+              <div className="text-[10px] text-mono uppercase text-muted-foreground mb-1">
+                Appearance tags (comma-separated)
+              </div>
+              <Input
+                placeholder="e.g. silver beard, blue traveling cloak, golden halo"
+                value={editDraft.appearance_tags}
+                onChange={(e) => setEditDraft({ ...editDraft, appearance_tags: e.target.value })}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Prepended to every generation and every "Vary" so regenerated portraits stay visually consistent.
+              </p>
             </div>
           </div>
           <DialogFooter>

@@ -1,14 +1,27 @@
 use mongodb::{Client, Database};
+use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
+
+const DEFAULT_MAX_CONCURRENT_JOBS: usize = 2;
 
 /// Shared application state injected into every Tauri command via `tauri::State`.
 #[derive(Clone)]
 pub struct AppState {
     pub db: Database,
-    /// Simple in-memory queue of job IDs that are pending dispatch.
-    /// The background worker drains this and calls `run_job`.
-    pub job_queue: Arc<Mutex<Vec<String>>>,
+    /// Bounds how many jobs (Suno/Midjourney/FFmpeg/YouTube upload/etc.) run at once. Each job
+    /// task acquires a permit before doing real work and holds it for its whole run; a job stays
+    /// visibly "queued" in the Jobs Monitor until a permit frees up. Sized from the
+    /// `max_concurrent_jobs` setting at startup (see `AppState::new`) — this was previously a
+    /// `job_queue: Arc<Mutex<Vec<String>>>` field that nothing ever drained (jobs.rs::enqueue
+    /// spawned immediately, unbounded); a `Semaphore` is the real implementation of what that
+    /// field's doc comment always claimed to do.
+    pub job_semaphore: Arc<Semaphore>,
+    /// Job IDs a user has requested cancellation for. Checked by `jobs::run_job` (at start and
+    /// after completion) and polled inside the long-running loops of the Suno/YouTube-upload
+    /// integrations so a cancel takes effect quickly instead of only relabeling the result after
+    /// the job would have finished anyway. Entries are removed once observed/consumed.
+    pub cancelled_jobs: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AppState {
@@ -23,13 +36,26 @@ impl AppState {
 
         let client = Client::with_uri_str(&mongo_url).await?;
         let db = client.database(&db_name);
-        
+
         // Ping the database to ensure it's actually running
         db.run_command(bson::doc! { "ping": 1 }).await?;
 
+        // Read the desired concurrency cap from settings (falls back to the default if unset,
+        // non-numeric, or no settings document exists yet). Changing this setting takes effect
+        // on the next app restart, since a Semaphore's permit count is fixed at construction.
+        let max_concurrent = db.collection::<bson::Document>("settings")
+            .find_one(bson::doc! { "_id": "singleton" }).await
+            .ok()
+            .flatten()
+            .and_then(|d| d.get_i32("max_concurrent_jobs").ok())
+            .filter(|v| *v > 0)
+            .map(|v| v as usize)
+            .unwrap_or(DEFAULT_MAX_CONCURRENT_JOBS);
+
         Ok(Self {
             db,
-            job_queue: Arc::new(Mutex::new(Vec::new())),
+            job_semaphore: Arc::new(Semaphore::new(max_concurrent)),
+            cancelled_jobs: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 }

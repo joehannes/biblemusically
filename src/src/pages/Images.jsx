@@ -1,6 +1,9 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
+import GenerationProgress from "../components/GenerationProgress";
 import { api } from "../lib/api";
+import { usePageActions } from "../lib/pageActions";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -8,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Slider } from "../components/ui/slider";
 import { Switch } from "../components/ui/switch";
-import { Wand2, Layers, Grid3x3, List as ListIcon, Columns, AlertCircle, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { Wand2, Layers, Grid3x3, List as ListIcon, Columns, AlertCircle, CheckCircle2, Clock, Loader2, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { getStepForPath } from "../lib/pageSteps";
 
@@ -20,6 +23,7 @@ const FORMATS = [
 
 export default function Images() {
   const { songs, activeSongId, selectSong } = useStudio();
+  const nav = useNavigate();
   const [sections, setSections] = useState([]);
   const [view, setView] = useState("grid");
   const [format, setFormat] = useState("yt");
@@ -58,14 +62,11 @@ export default function Images() {
         const jobMap = {};
         if (Array.isArray(allJobs)) {
           allJobs.forEach(job => {
-            if (job.target && job.type === "image") {
-              jobMap[job.target] = {
-                id: job.id,
-                status: job.status,
-                progress: job.progress || 0,
-                error: job.error || null,
-                logs: job.logs || []
-              };
+            // NOTE: list_jobs returns the raw Rust Job — fields are `kind` and `target_id`
+            // (NOT `type`/`target`). Reading the wrong names here meant image job status never
+            // populated and this page never showed generation progress.
+            if (job.target_id && (job.kind === "image" || job.kind === "character_image")) {
+              jobMap[job.target_id] = job;
             }
           });
         }
@@ -123,12 +124,18 @@ export default function Images() {
     return null;
   };
 
+  usePageActions(useMemo(() => (
+    <Button size="sm" data-testid="images-batch-btn" onClick={batch} disabled={!sections.length}>
+      <Layers className="w-4 h-4 mr-2" />Batch generate
+    </Button>
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [sections.length]));
+
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/images")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Image Generation</h1>
-        <Button data-testid="images-batch-btn" onClick={batch} disabled={!sections.length}><Layers className="w-4 h-4 mr-2" />Batch generate</Button>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Sent to Midjourney via proxy URL. Mix presets &amp; tweak params before generating. Check Settings to verify Midjourney connection.</p>
 
@@ -197,11 +204,22 @@ export default function Images() {
                   {jobStatus && getStatusBadge(jobStatus.status, jobStatus.error)}
                 </div>
                 <div className="text-xs text-muted-foreground line-clamp-2 italic mb-2">{s.image_prompt}</div>
+                {jobStatus && ["queued", "running"].includes(jobStatus.status) && (
+                  <div className="mb-2 rounded-lg border border-border/80 bg-muted/20 p-2.5">
+                    <GenerationProgress job={jobStatus} label={`${jobStatus.kind === "character_image" ? "Character" : "Image"} generation`} />
+                  </div>
+                )}
                 <div className="flex gap-1">
                   <Button size="sm" variant={hasError ? "destructive" : "secondary"} data-testid={`image-gen-${s.index}`} onClick={()=>gen(s.id)} disabled={jobStatus?.status === "running"}>
                     {getStatusIcon(jobStatus?.status, jobStatus?.error) && <span className="mr-1">{getStatusIcon(jobStatus?.status, jobStatus?.error)}</span>}
                     {jobStatus?.status === "running" ? "Generating..." : img ? "Vary" : "Generate"}
                   </Button>
+                  {s.image_prompt && (
+                    <Button size="sm" variant="ghost" title="Run this prompt in the embedded Midjourney browser"
+                      onClick={() => nav(`/browser?site=midjourney&auto=imagine&prompt=${encodeURIComponent(s.image_prompt)}`)}>
+                      <Globe className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             </Card>

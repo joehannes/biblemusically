@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
+import { usePageActions } from "../lib/pageActions";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -145,17 +146,21 @@ export default function Upload() {
     } finally { setBusy(""); }
   };
 
+  usePageActions(useMemo(() => (
+    <>
+      <Button size="sm" data-testid="upload-smartbulk-btn" onClick={()=>setBulkOpen(true)} disabled={!!busy}><Zap className="w-4 h-4 mr-2" />Smart Bulk Upload</Button>
+      <Button size="sm" variant="secondary" data-testid="upload-aienrich-btn" onClick={()=>runAiEnrich(false)} disabled={!!busy}>{busy==="ai"?<Loader2 className="w-4 h-4 mr-2 animate-spin"/>:<Wand2 className="w-4 h-4 mr-2" />}AI enrich</Button>
+      <Button size="sm" variant="secondary" data-testid="upload-connectall-btn" onClick={()=>runConnectAll(false)} disabled={!!busy}><ShieldCheck className="w-4 h-4 mr-2" />Connect all</Button>
+      <Button size="sm" data-testid="upload-publishall-btn" onClick={()=>runConnectAll(true)} disabled={!!busy}>{busy==="publish"?<Loader2 className="w-4 h-4 mr-2 animate-spin"/>:<Send className="w-4 h-4 mr-2" />}Publish all</Button>
+    </>
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [busy]));
+
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/upload")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Upload</h1>
-        <div className="flex gap-2 flex-wrap">
-          <Button data-testid="upload-smartbulk-btn" onClick={()=>setBulkOpen(true)} disabled={!!busy}><Zap className="w-4 h-4 mr-2" />Smart Bulk Upload</Button>
-          <Button variant="secondary" data-testid="upload-aienrich-btn" onClick={()=>runAiEnrich(false)} disabled={!!busy}>{busy==="ai"?<Loader2 className="w-4 h-4 mr-2 animate-spin"/>:<Wand2 className="w-4 h-4 mr-2" />}AI enrich</Button>
-          <Button variant="secondary" data-testid="upload-connectall-btn" onClick={()=>runConnectAll(false)} disabled={!!busy}><ShieldCheck className="w-4 h-4 mr-2" />Connect all</Button>
-          <Button data-testid="upload-publishall-btn" onClick={()=>runConnectAll(true)} disabled={!!busy}>{busy==="publish"?<Loader2 className="w-4 h-4 mr-2 animate-spin"/>:<Send className="w-4 h-4 mr-2" />}Publish all</Button>
-        </div>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Smart Bulk creates one upload per video × matching channel × format, AI-enriches title/description/tags via Qwen, walks through every needed OAuth one popup at a time, then publishes everything. No babysitting.</p>
 

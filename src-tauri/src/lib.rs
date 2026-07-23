@@ -133,6 +133,21 @@ pub fn run() {
             app.manage(app_state);
             app.manage(state_arc.clone());
 
+            // Embedded-browser webview manager. Its scrape store is shared with the local
+            // HTTP server below so injected automation scripts can POST results back.
+            let webview_mgr = commands::webview::WebviewManager::default();
+            let scrape_store = webview_mgr.scrape.clone();
+            let macro_state = webview_mgr.macros.clone();
+            app.manage(webview_mgr);
+
+            // Live-progress monitors for the Kaggle engine notebooks (one streaming task per engine).
+            app.manage(commands::kaggle_monitor::KaggleMonitors::default());
+
+            // Restructure the window so embedded pages can actually be positioned on Linux.
+            // Must happen here, at startup: it re-parents the main webview, which re-realizes
+            // it — free now, but it would reload the running app if deferred until first use.
+            commands::webview::install_layout(&app.handle());
+
             // NOTE: Automatic OAuth loopback on startup has been intentionally removed.
             // It was binding to the redirect port (e.g. 3335) at startup and leaving a
             // warp server running, which caused a panic when the user clicked
@@ -143,6 +158,8 @@ pub fn run() {
             // detected Suno cookies to the backend for persistence.
             {
                 let db_for_server = db_clone.clone();
+                let scrape_for_server = scrape_store.clone();
+                let macros_for_server = macro_state.clone();
                 tauri::async_runtime::spawn(async move {
                     use warp::Filter;
 
@@ -151,9 +168,16 @@ pub fn run() {
                         cookie: String,
                     }
 
-                    let db_filter = warp::any().map(move || db_for_server.clone());
+                    #[derive(serde::Deserialize)]
+                    struct ScrapePayload {
+                        key: String,
+                        data: serde_json::Value,
+                    }
 
-                    let route = warp::post()
+                    let db_filter = warp::any().map(move || db_for_server.clone());
+                    let scrape_filter = warp::any().map(move || scrape_for_server.clone());
+
+                    let suno_route = warp::post()
                         .and(warp::path("auth")).and(warp::path("suno"))
                         .and(warp::body::json())
                         .and(db_filter)
@@ -167,6 +191,58 @@ pub fn run() {
                                 warp::http::StatusCode::OK,
                             ))
                         });
+
+                    // Injected automation scripts POST scraped results here (see webview.rs).
+                    type ScrapeStore = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, serde_json::Value>>>;
+                    let scrape_route = warp::post()
+                        .and(warp::path("scrape"))
+                        .and(warp::body::content_length_limit(1024 * 1024 * 8))
+                        .and(warp::body::json())
+                        .and(scrape_filter)
+                        .and_then(|payload: ScrapePayload, store: ScrapeStore| async move {
+                            if let Ok(mut map) = store.lock() {
+                                map.insert(payload.key, payload.data);
+                            }
+                            Ok::<_, std::convert::Infallible>(warp::reply::with_status(
+                                "OK",
+                                warp::http::StatusCode::OK,
+                            ))
+                        });
+
+                    // Macro recorder: injected recorder scripts append one step per user action,
+                    // and ask on every page load whether a recording is live (see webview.rs).
+                    type MacroStateArc = std::sync::Arc<commands::webview::MacroState>;
+                    let macro_filter = warp::any().map(move || macros_for_server.clone());
+                    let macro_step_route = warp::post()
+                        .and(warp::path("macro")).and(warp::path("step"))
+                        .and(warp::body::content_length_limit(1024 * 256))
+                        .and(warp::body::bytes())
+                        .and(macro_filter.clone())
+                        .and_then(|body: warp::hyper::body::Bytes, st: MacroStateArc| async move {
+                            if st.recording.load(std::sync::atomic::Ordering::SeqCst) {
+                                if let Ok(step) = serde_json::from_slice::<serde_json::Value>(&body) {
+                                    if let Ok(mut steps) = st.steps.lock() {
+                                        if steps.len() < 5000 { steps.push(step); }
+                                    }
+                                }
+                            }
+                            Ok::<_, std::convert::Infallible>(warp::reply::with_status(
+                                "OK",
+                                warp::http::StatusCode::OK,
+                            ))
+                        });
+                    let macro_state_route = warp::get()
+                        .and(warp::path("macro")).and(warp::path("state"))
+                        .and(macro_filter)
+                        .and_then(|st: MacroStateArc| async move {
+                            let recording = st.recording.load(std::sync::atomic::Ordering::SeqCst);
+                            Ok::<_, std::convert::Infallible>(warp::reply::json(
+                                &serde_json::json!({ "recording": recording }),
+                            ))
+                        });
+
+                    let cors = warp::cors().allow_any_origin().allow_methods(vec!["POST", "GET"]).allow_headers(vec!["content-type"]);
+                    let route = suno_route.or(scrape_route).or(macro_step_route).or(macro_state_route).with(cors);
 
                     warp::serve(route).run(([127, 0, 0, 1], 3337)).await;
                 });
@@ -206,6 +282,21 @@ pub fn run() {
                 });
             }
 
+            // Scheduler: every 5 minutes, check every project's `schedule_config` and run
+            // chapter-generation for any that are due. See commands/scheduler.rs for the full
+            // design (Bible-book chapter cursor → AI lyrics → draft song → auto-enqueue music;
+            // deliberately stops there, leaving analysis/images/video/upload manual).
+            {
+                let scheduler_state = state_arc.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
+                    loop {
+                        tick.tick().await;
+                        commands::run_scheduler_tick(&scheduler_state).await;
+                    }
+                });
+            }
+
             // Check for FFmpeg and show a warning dialog if missing
             if which::which("ffmpeg").is_err() {
                 use tauri_plugin_dialog::DialogExt;
@@ -230,40 +321,69 @@ pub fn run() {
             commands::get_settings,
             commands::update_settings,
             commands::test_suno,
+            commands::test_acestep,
+            commands::test_heartmula,
+            commands::test_flux,
+            commands::test_comfy,
             commands::test_mj,
             commands::test_ffmpeg,
             commands::open_suno_login,
             commands::open_midjourney_login,
+            commands::open_kaggle_notebook,
+            commands::open_kaggle_token_page,
+            commands::open_kaggle_login,
+            commands::save_kaggle_token,
+            commands::pick_directory,
+            commands::fetch_kaggle_url,
+            commands::start_kaggle_server,
+            commands::supersede_kaggle_session,
+            commands::kaggle_start_monitor,
+            commands::kaggle_progress,
+            commands::kaggle_stop_monitor,
             commands::capture_suno_session,
             commands::capture_midjourney_session,
             commands::generate_mj_now,
             commands::ensure_mj_autostart,
             commands::mj_auto_login,
+            commands::probe_node,
             // Projects commands
             commands::list_projects,
             commands::create_project,
             commands::get_project,
+            commands::save_project_file,
             commands::update_project,
             commands::delete_project,
             commands::export_project,
             commands::import_project,
             commands::import_lyrics,
+            commands::get_project_git_info,
+            commands::save_project_version,
+            commands::checkout_project_git_tag,
+            commands::checkout_project_git_branch,
+            commands::create_project_git_branch,
+            commands::authorize_project_gdrive,
+            // Scheduler commands
+            commands::generate_next_chapter_now,
             // Songs commands
             commands::list_songs,
             commands::get_song,
+            commands::update_song,
             commands::delete_song,
             commands::generate_music,
             commands::analyze_song,
             commands::compose_video,
+            commands::generate_overlay,
+            commands::generate_overlays_bulk,
             commands::download_and_convert_audio,
             commands::download_all_songs,
+            commands::save_generated_asset,
             commands::select_song_variant,
             // Sections commands
             commands::list_sections,
             commands::update_section,
             commands::generate_section_image,
             commands::batch_generate_images,
-            commands::bulk_generate_all_songs,
+            commands::bulk_generate_all_images,
             commands::get_effects_presets,
             // Channels commands
             commands::list_channels,
@@ -287,6 +407,7 @@ pub fn run() {
             commands::get_channel_settings,
             commands::update_channel_overrides,
             commands::sync_channel_to_youtube,
+            commands::ai_flavor_style,
             // Characters commands
             commands::list_characters,
             commands::create_character,
@@ -334,6 +455,42 @@ pub fn run() {
             commands::save_compose_config,
             commands::compose_assist,
             commands::compose_lyrics,
+            commands::compose_freeform,
+            commands::mix_genres,
+            commands::suggest_transitions,
+            // Style presets + per-channel sticky styles
+            commands::list_style_presets,
+            commands::save_style_preset,
+            commands::delete_style_preset,
+            commands::get_channel_style,
+            commands::set_channel_style,
+            // Genre-mix presets
+            commands::list_genre_presets,
+            commands::save_genre_preset,
+            commands::delete_genre_preset,
+            commands::update_song_styles,
+            // Transition presets + per-section transitions
+            commands::list_transition_presets,
+            commands::save_transition_preset,
+            commands::delete_transition_preset,
+            commands::set_section_transitions,
+            // Embedded browser webview
+            commands::webview_open,
+            commands::webview_show_page,
+            commands::webview_close_page,
+            commands::webview_list_pages,
+            commands::webview_set_rect,
+            commands::webview_hide,
+            commands::webview_navigate,
+            commands::webview_eval,
+            commands::webview_current_url,
+            commands::webview_take_scrape,
+            commands::webview_arm_download,
+            commands::macro_start,
+            commands::macro_stop,
+            commands::macro_status,
+            commands::webview_capture_suno_session,
+            commands::webview_capture_mj_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

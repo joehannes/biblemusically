@@ -1,0 +1,13 @@
+{
+  "_comment": "STARTER AnimateDiff (SD1.5-family) workflow — EXPERIMENTAL. Node names in AnimateDiff-Evolved drift between versions, so the reliable path is: build a working AnimateDiff graph in the ComfyUI web UI, then use 'Save (API Format)' and paste that JSON into Settings → ComfyUI → Custom workflow. Keep the __TOKEN__ placeholders below for the fields the app fills. The app collects outputs from any SaveImage / VHS_VideoCombine node (images, gifs, videos).",
+
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT__"}},
+  "40": {"class_type": "ADE_AnimateDiffUniformContextOptions", "inputs": {"context_length": 16, "context_stride": 1, "context_overlap": 4, "context_schedule": "uniform", "closed_loop": false}},
+  "41": {"class_type": "ADE_AnimateDiffLoaderGen1", "inputs": {"model": ["4", 0], "model_name": "mm_sd_v15_v2.ckpt", "beta_schedule": "autoselect", "context_options": ["40", 0]}},
+  "5": {"class_type": "EmptyLatentImage", "inputs": {"width": __WIDTH__, "height": __HEIGHT__, "batch_size": 16}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["4", 1]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0, "model": ["41", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "VHS_VideoCombine", "inputs": {"images": ["8", 0], "frame_rate": 8, "loop_count": 0, "filename_prefix": "biblemusically_anim", "format": "video/h264-mp4", "pingpong": false, "save_output": true}}
+}

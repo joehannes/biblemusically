@@ -45,6 +45,10 @@ pub async fn retry_job(
     state.db.collection::<Document>("jobs")
         .find_one(doc! { "id": &jid }).await.map_err(e)?
         .ok_or_else(|| "missing".to_string())?;
+    // Clear any stale cancellation flag: a job can be cancelled and then retried before the
+    // in-flight task noticed the flag, in which case the retried run must not immediately be
+    // treated as cancelled too.
+    state.cancelled_jobs.lock().await.remove(&jid);
     let ts = now_iso();
     state.db.collection::<Document>("jobs")
         .update_one(
@@ -58,13 +62,31 @@ pub async fn retry_job(
         .await.map_err(e)?;
     let jid_clone = jid.clone();
     let arc = Arc::clone(&*state_arc);
-    tokio::spawn(async move { run_job(&jid_clone, &arc).await; });
+    let semaphore = Arc::clone(&state.job_semaphore);
+    tokio::spawn(async move {
+        let _permit = semaphore.acquire_owned().await;
+        run_job(&jid_clone, &arc).await;
+    });
     Ok(serde_json::json!({ "ok": true }))
 }
 
 #[tauri::command]
 pub async fn cancel_job(state: State<'_, AppState>, jid: String) -> Res<Value> {
+    // Signal the running task (checked in jobs::run_job and inside the Suno/YouTube-upload
+    // polling loops) instead of deleting the document — deleting let the spawned tokio task
+    // keep running invisibly in the background (still polling Suno / uploading to YouTube)
+    // with no way for the user to see it was still active, and its eventual DB writes would
+    // silently target a document that no longer existed.
+    state.cancelled_jobs.lock().await.insert(jid.clone());
+    let ts = now_iso();
     state.db.collection::<Document>("jobs")
-        .delete_one(doc! { "id": &jid }).await.map_err(e)?;
+        .update_one(
+            doc! { "id": &jid },
+            doc! {
+                "$set": { "status": "cancelled", "updated_at": &ts },
+                "$push": { "logs": format!("[{ts}] cancellation requested by user") },
+            },
+        )
+        .await.map_err(e)?;
     Ok(serde_json::json!({ "ok": true }))
 }

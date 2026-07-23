@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
+import { usePageActions } from "../lib/pageActions";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -13,8 +14,9 @@ import {
   Bot, Plus, X, Save, Upload, Download, Sparkles, FlaskConical, 
   ArrowRight, Wand2, Trash2, Copy, Keyboard, Eye, HelpCircle, 
   Film, Image, Settings, Music, ChevronDown, Check, Info,
-  ClipboardCheck, ListChecks, RefreshCw, SlidersHorizontal
+  ClipboardCheck, ListChecks, RefreshCw, SlidersHorizontal, Dices
 } from "lucide-react";
+import { appendDailyFlavor } from "../lib/dailyFlavor";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useAutoSave, AutoSaveChip, useBackgroundSave, restore } from "../lib/hooks";
@@ -88,7 +90,7 @@ const LANGUAGES = ["English", "German", "Hebrew", "Spanish", "Portuguese", "Fren
 
 const DEFAULT_CFG = {
   artist: "Joehannes Lightkid",
-  title_pattern: "{artist} - {book} {chapter} ({styles})",
+  title_pattern: "{artist} - {book} {chapter} — {channel}",
   generate: { title: true, language: false, styles: false, lyrics: true, annotations: true, image_styles: true },
   themes: { global: "sacred, hopeful, divine light", per_language: {}, per_channel: {} },
   mj_ar: "16:9", mj_v: "8.1", mj_chaos: 0, mj_stylize: 100, mj_weird: 0,
@@ -259,6 +261,25 @@ export default function AIComposer() {
   const [addChanVal, setAddChanVal] = useState("");
 
   const [activeSunoHelperIdx, setActiveSunoHelperIdx] = useState(null);
+  // Genre presets saved in Sound Studio's shared, server-backed library — surfaced here
+  // alongside the hardcoded SUNO_GENRES mixes so a mix curated in one place is usable in both.
+  const [savedGenrePresets, setSavedGenrePresets] = useState([]);
+  const loadSavedGenrePresets = () => api.listGenrePresets().then((r) => setSavedGenrePresets(r?.presets || [])).catch(() => {});
+  useEffect(() => { loadSavedGenrePresets(); }, []);
+
+  const saveTargetAsGenrePreset = async (targetIndex) => {
+    const styles = cfg.targets?.[targetIndex]?.styles || "";
+    if (!styles.trim()) return toast.error("This target has no style CSV to save yet.");
+    const name = window.prompt("Name this genre preset (shared with Sound Studio):", cfg.targets[targetIndex]?.language || "My mix");
+    if (!name?.trim()) return;
+    try {
+      await api.saveGenrePreset({ name: name.trim(), pack: "AI Composer", styles, genres: [] });
+      toast.success(`Saved genre preset "${name.trim()}".`);
+      loadSavedGenrePresets();
+    } catch (err) {
+      toast.error("Failed to save genre preset: " + err);
+    }
+  };
   const [assistPreset, setAssistPreset] = useState("chapter_lens");
   const [assistPrompt, setAssistPrompt] = useState("");
   const [assistTemperature, setAssistTemperature] = useState([ASSIST_PRESETS.chapter_lens.temperature]);
@@ -311,11 +332,13 @@ export default function AIComposer() {
       try {
         const chs = await api.listChannels();
         if (chs && chs.length > 0) {
-          if (!finalCfg.targets || finalCfg.targets.length === 0 || 
+          if (!finalCfg.targets || finalCfg.targets.length === 0 ||
               (finalCfg.targets.length === 2 && finalCfg.targets[0].styles === "Messianic Liquid Drum and Bass")) {
             finalCfg.targets = chs.map(c => ({
               language: c.language || "English",
-              styles: c.styles || ""
+              styles: c.styles || "",
+              channelId: c.id,
+              channelName: c.name,
             }));
           }
         }
@@ -407,8 +430,10 @@ export default function AIComposer() {
     const pack = STYLE_PACKS[name] || [];
     setCfg({ ...cfg, style_keywords: Array.from(new Set([...(cfg.style_keywords||[]), ...pack])) });
   };
-  const toggleSunoPreset = (targetIndex, genreName) => {
-    const csvContent = SUNO_GENRES[genreName];
+  // `csvContent` is passed in directly (rather than re-looked-up from SUNO_GENRES) so this
+  // works the same for the hardcoded prepackaged mixes and for genre presets saved in Sound
+  // Studio's shared, server-backed library — both are just a name + CSV descriptor string.
+  const toggleSunoPreset = (targetIndex, genreName, csvContent) => {
     if (!csvContent) return;
     const target = cfg.targets?.[targetIndex];
     if (!target) return;
@@ -437,7 +462,7 @@ export default function AIComposer() {
         key={genreName}
         type="button"
         onClick={() => {
-          toggleSunoPreset(targetIndex, genreName);
+          toggleSunoPreset(targetIndex, genreName, csvContent);
           toast.success(`${selected ? "Removed" : "Added"} genre: ${genreName}`);
         }}
         className={buttonClass}
@@ -462,7 +487,9 @@ export default function AIComposer() {
       if (chs && chs.length > 0) {
         const syncedTargets = chs.map(c => ({
           language: c.language || "English",
-          styles: c.styles || ""
+          styles: c.styles || "",
+          channelId: c.id,
+          channelName: c.name,
         }));
         setCfg(prev => ({ ...prev, targets: syncedTargets }));
         toast.success(`Synced ${syncedTargets.length} targets from channels`);
@@ -716,29 +743,59 @@ export default function AIComposer() {
     const res = await api.importLyrics(activeProjectId, items);
     toast.success(`Imported ${res.created} songs`); refreshSongs(); nav("/lyrics");
   };
-  
-  const downloadJson = () => {
-    const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob); const a = document.createElement("a");
-    a.href = url; a.download = `lyrics-${Date.now()}.json`; a.click(); URL.revokeObjectURL(url);
+
+  // Explicit "put these lyrics on the Music Generation tiles" action — same import as
+  // sendToLyrics, but lands straight on the Music Studio page where the resulting song tiles
+  // actually show up, instead of the intermediate Lyrics editor.
+  const sendToMusicGen = async () => {
+    if (!activeProjectId) return toast.error("Select a project first");
+    if (!items.length) return toast.error("Generate first");
+    const res = await api.importLyrics(activeProjectId, items);
+    toast.success(`Sent ${res.created} song${res.created === 1 ? "" : "s"} to Music Generation`);
+    await refreshSongs();
+    nav("/music");
   };
+
+  const slugifyName = (s) => (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "untitled";
+
+  // Saves straight into this project's own ~/Documents folder under a name that says what it
+  // is and when — no save dialog (kept deliberately simple), just lands somewhere sensible
+  // instead of the OS Downloads folder.
+  const downloadJson = async () => {
+    if (!items.length) return toast.error("Generate first.");
+    if (!activeProjectId) return toast.error("Select a project first — exports save into that project's own folder.");
+    const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 16);
+    const filename = `lyrics_${slugifyName(chapterRef)}_${stamp}.json`;
+    try {
+      const res = await api.saveProjectFile(activeProjectId, filename, JSON.stringify(items, null, 2));
+      toast.success(`Saved to ${res.path}`);
+    } catch (err) {
+      toast.error("Failed to save: " + err);
+    }
+  };
+
+  // Page-wide controls (final action + save-config) live in the top bar, not the page body —
+  // they're relevant regardless of how far down the config form you've scrolled.
+  usePageActions(useMemo(() => (
+    <>
+      <AutoSaveChip status={asStatus} lastSaved={lastSaved} />
+      <Button size="sm" variant="secondary" data-testid="composer-save-cfg" onClick={saveCfg}>
+        <Save className="w-3 h-3 mr-2" />
+        Save config <kbd className="ml-1.5 hidden sm:inline text-[9px] font-mono opacity-70 bg-background px-1 py-0.5 rounded border border-border">Ctrl+S</kbd>
+      </Button>
+      <Button size="sm" data-testid="composer-generate-btn" onClick={generate} disabled={busy}>
+        {busy ? <FlaskConical className="w-4 h-4 mr-2 animate-pulse" /> : <Sparkles className="w-4 h-4 mr-2" />}
+        Generate <kbd className="ml-1.5 hidden sm:inline text-[9px] font-mono opacity-70 bg-primary-foreground/20 px-1 py-0.5 rounded">Ctrl+Enter</kbd>
+      </Button>
+    </>
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [asStatus, lastSaved, busy]));
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-4 py-5 sm:py-8 space-y-5 sm:space-y-6">
       {/* HEADER SECTION */}
       <div className="flex items-start sm:items-center justify-between mb-2 flex-col sm:flex-row gap-3">
         <h1 className="text-3xl sm:text-5xl font-bold">AI Composer</h1>
-        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          <AutoSaveChip status={asStatus} lastSaved={lastSaved} />
-          <Button size="sm" variant="secondary" data-testid="composer-save-cfg" onClick={saveCfg} className="shrink-0">
-            <Save className="w-3 h-3 mr-2" />
-            Save config <kbd className="ml-1.5 hidden sm:inline text-[9px] font-mono opacity-70 bg-background px-1 py-0.5 rounded border border-border">Ctrl+S</kbd>
-          </Button>
-          <Button data-testid="composer-generate-btn" onClick={generate} disabled={busy} className="shrink-0">
-            {busy ? <FlaskConical className="w-4 h-4 mr-2 animate-pulse" /> : <Sparkles className="w-4 h-4 mr-2" />}
-            Generate <kbd className="ml-1.5 hidden sm:inline text-[9px] font-mono opacity-70 bg-primary-foreground/20 px-1 py-0.5 rounded">Ctrl+Enter</kbd>
-          </Button>
-        </div>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Authors a multi-channel <span className="text-mono">lyrics.json</span> from your bible chapter + themes + section ideas. Powered by OpenRouter Qwen (free tier).</p>
 
@@ -793,7 +850,7 @@ export default function AIComposer() {
                   <SelectContent>
                     {(cfg.targets || []).map((target, idx) => (
                       <SelectItem key={`${target.language}-${idx}`} value={String(idx)} className="text-xs">
-                        {idx + 1}. {target.language || "Language"} {target.styles ? `- ${target.styles.slice(0, 34)}` : ""}
+                        {target.channelName || `${idx + 1}.`} {target.language || "Language"} {target.styles ? `- ${target.styles.slice(0, 34)}` : ""}
                       </SelectItem>
                     ))}
                     {!(cfg.targets || []).length && <SelectItem value="0">No target yet</SelectItem>}
@@ -1233,17 +1290,28 @@ export default function AIComposer() {
                     <div className="md:col-span-7 space-y-1">
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground flex items-center gap-1">Suno AI Style CSV</span>
-                        <button type="button" onClick={() => setActiveSunoHelperIdx(activeSunoHelperIdx === i ? null : i)}
-                          className="text-[9px] text-primary font-semibold hover:underline flex items-center gap-0.5">
-                          <Sparkles className="w-2.5 h-2.5" /> 
-                          {activeSunoHelperIdx === i ? "Hide Genre Mixes" : "Genre Presets Helper"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button type="button"
+                            onClick={() => updateTarget(i, "styles", appendDailyFlavor(t.styles, `${t.channelId || t.channelName || t.language || i}`))}
+                            className="text-[9px] text-primary font-semibold hover:underline flex items-center gap-0.5"
+                            title="Appends a small production-flavor modifier that changes once a day — same channel stays consistent within a day, varies day to day, so the same configured style doesn't sound identical every time.">
+                            <Dices className="w-2.5 h-2.5" />
+                            Today's flavor
+                          </button>
+                          <button type="button" onClick={() => setActiveSunoHelperIdx(activeSunoHelperIdx === i ? null : i)}
+                            className="text-[9px] text-primary font-semibold hover:underline flex items-center gap-0.5">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            {activeSunoHelperIdx === i ? "Hide Genre Mixes" : "Genre Presets Helper"}
+                          </button>
+                        </div>
                       </div>
                       <Input data-testid={`composer-target-style-${i}`} value={t.styles} onChange={e=>updateTarget(i,"styles",e.target.value)} placeholder="e.g. messianic liquid drum and bass, 174 bpm" className="h-8 text-xs bg-background" />
                     </div>
 
                     <div className="md:col-span-2 text-center">
-                      <Badge variant="outline" className="h-8 font-mono text-[9px] block text-center truncate pt-2">Channel {i+1}</Badge>
+                      <Badge variant="outline" className="h-8 font-mono text-[9px] block text-center truncate pt-2" title={t.channelName || "Not linked to a channel — add via 'Sync from Channels'"}>
+                        {t.channelName || `Channel ${i + 1}`}
+                      </Badge>
                     </div>
                   </div>
 
@@ -1263,6 +1331,26 @@ export default function AIComposer() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto scroll-thin">
                         {Object.entries(SUNO_GENRES).map(([genreName, csvContent]) => renderSunoGenreButton(i, genreName, csvContent))}
                       </div>
+
+                      {savedGenrePresets.length > 0 && (
+                        <>
+                          <div className="flex justify-between items-center text-[10px] text-mono uppercase tracking-widest text-muted-foreground border-b border-t border-border/40 pt-2 pb-1.5">
+                            <span className="flex items-center gap-1 font-semibold text-primary"><Sparkles className="w-3 h-3" /> Your Saved Genre Presets</span>
+                            <span>from Sound Studio</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto scroll-thin">
+                            {savedGenrePresets.map((p) => renderSunoGenreButton(i, `${p.name} (${p.pack || "Custom"})`, p.styles))}
+                          </div>
+                        </>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => saveTargetAsGenrePreset(i)}
+                        className="w-full text-[10px] text-mono uppercase tracking-widest text-muted-foreground hover:text-primary border border-dashed border-border/60 hover:border-primary/50 rounded p-1.5 transition-colors"
+                      >
+                        Save this target's current style as a genre preset →
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1283,7 +1371,10 @@ export default function AIComposer() {
                   <div key={idx} className="border border-border/80 rounded-lg p-3 bg-muted/20 text-xs space-y-2">
                     <div className="flex justify-between items-center font-bold">
                       <span className="text-primary truncate max-w-[200px]">{item.title}</span>
-                      <Badge variant="secondary" className="font-mono text-[9px]">{item.language}</Badge>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {item.channel_name && <Badge variant="outline" className="font-mono text-[9px]">{item.channel_name}</Badge>}
+                        <Badge variant="secondary" className="font-mono text-[9px]">{item.language}</Badge>
+                      </div>
                     </div>
                     {item.styles && <div className="text-muted-foreground italic text-[10px]">Style: {item.styles}</div>}
                     <div className="max-h-24 overflow-y-auto bg-background/50 border border-border/30 rounded p-1.5 text-mono font-mono text-[9px] leading-relaxed scroll-thin">
@@ -1305,7 +1396,10 @@ export default function AIComposer() {
               <div className="flex flex-wrap gap-2 justify-end">
                 <Button size="sm" variant="ghost" onClick={downloadJson}><Download className="w-3.5 h-3.5 mr-2" />Save as JSON file</Button>
                 <Button size="sm" variant="secondary" onClick={clearGenerated}><X className="w-3.5 h-3.5 mr-2" />Clear results</Button>
-                <Button size="sm" onClick={sendToLyrics}><ArrowRight className="w-3.5 h-3.5 mr-2" />Send to Studio Lyrics Editor</Button>
+                <Button size="sm" variant="secondary" onClick={sendToLyrics}><ArrowRight className="w-3.5 h-3.5 mr-2" />Send to Studio Lyrics Editor</Button>
+                <Button size="sm" onClick={sendToMusicGen} title="Import these songs and go straight to their tiles in Music Generation">
+                  <Music className="w-3.5 h-3.5 mr-2" />Send to Music Generation
+                </Button>
               </div>
             </div>
           ) : (

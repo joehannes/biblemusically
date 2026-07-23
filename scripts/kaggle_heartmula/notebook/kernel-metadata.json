@@ -1,0 +1,13 @@
+{
+  "id": "joehannes/biblemusically-heartmula-server",
+  "title": "biblemusically-heartmula-server",
+  "code_file": "setup_and_serve.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": []
+}

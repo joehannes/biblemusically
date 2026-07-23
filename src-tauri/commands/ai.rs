@@ -22,6 +22,36 @@ fn bson_to_value(doc: Document) -> Value {
     Value::Object(m)
 }
 
+/// Attach channelId/channelName from the request's own targets onto each generated item, so
+/// lyrics stay linked to the channel they were generated for — without the AI ever having to
+/// understand the concept of a "channel" or the response schema having to encode one. Targets
+/// are sent to the LLM "one JSON element per target" in order, so matching is positional first;
+/// that positional guess is only trusted when the item's language actually lines up (or either
+/// side left it blank), and falls back to a language lookup otherwise — a cheap guard against a
+/// reordered or dropped item silently inheriting the wrong channel.
+fn attach_channel_info(items: &mut [Value], targets: &[Value]) {
+    for (i, item) in items.iter_mut().enumerate() {
+        let positional = targets.get(i).filter(|t| {
+            let tl = t["language"].as_str().unwrap_or("");
+            let il = item["language"].as_str().unwrap_or("");
+            tl.is_empty() || il.is_empty() || tl.eq_ignore_ascii_case(il)
+        });
+        let target = positional.or_else(|| {
+            let il = item["language"].as_str().unwrap_or("");
+            if il.is_empty() { return None; }
+            targets.iter().find(|t| t["language"].as_str().unwrap_or("").eq_ignore_ascii_case(il))
+        });
+        if let Some(target) = target {
+            if let Some(cid) = target["channelId"].as_str().filter(|s| !s.is_empty()) {
+                item["channel_id"] = Value::String(cid.to_string());
+            }
+            if let Some(cname) = target["channelName"].as_str().filter(|s| !s.is_empty()) {
+                item["channel_name"] = Value::String(cname.to_string());
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn get_compose_config(state: State<'_, AppState>) -> Res<Value> {
     let doc = state.db.collection::<Document>("compose_configs")
@@ -66,6 +96,63 @@ pub struct ComposeRequest {
     pub artist: String,
 }
 
+/// Request for the freeform (non-Bible) topic composer. The user roughly describes a topic
+/// (optionally via mic → text), a daily mood/vibe driver, and a set of targets (each a
+/// language + genre, ultimately its own channel). The AI produces per-target songs that are
+/// culturally + genre adapted so each speaks to its regional/genre audience.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FreeformComposeRequest {
+    /// Rough free-text description of what the song(s) should be about.
+    pub topic: String,
+    /// Today's driver of humor/wellbeing/mood — how the theme should "vibe" right now.
+    #[serde(default)]
+    pub mood_driver: String,
+    /// Optional per-section ideas the user wants reflected.
+    #[serde(default)]
+    pub sections: Vec<Value>,
+    /// Targets to produce, each e.g. { "language": "Spanish", "genre": "reggaeton", "channel": "..." }.
+    #[serde(default)]
+    pub targets: Vec<Value>,
+    /// When true, the AI adapts each translation + genre to its regional/genre culture.
+    #[serde(default = "yes_bool")]
+    pub cultural_influence: bool,
+    #[serde(default)]
+    pub title_pattern: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub image_style_suffix: String,
+}
+
+fn yes_bool() -> bool { true }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestTransitionsRequest {
+    pub song_id: String,
+    /// "manual" (uniform default), "assist" (rule-based per scene), or "full" (AI per scene).
+    #[serde(default = "default_automation")]
+    pub automation: String,
+    /// Allowed transition vocabulary (from the chosen preset pack).
+    #[serde(default)]
+    pub allowed: Vec<String>,
+    #[serde(default)]
+    pub default_transition: String,
+}
+fn default_automation() -> String { "assist".into() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MixGenresRequest {
+    /// Genre descriptor strings to fuse (e.g. Suno-style keyword lists).
+    #[serde(default)]
+    pub genres: Vec<String>,
+    /// Optional mood/vibe to bias the fusion.
+    #[serde(default)]
+    pub mood: String,
+    /// Use the LLM to intelligently fuse (true) or the fast deterministic combiner (false).
+    #[serde(default = "yes_bool")]
+    pub ai: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComposerAssistRequest {
     #[serde(default)]
@@ -89,6 +176,132 @@ fn default_assist_temperature() -> f32 { 0.55 }
 /// Public helper: call OpenRouter with a system prompt and user message,
 /// accepting a DB reference (not Tauri State) so it can be used from
 /// other modules like characters.rs.
+/// Provider-agnostic single-shot chat call. Reads `ai_provider` from the settings document and
+/// dispatches to OpenRouter (default) or Google Gemini (free tier). Returns `(content, model_label)`.
+///
+/// Both the lyrics composer and the small assist helpers route through this, so switching the
+/// provider in Settings transparently changes which backend every AI feature uses.
+pub async fn provider_chat(
+    settings_doc: &Value,
+    system: &str,
+    user: &str,
+    temperature: f32,
+    json_mode: bool,
+) -> Result<(String, String), String> {
+    let provider = settings_doc["ai_provider"].as_str().unwrap_or("openrouter").trim();
+
+    if provider == "gemini" {
+        let key = settings_doc["gemini_api_key"].as_str().unwrap_or("").trim().to_string();
+        let mut model = settings_doc["gemini_model"].as_str()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("gemini-3.5-flash")
+            .to_string();
+        // Self-heal models Google has shut down (a stale saved value otherwise breaks
+        // every generation with an "outdated model" error until the user re-picks).
+        if matches!(model.as_str(), "gemini-2.0-flash" | "gemini-2.0-flash-lite" | "gemini-1.5-flash" | "gemini-1.5-pro" | "gemini-2.5-flash" | "gemini-2.5-flash-lite") {
+            model = "gemini-3.5-flash".to_string();
+        }
+        if key.is_empty() {
+            return Err("Configure gemini_api_key in Settings (get one free at aistudio.google.com/apikey).".to_string());
+        }
+
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(e)?;
+
+        let mut gen_config = serde_json::json!({ "temperature": temperature.clamp(0.0, 2.0) });
+        if json_mode {
+            gen_config["responseMimeType"] = serde_json::json!("application/json");
+        }
+        let body = serde_json::json!({
+            "system_instruction": { "parts": [ { "text": system } ] },
+            "contents": [ { "role": "user", "parts": [ { "text": user } ] } ],
+            "generationConfig": gen_config,
+        });
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        );
+        let r = http.post(&url)
+            .header("x-goog-api-key", &key)
+            .json(&body)
+            .send().await.map_err(e)?;
+        if !r.status().is_success() {
+            let status = r.status();
+            let txt = r.text().await.unwrap_or_default();
+            let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
+            return Err(format!("Gemini HTTP {status}: {safe_txt}"));
+        }
+        let res_json: Value = r.json().await.map_err(e)?;
+        // Concatenate all text parts of the first candidate.
+        let content = res_json["candidates"][0]["content"]["parts"]
+            .as_array()
+            .map(|parts| parts.iter().filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join(""))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if content.is_empty() {
+            let reason = res_json["candidates"][0]["finishReason"].as_str().unwrap_or("unknown");
+            return Err(format!("Gemini returned no text (finishReason: {reason})"));
+        }
+        return Ok((content, format!("gemini:{model}")));
+    }
+
+    // ── OpenRouter (default) ─────────────────────────────────────────
+    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
+    let mut model = settings_doc["openrouter_model"].as_str()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
+        .to_string();
+    // Self-heal the old default that OpenRouter has delisted (stale DBs still carry it).
+    if model == "qwen/qwen-2.5-72b-instruct:free" {
+        model = "qwen/qwen3-next-80b-a3b-instruct:free".to_string();
+    }
+    if key.is_empty() {
+        return Err("Configure openrouter_api_key in Settings (get one free at openrouter.ai/keys).".to_string());
+    }
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .user_agent("Lightkid AI Studio")
+        .build()
+        .map_err(e)?;
+
+    let user_email = settings_doc["openrouter_email"].as_str().unwrap_or("").trim().to_string();
+
+    let mut body = serde_json::json!({
+        "model": model,
+        "temperature": temperature.clamp(0.0, 1.5),
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ]
+    });
+    if json_mode {
+        body["response_format"] = serde_json::json!({ "type": "json_object" });
+    }
+
+    let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")
+        .header("Authorization", format!("Bearer {key}"))
+        .header("HTTP-Referer", "https://lightkid.studio")
+        .header("X-Title", "Lightkid AI Studio");
+    if !user_email.is_empty() {
+        req_builder = req_builder.header("X-User-Email", &user_email);
+    }
+
+    let r = req_builder.json(&body).send().await.map_err(e)?;
+    if !r.status().is_success() {
+        let status = r.status();
+        let txt = r.text().await.unwrap_or_default();
+        let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
+        return Err(format!("OpenRouter HTTP {status}: {safe_txt}"));
+    }
+    let res_json: Value = r.json().await.map_err(e)?;
+    let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
+    Ok((content, model))
+}
+
 pub async fn call_openrouter(
     db: &mongodb::Database,
     system: &str,
@@ -103,55 +316,7 @@ pub async fn call_openrouter(
         .map(bson_to_value)
         .unwrap_or_default();
 
-    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
-    let model = settings_doc["openrouter_model"].as_str()
-        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
-        .to_string();
-
-    if key.is_empty() {
-        return Err("Configure openrouter_api_key in Settings (get one free at openrouter.ai/keys).".to_string());
-    }
-
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .user_agent("Lightkid AI Studio")
-        .build()
-        .map_err(e)?;
-
-    let user_email = settings_doc["openrouter_email"].as_str().unwrap_or("").trim().to_string();
-
-    let mut body = serde_json::json!({
-        "model": model,
-        "temperature": temperature.clamp(0.0, 1.5),
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ]
-    });
-
-    if json_mode {
-        body["response_format"] = serde_json::json!({ "type": "json_object" });
-    }
-
-    let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {key}"))
-        .header("HTTP-Referer", "https://lightkid.studio")
-        .header("X-Title", "Lightkid AI Studio");
-
-    if !user_email.is_empty() {
-        req_builder = req_builder.header("X-User-Email", &user_email);
-    }
-
-    let r = req_builder.json(&body).send().await.map_err(e)?;
-    if !r.status().is_success() {
-        let status = r.status();
-        let txt = r.text().await.unwrap_or_default();
-        let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
-        return Err(format!("OpenRouter HTTP {status}: {safe_txt}"));
-    }
-
-    let res_json: Value = r.json().await.map_err(e)?;
-    let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
+    let (content, model) = provider_chat(&settings_doc, system, user, temperature, json_mode).await?;
     Ok(serde_json::json!({
         "text": content,
         "model": model,
@@ -162,13 +327,14 @@ fn raw_preview(content: &str) -> String {
     if content.len() > 1200 { content[..1200].to_string() } else { content.to_string() }
 }
 
-fn extract_json_value(content: &str) -> Option<Value> {
+pub fn extract_json_value(content: &str) -> Option<Value> {
     let re = Regex::new(r"(?s)(\{.*\}|\[.*\])").ok()?;
     let mat = re.find(content)?;
     serde_json::from_str::<Value>(mat.as_str()).ok()
 }
 
-async fn openrouter_text(
+/// State-based convenience wrapper around `provider_chat` used by the interactive assist helpers.
+async fn provider_text(
     state: &State<'_, AppState>,
     system: &str,
     user: &str,
@@ -181,57 +347,7 @@ async fn openrouter_text(
         .await.map_err(e)?
         .map(bson_to_value)
         .unwrap_or_default();
-
-    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
-    let model = settings_doc["openrouter_model"].as_str()
-        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
-        .to_string();
-
-    if key.is_empty() {
-        return Err("Configure openrouter_api_key in Settings (get one free at openrouter.ai/keys).".to_string());
-    }
-
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .user_agent("Lightkid AI Studio")
-        .build()
-        .map_err(e)?;
-
-    let user_email = settings_doc["openrouter_email"].as_str().unwrap_or("").trim().to_string();
-
-    let mut body = serde_json::json!({
-        "model": model,
-        "temperature": temperature.clamp(0.0, 1.5),
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ]
-    });
-
-    if json_mode {
-        body["response_format"] = serde_json::json!({ "type": "json_object" });
-    }
-
-    let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {key}"))
-        .header("HTTP-Referer", "https://lightkid.studio")
-        .header("X-Title", "Lightkid AI Studio");
-
-    if !user_email.is_empty() {
-        req_builder = req_builder.header("X-User-Email", &user_email);
-    }
-
-    let r = req_builder.json(&body).send().await.map_err(e)?;
-    if !r.status().is_success() {
-        let status = r.status();
-        let txt = r.text().await.unwrap_or_default();
-        let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
-        return Err(format!("OpenRouter HTTP {status}: {safe_txt}"));
-    }
-
-    let res_json: Value = r.json().await.map_err(e)?;
-    let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
-    Ok((content, model))
+    provider_chat(&settings_doc, system, user, temperature, json_mode).await
 }
 
 #[tauri::command]
@@ -256,7 +372,7 @@ pub async fn compose_assist(state: State<'_, AppState>, payload: ComposerAssistR
         user.push_str(&format!("User instructions:\n{}\n", payload.user_prompt.trim()));
     }
 
-    match openrouter_text(&state, system, &user, payload.temperature, payload.json_mode).await {
+    match provider_text(&state, system, &user, payload.temperature, payload.json_mode).await {
         Ok((text, model)) => {
             Ok(serde_json::json!({
                 "text": text,
@@ -284,23 +400,21 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
         .map(bson_to_value)
         .unwrap_or_default();
     
-    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
-    let model = settings_doc["openrouter_model"].as_str()
-        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
-        .to_string();
-        
-    if key.is_empty() {
-        return Ok(serde_json::json!({
-            "error": "Configure openrouter_api_key in Settings (get one free at openrouter.ai/keys).",
-            "items": []
-        }));
-    }
-
     // 2. Build the system and user prompts exactly like the Python server did
+    // `lyrics` MUST be a plain string, not an array of {section, lines} objects: Song.lyrics is
+    // a plain string field in the DB, import_lyrics reads it with `.as_str()`, and every
+    // downstream consumer (Suno automation, the Music Studio lyrics editor, annotation parsing)
+    // expects flat text. An earlier version of this prompt asked for an array here, which meant
+    // import_lyrics's `.as_str()` silently failed and every imported song ended up with empty
+    // lyrics — invisible in the AI Composer's own results panel (which specifically handles
+    // both shapes) but missing everywhere else, and the array shape also crashed the Lyrics
+    // editor's preview (React can't render an array of plain objects as children).
     let sys = "You compose multilingual song lyrics JSON for AI music video production.\n\
                Return ONLY a valid JSON array — no prose, no markdown fences.\n\
-               Each element MUST have: title (string), language (string), styles (string), lyrics (array of {section(string), lines(string)}), annotations (string), image_styles (string).\n\
-               Example lyrics: [{section: verse1, lines: The Lord is my shepherd}].\n\
+               Each element MUST have: title (string), language (string), styles (string), \
+               lyrics (string): the full lyrics as plain text with [section] headers (e.g. [verse 1], [chorus]) \
+               on their own lines, annotations (string), image_styles (string).\n\
+               Example lyrics: \"[verse 1]\\nThe Lord is my shepherd\\n\\n[chorus]\\n...\".\n\
                annotations format: alternating lines — first a bracketed midjourney-style image prompt in square brackets, then the matching lyric line.\n\
                Translate lyrics into the target language faithfully if it isn't English. Keep section ideas + themes embedded in the bracket prompts.";
 
@@ -334,7 +448,10 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
          Per-language themes: {}\n\
          Per-channel themes: {}\n\n\
          Targets to produce (one JSON element per target):\n{}\n\n\
-         Title pattern: {} (artist={})\n\
+         Title pattern: {} (artist={}). {{channel}} = that target's channelName from the targets list \
+         (omit that segment if the target has none). Do NOT put the full styles/genre list in the title \
+         — titles are typed into a song-title field with a hard length limit, so keep the rendered title \
+         under 50 characters total, no matter what the pattern implies.\n\
          image_styles must end with: {}\n\
          Fields the user wants AI to GENERATE: {:?}; KEEP empty/template for: {:?}.\n\
          Output the JSON array now.",
@@ -351,49 +468,13 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
         keep_list
     );
 
-    // 3. Make HTTP request to OpenRouter
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .build()
-        .map_err(e)?;
-
-    // Get user email from settings for X-User-Email header (helps OpenRouter attribute usage)
-    let user_email = settings_doc["openrouter_email"].as_str().unwrap_or("").trim().to_string();
-
-    let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {key}"))
-        .header("HTTP-Referer", "https://lightkid.studio")
-        .header("X-Title", "Lightkid AI Studio");
-
-    if !user_email.is_empty() {
-        req_builder = req_builder.header("X-User-Email", &user_email);
-    }
-
-    let r = req_builder.json(&serde_json::json!({
-            "model": model,
-            "temperature": 0.85,
-            "messages": [
-                { "role": "system", "content": sys },
-                { "role": "user", "content": user_prompt }
-            ]
-        }))
-        .send()
-        .await
-        .map_err(e)?;
-
-    if !r.status().is_success() {
-        let status = r.status();
-        let txt = r.text().await.unwrap_or_default();
-        let safe_txt = if txt.len() > 400 { &txt[..400] } else { &txt };
-        return Ok(serde_json::json!({
-            "error": format!("OpenRouter HTTP {status}: {safe_txt}"),
-            "items": []
-        }));
-    }
-
-    let res_json: Value = r.json().await.map_err(e)?;
-    let content = res_json["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
+    // 3. Call the configured LLM provider (OpenRouter or Gemini).
+    let (content, model) = match provider_chat(&settings_doc, sys, &user_prompt, 0.85, false).await {
+        Ok(pair) => pair,
+        Err(err) => {
+            return Ok(serde_json::json!({ "error": err, "items": [] }));
+        }
+    };
 
     // 4. Try to extract and parse the JSON array, handling truncated responses
     let re = Regex::new(r"(?s)\[.*\]").map_err(e)?;
@@ -447,7 +528,8 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
         Some(mat) => {
             let json_str = mat.as_str();
             match parse_with_repair(json_str) {
-                Ok(Value::Array(items)) => {
+                Ok(Value::Array(mut items)) => {
+                    attach_channel_info(&mut items, &payload.targets);
                     return Ok(serde_json::json!({
                         "items": items,
                         "model": model,
@@ -477,5 +559,286 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
                 "items": []
             }));
         }
+    }
+}
+
+fn is_punchy_transition(t: &str) -> bool {
+    matches!(t,
+        "slideleft" | "slideright" | "slideup" | "slidedown" |
+        "wipeleft" | "wiperight" | "wipeup" | "wipedown" |
+        "pixelize" | "zoomin" | "circleopen" | "circleclose" | "circlecrop" | "rectcrop" | "radial" |
+        "diagtl" | "diagtr" | "diagbl" | "diagbr" |
+        "hlslice" | "hrslice" | "vuslice" | "vdslice" | "squeezev" | "squeezeh" | "distance")
+}
+
+/// Rule-based transition pick for one scene boundary, drawn from the pack's allowed vocabulary:
+/// a mood change gets a more pronounced transition; a steady mood gets a gentle one. `idx` rotates
+/// choices so consecutive boundaries vary.
+fn deterministic_transition(allowed: &[String], default_t: &str, mood: &str, mood_prev: &str, idx: usize) -> String {
+    let changed = !mood.is_empty() && !mood_prev.is_empty() && mood != mood_prev;
+    let pool: Vec<&String> = allowed.iter()
+        .filter(|t| if changed { is_punchy_transition(t) } else { !is_punchy_transition(t) })
+        .collect();
+    if pool.is_empty() {
+        if allowed.is_empty() { default_t.to_string() } else { allowed[idx % allowed.len()].clone() }
+    } else {
+        pool[idx % pool.len()].clone()
+    }
+}
+
+/// Suggest a transition for every scene boundary of a song and persist it to the sections.
+/// `automation` chooses how much the AI drives it: manual → the pack default everywhere; assist →
+/// mood/pacing rules; full → the LLM picks per scene (with the rules as fallback). Considers the
+/// per-section mood transitions and durations produced by the audio-analysis step.
+#[tauri::command]
+pub async fn suggest_transitions(state: State<'_, AppState>, payload: SuggestTransitionsRequest) -> Res<Value> {
+    use futures_util::StreamExt;
+    let default_t = if payload.default_transition.trim().is_empty() { "fade".to_string() } else { payload.default_transition.trim().to_string() };
+    let allowed: Vec<String> = if payload.allowed.is_empty() {
+        vec!["fade".into(), "dissolve".into(), "slideleft".into(), "wipeup".into(), "circleopen".into()]
+    } else { payload.allowed.clone() };
+
+    // Load sections in order.
+    let mut cursor = state.db.collection::<Document>("sections")
+        .find(doc! { "song_id": &payload.song_id }).await.map_err(e)?;
+    let mut secs: Vec<Value> = Vec::new();
+    while let Some(Ok(d)) = cursor.next().await { secs.push(bson_to_value(d)); }
+    secs.sort_by_key(|s| s["index"].as_i64().unwrap_or(0));
+    if secs.is_empty() {
+        return Ok(serde_json::json!({ "error": "No sections found — analyze the song first.", "transitions": [] }));
+    }
+
+    // Build the base (deterministic / manual) suggestions.
+    let mut chosen: Vec<String> = secs.iter().enumerate().map(|(i, s)| {
+        if payload.automation == "manual" {
+            default_t.clone()
+        } else {
+            deterministic_transition(&allowed, &default_t,
+                s["mood"].as_str().unwrap_or(""), s["mood_prev"].as_str().unwrap_or(""), i)
+        }
+    }).collect();
+    let mut model = if payload.automation == "manual" { "manual".to_string() } else { "rules".to_string() };
+
+    // "full" automation: ask the LLM to pick per scene from the allowed vocabulary.
+    if payload.automation == "full" {
+        let settings_doc = state.db.collection::<Document>("settings")
+            .find_one(doc! { "_id": "singleton" }).with_options(proj0()).await.map_err(e)?
+            .map(bson_to_value).unwrap_or_default();
+        let scene_lines: Vec<String> = secs.iter().enumerate().map(|(i, s)| {
+            let dur = (s["end"].as_f64().unwrap_or(0.0) - s["start"].as_f64().unwrap_or(0.0)).max(0.0);
+            format!("{}. mood '{}' (prev '{}'), {:.1}s: {}", i, s["mood"].as_str().unwrap_or("?"),
+                s["mood_prev"].as_str().unwrap_or(""), dur,
+                s["image_prompt"].as_str().or_else(|| s["line"].as_str()).unwrap_or(""))
+        }).collect();
+        let sys = "You are a music-video editor choosing scene-to-scene transitions. For each scene, \
+                   pick ONE transition from the allowed list that fits its mood change and pacing \
+                   (punchy transitions for big mood shifts / energetic moments, gentle ones for calm \
+                   or continuous scenes). Return ONLY a JSON array of transition names, one per scene, \
+                   same length and order as the scenes, each value from the allowed list.";
+        let user = format!("Allowed transitions: {}\n\nScenes (index. mood, duration: description):\n{}\n\nReturn the JSON array now.",
+            allowed.join(", "), scene_lines.join("\n"));
+        if let Ok((text, m)) = provider_chat(&settings_doc, sys, &user, 0.5, false).await {
+            if let Some(Value::Array(arr)) = extract_json_value(&text) {
+                for (i, v) in arr.iter().enumerate() {
+                    if i >= chosen.len() { break; }
+                    if let Some(t) = v.as_str() {
+                        if allowed.iter().any(|a| a == t) { chosen[i] = t.to_string(); }
+                    }
+                }
+                model = m;
+            }
+        }
+    }
+
+    // Persist to the sections.
+    let coll = state.db.collection::<Document>("sections");
+    let mut out: Vec<Value> = Vec::new();
+    for (i, s) in secs.iter().enumerate() {
+        if let Some(id) = s["id"].as_str() {
+            let tr = &chosen[i];
+            let _ = coll.update_one(doc! { "id": id }, doc! { "$set": { "transition": tr } }).await;
+            out.push(serde_json::json!({
+                "id": id, "index": s["index"], "mood": s["mood"], "transition": tr,
+                "line": s["image_prompt"].as_str().or_else(|| s["line"].as_str()).unwrap_or("")
+            }));
+        }
+    }
+    Ok(serde_json::json!({ "transitions": out, "model": model, "count": out.len() }))
+}
+
+/// Deterministically fuse several genre descriptors into one coherent style string: merge all
+/// comma-separated keywords (dedup, case-insensitive, order-preserving) and reconcile BPMs into a
+/// single averaged tempo. Fast, offline, and used as the fallback when the LLM isn't available.
+fn deterministic_genre_mix(genres: &[String], mood: &str) -> String {
+    let bpm_re = Regex::new(r"(?i)(\d{2,3})\s*bpm").ok();
+    let mut bpms: Vec<f64> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut tokens: Vec<String> = Vec::new();
+
+    if !mood.trim().is_empty() {
+        for part in mood.split(',') {
+            let p = part.trim();
+            if !p.is_empty() && seen.insert(p.to_lowercase()) { tokens.push(p.to_string()); }
+        }
+    }
+    for g in genres {
+        for part in g.split(',') {
+            let p = part.trim();
+            if p.is_empty() { continue; }
+            if let Some(re) = &bpm_re {
+                if let Some(c) = re.captures(p) {
+                    if let Some(n) = c.get(1).and_then(|m| m.as_str().parse::<f64>().ok()) { bpms.push(n); }
+                    continue; // drop individual bpm tokens; we add one averaged bpm at the end
+                }
+            }
+            if seen.insert(p.to_lowercase()) { tokens.push(p.to_string()); }
+        }
+    }
+    // Keep the descriptor a reasonable length for the music models.
+    tokens.truncate(40);
+    if !bpms.is_empty() {
+        let avg = (bpms.iter().sum::<f64>() / bpms.len() as f64).round() as i64;
+        tokens.push(format!("{} bpm", avg));
+    }
+    tokens.join(", ")
+}
+
+#[tauri::command]
+pub async fn mix_genres(state: State<'_, AppState>, payload: MixGenresRequest) -> Res<Value> {
+    let cleaned: Vec<String> = payload.genres.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    if cleaned.is_empty() {
+        return Ok(serde_json::json!({ "error": "Select at least one genre to mix.", "styles": "" }));
+    }
+    let deterministic = deterministic_genre_mix(&cleaned, &payload.mood);
+
+    if !payload.ai {
+        return Ok(serde_json::json!({ "styles": deterministic, "model": "deterministic" }));
+    }
+
+    let settings_doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" })
+        .with_options(proj0())
+        .await.map_err(e)?
+        .map(bson_to_value)
+        .unwrap_or_default();
+
+    let sys = "You are a music A&R that fuses genres into ONE coherent, producible style descriptor for an \
+               AI song generator (Suno / ACE-Step). Blend the given genres into a single cohesive style that \
+               actually works together — reconcile tempo into one BPM, resolve conflicting instrumentation \
+               tastefully, and keep the best defining traits of each. Output ONLY a single line of \
+               comma-separated style keywords (no prose, no lists, no quotes), ending with one '<n> bpm'.";
+    let user = format!(
+        "Genres to fuse:\n- {}\n\nMood/vibe to honor: {}\n\nReturn the single fused style line now.",
+        cleaned.join("\n- "),
+        if payload.mood.trim().is_empty() { "(none specified)" } else { payload.mood.trim() },
+    );
+
+    match provider_chat(&settings_doc, sys, &user, 0.7, false).await {
+        Ok((text, model)) => {
+            let one_line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or(&text).trim().trim_matches('"').to_string();
+            let styles = if one_line.is_empty() { deterministic.clone() } else { one_line };
+            Ok(serde_json::json!({ "styles": styles, "model": model, "fallback": deterministic }))
+        }
+        // If the LLM isn't configured/fails, quietly fall back to the deterministic mix.
+        Err(err) => Ok(serde_json::json!({ "styles": deterministic, "model": "deterministic", "note": err })),
+    }
+}
+
+/// Freeform (non-Bible) topic composer. Turns a rough topic + a daily mood/vibe driver into a set
+/// of per-target songs, each culturally + genre adapted so it speaks to its regional/genre YouTube
+/// audience. Returns items in the same importable shape as `compose_lyrics` (so `import_lyrics`
+/// works unchanged) plus per-item intel fields for display: `cultural_influence`, `mood_context`,
+/// `section_intel`, and `image_intel`. The cultural adaptation is also baked into `styles` /
+/// `image_styles` / `annotations` so it actually steers the downstream music + image generation.
+#[tauri::command]
+pub async fn compose_freeform(state: State<'_, AppState>, payload: FreeformComposeRequest) -> Res<Value> {
+    let settings_doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" })
+        .with_options(proj0())
+        .await.map_err(e)?
+        .map(bson_to_value)
+        .unwrap_or_default();
+
+    if payload.topic.trim().is_empty() {
+        return Ok(serde_json::json!({ "error": "Describe a topic first (type it or use the mic).", "items": [] }));
+    }
+
+    let sys = "You compose multilingual, genre- and culture-adapted song lyrics JSON for AI music \
+               video production (NON-Bible, general topics).\n\
+               Return ONLY a valid JSON array — no prose, no markdown fences.\n\
+               Produce one element per requested target. Each element MUST have these fields:\n\
+               - title (string)\n\
+               - language (string)\n\
+               - styles (string): music-genre + production style keywords; when cultural influence is on, \
+                 fold in the regional/genre cultural flavor so the generated MUSIC speaks to that audience.\n\
+               - lyrics (string): the full lyrics as plain text with [section] headers (e.g. [verse 1], [chorus]) \
+                 on their own lines. Translate faithfully into the target language when it isn't English.\n\
+               - annotations (string): alternating lines — first a bracketed Midjourney-style image prompt in \
+                 square brackets, then the matching lyric line — so each section has visual image intel.\n\
+               - image_styles (string): global image-style keywords for this target, culturally adapted.\n\
+               - cultural_influence (string): a SHORT (1–2 sentence) summary of how this target was culturally/\
+                 genre adapted, to display in the music-generation view.\n\
+               - mood_context (string): 1 sentence on how today's mood/vibe driver shaped the tone.\n\
+               - section_intel (array of {section, note, image_intel}): per-section intel — what the section is \
+                 about and what its imagery should convey.\n\
+               - image_intel (string): a broad, general description of the overall visual direction (project + \
+                 daily theme) for this target.\n\
+               Keep it directly usable. Output the JSON array now.";
+
+    let targets_str = if payload.targets.is_empty() {
+        "[{\"language\":\"English\",\"genre\":\"cinematic pop\"}]".to_string()
+    } else {
+        serde_json::to_string(&payload.targets).unwrap_or_default()
+    };
+    let sections_str = serde_json::to_string(&payload.sections).unwrap_or_else(|_| "[]".to_string());
+
+    let user_prompt = format!(
+        "Topic (rough, from the user):\n{}\n\n\
+         Daily mood / vibe driver (shade of humor / wellbeing / state of mood — set the tone accordingly):\n{}\n\n\
+         User-authored section ideas (apply to sections + bracket image prompts when matching):\n{}\n\n\
+         Targets to produce (one JSON element per target; each has a language and a music genre, and \
+         ultimately becomes its own YouTube channel):\n{}\n\n\
+         Cultural influence: {}. When ON, adapt each translation AND genre to its regional + genre culture so \
+         it speaks directly to that audience (idioms, references, rhythmic/production conventions), and reflect \
+         that adaptation in styles, image_styles, annotations, and the cultural_influence summary.\n\
+         Title pattern: {} (artist={}).\n\
+         image_styles should end with: {}.\n\
+         Output the JSON array now.",
+        payload.topic.trim(),
+        if payload.mood_driver.trim().is_empty() { "(none specified — pick a fitting contemporary tone)" } else { payload.mood_driver.trim() },
+        sections_str,
+        targets_str,
+        if payload.cultural_influence { "ON" } else { "OFF" },
+        payload.title_pattern,
+        payload.artist,
+        payload.image_style_suffix,
+    );
+
+    let (content, model) = match provider_chat(&settings_doc, sys, &user_prompt, 0.9, false).await {
+        Ok(pair) => pair,
+        Err(err) => return Ok(serde_json::json!({ "error": err, "items": [] })),
+    };
+
+    // Extract the JSON array from the response (models sometimes wrap it in prose/fences).
+    let re = Regex::new(r"(?s)\[.*\]").map_err(e)?;
+    match re.find(&content).map(|m| m.as_str().to_string()).or_else(|| Some(content.clone())) {
+        Some(json_str) => match serde_json::from_str::<Value>(&json_str) {
+            Ok(Value::Array(mut items)) => {
+                attach_channel_info(&mut items, &payload.targets);
+                Ok(serde_json::json!({
+                    "items": items,
+                    "model": model,
+                    "count": items.len(),
+                }))
+            }
+            _ => match extract_json_value(&content) {
+                Some(Value::Array(mut items)) => {
+                    attach_channel_info(&mut items, &payload.targets);
+                    Ok(serde_json::json!({ "items": items, "model": model, "count": items.len() }))
+                }
+                _ => Ok(serde_json::json!({ "error": "AI did not return a JSON array", "raw": raw_preview(&content), "items": [] })),
+            },
+        },
+        None => Ok(serde_json::json!({ "error": "Empty AI response", "items": [] })),
     }
 }

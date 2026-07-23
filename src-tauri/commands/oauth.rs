@@ -646,8 +646,13 @@ pub async fn perform_oauth_loopback(db: &mongodb::Database, oauth_client_db_id: 
                 return Err("OAuth token exchange succeeded but no access_token was returned. This usually indicates a scope permission issue — check that your Google Cloud Console OAuth consent screen includes the YouTube Data API v3 scopes, and that your test user email is added to the Test Users list.".into());
             }
             if !refresh.is_empty() {
+                // Stored for parity/debuggability with the rest of the settings doc; this
+                // generic loopback helper (also used by the "connect all channels" flow and
+                // Google Drive project backup) has no single caller that reads these back today
+                // — each flow persists its own scoped tokens (per-channel refresh_token, or the
+                // per-project gdrive_refresh_token in authorize_project_gdrive).
                 let coll = db.collection::<Document>("settings");
-                let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "suno_google_refresh_token": refresh.clone(), "suno_google_access_token": access.clone() } }).await;
+                let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "google_loopback_refresh_token": refresh.clone(), "google_loopback_access_token": access.clone() } }).await;
             }
 
             Ok(tokens)

@@ -46,4 +46,17 @@ jq --arg v "$NEW_VERSION" '.version = $v' "$ROOT_DIR/src/package.json" > "$ROOT_
 # Update src-tauri/tauri.conf.json
 jq --arg v "$NEW_VERSION" '.version = $v' "$ROOT_DIR/src-tauri/tauri.conf.json" > "$ROOT_DIR/src-tauri/tauri.conf.json.tmp" && mv "$ROOT_DIR/src-tauri/tauri.conf.json.tmp" "$ROOT_DIR/src-tauri/tauri.conf.json"
 
-echo "✅ All version files updated to $NEW_VERSION"
+# Update src-tauri/Cargo.toml — the [package] version is the only line at column 0
+# starting with "version = " (dependency version specs are all nested inside braces
+# or on their own "name = { version = ... }" lines, so this anchor is safe).
+sed -i.tmp "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" "$ROOT_DIR/src-tauri/Cargo.toml" && rm -f "$ROOT_DIR/src-tauri/Cargo.toml.tmp"
+
+# Refresh Cargo.lock's own package entry to match, if cargo is available.
+if command -v cargo >/dev/null 2>&1; then
+  (cd "$ROOT_DIR/src-tauri" && cargo check -q --offline 2>/dev/null || cargo check -q 2>/dev/null) || \
+    echo "⚠️  Could not run 'cargo check' to refresh Cargo.lock — run it manually before committing."
+else
+  echo "⚠️  cargo not found on PATH — Cargo.lock will be stale until you run 'cargo check' or 'cargo build' in src-tauri/."
+fi
+
+echo "✅ All version files updated to $NEW_VERSION (package.json, src/package.json, tauri.conf.json, Cargo.toml)"

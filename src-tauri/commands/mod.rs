@@ -11,6 +11,10 @@ pub mod ai;
 pub mod characters;
 pub mod channel_creation;
 pub mod channel_settings;
+pub mod scheduler;
+pub mod styles;
+pub mod webview;
+pub mod kaggle_monitor;
 
 pub use settings::*;
 pub use projects::*;
@@ -25,3 +29,7 @@ pub use ai::*;
 pub use characters::*;
 pub use channel_creation::*;
 pub use channel_settings::*;
+pub use scheduler::*;
+pub use styles::*;
+pub use webview::*;
+pub use kaggle_monitor::*;

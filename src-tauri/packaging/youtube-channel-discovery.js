@@ -1,3 +1,7 @@
+// deprecated???: not invoked from any Rust command (verified via grep across src-tauri/commands
+// and src-tauri/src) — channel discovery is now done either by the pure-Rust HTTP scraper
+// (commands/channels.rs::discover_youtube_channels) or by youtube-channel-switcher.js (invoked
+// from discover_from_channel_switcher). This file looks superseded by one or both. See TODOS.md.
 import fs from "fs";
 import path from "path";
 import { chromium } from "playwright";

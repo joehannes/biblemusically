@@ -10,7 +10,7 @@ import { useState } from "react";
 import { getStepForPath } from "../lib/pageSteps";
 
 const KIND_COLOR = { music: "bg-emerald-500/20 text-emerald-300", analysis: "bg-sky-500/20 text-sky-300", image: "bg-fuchsia-500/20 text-fuchsia-300", video: "bg-amber-500/20 text-amber-300", upload: "bg-rose-500/20 text-rose-300" };
-const STATUS_VAR = { queued: "outline", running: "default", done: "secondary", failed: "destructive" };
+const STATUS_VAR = { queued: "outline", running: "default", done: "secondary", failed: "destructive", cancelled: "outline" };
 
 export default function Jobs() {
   const { jobs, refreshJobs } = useStudio();
@@ -50,8 +50,8 @@ export default function Jobs() {
               <Button size="sm" variant="ghost" onClick={()=>setOpen(o=>({...o,[j.id]:!o[j.id]}))}>{open[j.id]?"hide":"logs"}</Button>
               <Button size="sm" variant="ghost" data-testid={`job-copy-${j.id}`} onClick={()=>copy(j)}><Copy className="w-3 h-3" /></Button>
               <Button size="sm" variant="ghost" data-testid={`job-download-${j.id}`} onClick={()=>downloadLogs(j)}><Download className="w-3 h-3" /></Button>
-              {j.status === "failed" && <Button size="sm" data-testid={`job-retry-${j.id}`} onClick={()=>retry(j.id)}><RotateCw className="w-3 h-3" /></Button>}
-              <Button size="sm" variant="ghost" data-testid={`job-cancel-${j.id}`} onClick={()=>cancel(j.id)}><X className="w-3 h-3" /></Button>
+              {(j.status === "failed" || j.status === "cancelled") && <Button size="sm" data-testid={`job-retry-${j.id}`} onClick={()=>retry(j.id)}><RotateCw className="w-3 h-3" /></Button>}
+              {(j.status === "queued" || j.status === "running") && <Button size="sm" variant="ghost" data-testid={`job-cancel-${j.id}`} onClick={()=>cancel(j.id)}><X className="w-3 h-3" /></Button>}
             </div>
             {open[j.id] && (
               <div className="mt-3">

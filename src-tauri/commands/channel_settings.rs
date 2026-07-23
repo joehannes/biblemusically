@@ -44,6 +44,12 @@ pub struct TranslateSettingsRequest {
     pub channel_name: String,
 }
 
+/// Truncate to at most `max` *characters* (not bytes) — YouTube's limits are character counts,
+/// and a byte-based truncation could otherwise split a multi-byte UTF-8 character mid-sequence.
+fn truncate_chars(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
+}
+
 /// Helper to convert BSON document to JSON value
 fn bson_to_value(doc: Document) -> Value {
     let mut m = serde_json::Map::new();
@@ -146,27 +152,61 @@ async fn translate_with_ai(
         .build()
         .map_err(e)?;
     
-    // Build the system prompt for translation
-    let system_prompt = format!(
-        r#"You are an expert translator and cultural adapter for YouTube channel metadata.
-Your task is to translate and adapt channel settings from English to {} for the {} region.
-The channel focuses on: {}
-Musical style: {}
+    // Templated system prompt: explicit per-field guidance (a real localizer's job — adapt, don't
+    // transliterate), a hard JSON schema (so parsing below can trust the shape instead of hoping),
+    // YouTube's actual field limits (so a downstream sync_channel_to_youtube call can't get
+    // rejected by content the AI never knew had a ceiling), and — when the channel has no region
+    // set yet — an explicit ask to infer one, so "the right audience region" doesn't have to be
+    // hand-filled for every channel before this can run.
+    let region_instruction = if request.target_region.trim().is_empty() || request.target_region.eq_ignore_ascii_case("unknown") {
+        "The target region is UNKNOWN. Infer the single most likely primary audience region/country \
+         for this language + content style combination (a real creator would pick one primary \
+         market even for a language spoken in several countries), and return it as \
+         \"suggested_region\" — an ISO 3166-1 alpha-2 country code (e.g. \"BR\", \"PT\", \"MX\", \"JP\").".to_string()
+    } else {
+        format!("The target region is {}. Do not include \"suggested_region\" in your response.", request.target_region)
+    };
 
-Guidelines:
-1. Translate naturally, not literally - adapt idioms and cultural references
-2. Keep brand names and proper nouns in original form
-3. Optimize tags for local search behavior in {}
-4. Maintain the tone and style appropriate for {} audience
-5. Return ONLY valid JSON with no additional text"#,
-        request.target_language,
-        request.target_region,
-        request.global_settings.topic_description,
-        request.musical_style,
-        request.target_region,
-        request.target_region
+    let system_prompt = format!(
+        r#"You are a YouTube channel branding and localization specialist. You adapt a channel's
+global identity into a specific language and region — never a literal, word-for-word translation.
+A literal translation of tags/keywords is close to useless for discovery; write what a real
+{target_language}-speaking viewer would actually type into YouTube search.
+
+CHANNEL CONTEXT
+- Channel name: {channel_name}
+- Target language: {target_language}
+- Content style: {content_style}
+- Musical/content style detail: {musical_style}
+- Overall topic: {topic_description}
+- {region_instruction}
+
+YOUR TASKS
+1. Adapt "about_section" and "branding_text" into {target_language} — natural and idiomatic, the
+   way a native {target_language}-speaking creator in this niche would actually write it. Keep
+   brand names and proper nouns in their original form.
+2. Localize "default_tags" into {target_language} search terms real viewers in the target region
+   would type — not literal translations of the English tags. Prioritize discovery over coverage.
+3. If asked to infer a region above, do so; otherwise omit "suggested_region" entirely.
+4. In "cultural_notes" (max 2 sentences, or empty string if nothing notable), flag anything
+   culturally significant behind a non-obvious choice you made — a sensitivity, a regional
+   preference, a naming convention.
+
+HARD LIMITS (YouTube API rejects channel updates over these — stay under them)
+- about_section: 1000 characters max.
+- branding_text: 200 characters max.
+- default_tags: 15 tags max, each under 30 characters.
+
+Return ONLY a JSON object with exactly these keys and nothing else:
+{{"about_section": string, "branding_text": string, "default_tags": string[], "suggested_region": string (omit if not applicable), "cultural_notes": string}}"#,
+        target_language = request.target_language,
+        channel_name = request.channel_name,
+        content_style = if request.global_settings.content_style.trim().is_empty() { "(not specified)" } else { &request.global_settings.content_style },
+        musical_style = request.musical_style,
+        topic_description = request.global_settings.topic_description,
+        region_instruction = region_instruction,
     );
-    
+
     // Build the user message with content to translate
     let user_message = serde_json::json!({
         "topic_description": request.global_settings.topic_description,
@@ -176,17 +216,17 @@ Guidelines:
         "content_style": request.global_settings.content_style,
         "channel_name": request.channel_name,
     });
-    
+
     let body = serde_json::json!({
         "model": model,
         "temperature": 0.7,
         "response_format": { "type": "json_object" },
         "messages": [
             { "role": "system", "content": system_prompt },
-            { "role": "user", "content": format!("Translate and adapt this content:\n{}", user_message) }
+            { "role": "user", "content": format!("Adapt this content:\n{}", user_message) }
         ]
     });
-    
+
     let response = http
         .post("https://openrouter.ai/api/v1/chat/completions")
         .header("Authorization", format!("Bearer {}", api_key))
@@ -196,24 +236,28 @@ Guidelines:
         .send()
         .await
         .map_err(e)?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         return Err(format!("OpenRouter API error {}: {}", status, text));
     }
-    
+
     let result: Value = response.json().await.map_err(e)?;
-    
+
     // Extract the translated content
     let content = result["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("{}");
-    
-    // Parse the JSON response
+
+    // Parse the JSON response. This used to fall back to an empty object on a parse failure —
+    // every field then silently defaulted to the *English source* text a few lines up the call
+    // stack, which got saved (and could get synced live to YouTube) as if it were the translated
+    // content for a non-English channel. Surface the failure instead so the caller records it as
+    // a real per-channel error.
     let translated: Value = serde_json::from_str(content)
-        .unwrap_or_else(|_| serde_json::json!({}));
-    
+        .map_err(|err| format!("AI returned unparseable JSON: {} (raw: {})", err, content.chars().take(300).collect::<String>()))?;
+
     Ok(translated)
 }
 
@@ -262,7 +306,10 @@ pub async fn translate_and_apply_settings(
         let channel_id = channel["id"].as_str().unwrap_or("").to_string();
         let channel_name = channel["name"].as_str().unwrap_or("Unknown").to_string();
         let language = channel["language"].as_str().unwrap_or("English").to_string();
-        let region = channel["region"].as_str().unwrap_or("US").to_string();
+        // Empty (not "US") so the prompt's region-inference path actually triggers for channels
+        // that never had one set — defaulting to "US" here meant "infer the region" could never
+        // fire, silently mislabeling every unset-region channel as US-targeted.
+        let region = channel["region"].as_str().unwrap_or("").trim().to_string();
         let musical_style = channel["styles"].as_str().unwrap_or("").to_string();
         
         // Skip if same as source language (assume global settings are in English)
@@ -288,37 +335,55 @@ pub async fn translate_and_apply_settings(
         // Call AI for translation
         match translate_with_ai(&state.db, &translate_request).await {
             Ok(translated) => {
-                // Update channel with translated settings
-                let update_doc = doc! {
-                    "$set": {
-                        "translated_description": translated.get("about_section")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(&global_settings.about_section),
-                        "translated_tags": translated.get("default_tags")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| arr.iter()
-                                .filter_map(|v| v.as_str())
-                                .collect::<Vec<_>>()
-                            )
-                            .unwrap_or_else(|| global_settings.default_tags.iter().map(|s| s.as_str()).collect()),
-                        "translated_branding": translated.get("branding_text")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(&global_settings.branding_text),
-                        "last_synced_at": chrono::Utc::now().to_rfc3339(),
-                    }
+                // Enforce YouTube's actual field limits here regardless of what the AI returned —
+                // the prompt asks it to stay under them, but a model doesn't always comply, and a
+                // value over the limit would otherwise only surface as a rejected sync attempt
+                // later (see sync_channel_to_youtube), far from where the content was generated.
+                let about = truncate_chars(
+                    translated.get("about_section").and_then(|v| v.as_str()).unwrap_or(&global_settings.about_section),
+                    1000,
+                );
+                let branding = truncate_chars(
+                    translated.get("branding_text").and_then(|v| v.as_str()).unwrap_or(&global_settings.branding_text),
+                    200,
+                );
+                let tags: Vec<String> = translated.get("default_tags")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| truncate_chars(s, 30)).take(15).collect())
+                    .unwrap_or_else(|| global_settings.default_tags.iter().map(|s| truncate_chars(s, 30)).take(15).collect());
+
+                let suggested_region = translated.get("suggested_region").and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty());
+                let cultural_notes = translated.get("cultural_notes").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                let mut set_doc = doc! {
+                    "translated_description": &about,
+                    "translated_tags": &tags,
+                    "translated_branding": &branding,
+                    "translated_cultural_notes": &cultural_notes,
+                    // Distinct from `last_synced_at` (set only by sync_channel_to_youtube, once
+                    // this draft is actually pushed live) — this step only stages a draft.
+                    "last_translated_at": chrono::Utc::now().to_rfc3339(),
                 };
-                
+                // Only fill `region` from the AI's guess if the channel didn't already have one —
+                // this never overwrites an explicit user-set region.
+                if region.is_empty() {
+                    if let Some(sr) = &suggested_region {
+                        set_doc.insert("region", sr);
+                    }
+                }
+
                 state.db.collection::<Document>("channels")
-                    .update_one(doc! { "id": &channel_id }, update_doc)
+                    .update_one(doc! { "id": &channel_id }, doc! { "$set": set_doc })
                     .await
                     .map_err(e)?;
-                
+
                 results.push(serde_json::json!({
                     "channel_id": channel_id,
                     "channel_name": channel_name,
                     "language": language,
-                    "region": region,
-                    "status": "synced",
+                    "region": suggested_region.unwrap_or(region),
+                    "status": "translated",
                     "translated_fields": ["description", "tags", "branding"]
                 }));
             }
@@ -334,7 +399,9 @@ pub async fn translate_and_apply_settings(
     
     Ok(serde_json::json!({
         "ok": true,
-        "synced_count": results.len(),
+        // Named for what this step actually does — stage AI-translated drafts. Pushing them
+        // live to YouTube is the separate sync_channel_to_youtube step.
+        "translated_count": results.len(),
         "error_count": errors.len(),
         "results": results,
         "errors": errors
@@ -388,7 +455,12 @@ pub async fn update_channel_overrides(
     
     // Build update document with only override fields
     let mut update_set = Document::new();
-    
+
+    if let Some(name) = overrides.get("name").and_then(|v| v.as_str()) {
+        if !name.trim().is_empty() {
+            update_set.insert("name".to_string(), bson::to_bson(name).map_err(e)?);
+        }
+    }
     if let Some(lang) = overrides.get("language").and_then(|v| v.as_str()) {
         update_set.insert("language".to_string(), bson::to_bson(lang).map_err(e)?);
     }
@@ -484,36 +556,57 @@ pub async fn sync_channel_to_youtube(
         .as_str()
         .ok_or("No access token returned")?;
     
-    // Build the channel update payload
-    // Determine what to sync: use custom values if set, otherwise inherited
-    let description = channel["custom_about"]
-        .as_str()
-        .or_else(|| channel["translated_about"].as_str())
+    // Build the channel update payload. Determine what to sync: an explicit override if the
+    // user actually typed one, else the AI-translated draft, else nothing.
+    //
+    // `update_channel_overrides` always writes `custom_about`/`custom_tags` — even blank/empty —
+    // the moment a user saves *any* channel property (e.g. just setting language/region). A
+    // plain `.as_str()`/`.as_array()` check treats an empty string or `[]` as "present", so
+    // `.or_else()` never falls through to the translated draft: once overrides had been saved
+    // once for a channel, the AI translation step's output could never actually reach YouTube.
+    // Filtering out the blank/empty case fixes that.
+    let description = channel["custom_about"].as_str().filter(|s| !s.trim().is_empty())
         .or_else(|| channel["translated_description"].as_str())
         .unwrap_or("");
-    
-    let tags: Vec<&str> = channel["custom_tags"]
-        .as_array()
+    let description = truncate_chars(description, 1000);
+
+    let tags: Vec<&str> = channel["custom_tags"].as_array().filter(|a| !a.is_empty())
         .or_else(|| channel["translated_tags"].as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
         .unwrap_or_default();
-    
+    let keywords = truncate_chars(&tags.join(" "), 500);
+
     let youtube_channel_id = channel["youtube_channel_id"]
         .as_str()
         .ok_or("No YouTube channel ID associated")?;
-    
-    // Call YouTube Data API to update channel
-    let update_payload = serde_json::json!({
-        "snippet": {
-            "title": channel["name"],
-            "description": description,
-            "keywords": tags.join(" "),
-        }
+
+    // Call YouTube Data API to update channel. `channels.update` only accepts writes to the
+    // `brandingSettings` (and `invideoPromotion`) part — `snippet.title`/`snippet.description`
+    // read back from YouTube but are not writable through this endpoint, so a payload built
+    // under `snippet` (as this used to do) is silently ignored by the API: the call succeeds
+    // but nothing actually changes on the channel.
+    let mut branding_channel = serde_json::json!({
+        "title": channel["name"],
+        "description": description,
+        "keywords": keywords,
     });
-    
+    // `region` may be an explicit override or the AI's inferred `suggested_region` (see
+    // translate_and_apply_settings) — either way it's an ISO 3166-1 alpha-2 code, which is
+    // exactly what brandingSettings.channel.country expects.
+    if let Some(region) = channel["region"].as_str().filter(|s| !s.trim().is_empty()) {
+        branding_channel["country"] = serde_json::json!(region.trim().to_uppercase());
+    }
+    let update_payload = serde_json::json!({
+        // `id` must be set on the resource body itself — without it the API can't tell which
+        // of the (possibly several brand-account) channels this OAuth token can touch is the
+        // one to update.
+        "id": youtube_channel_id,
+        "brandingSettings": { "channel": branding_channel }
+    });
+
     let update_response = http
         .put("https://www.googleapis.com/youtube/v3/channels")
-        .query(&[("part", "snippet")])
+        .query(&[("part", "brandingSettings")])
         .bearer_auth(access_token)
         .json(&update_payload)
         .send()
@@ -528,12 +621,18 @@ pub async fn sync_channel_to_youtube(
     
     let result: Value = update_response.json().await.map_err(e)?;
     
-    // Mark as synced
+    // Mark as synced. `last_synced_at` is what the frontend's sync-status badge actually reads
+    // (see ChannelSettingsPanel.jsx's getSyncStatus) — it used to only get set by the AI
+    // *translation* step under this same name, so the badge showed "Synced Xd ago" for a channel
+    // that had only ever had a draft generated, never actually pushed to YouTube. Keep
+    // `last_youtube_sync` too since it's a clearer name for anything reading this doc directly.
+    let now = chrono::Utc::now().to_rfc3339();
     state.db.collection::<Document>("channels")
         .update_one(
             doc! { "id": &channel_id },
             doc! { "$set": {
-                "last_youtube_sync": chrono::Utc::now().to_rfc3339(),
+                "last_synced_at": &now,
+                "last_youtube_sync": &now,
                 "sync_status": "success",
             }},
         )
@@ -546,4 +645,116 @@ pub async fn sync_channel_to_youtube(
         "youtube_channel_id": youtube_channel_id,
         "result": result
     }))
+}
+
+// ────────────────────────────────────────────────────────────────
+// Cultural flavor: adapts a musical or visual style preset's descriptor text with authentic
+// region/language-appropriate texture for one channel, using the same free OpenRouter AI as the
+// description translator above. Never applied automatically — the caller (Channel Manager)
+// previews the result and decides whether to keep it.
+// ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlavorStyleRequest {
+    pub channel_id: String,
+    pub kind: String, // "musical" | "visual"
+    pub base_text: String,
+}
+
+#[tauri::command]
+pub async fn ai_flavor_style(state: State<'_, AppState>, request: FlavorStyleRequest) -> Res<Value> {
+    if request.base_text.trim().is_empty() {
+        return Err("Nothing to flavor yet — pick a preset or type a style first.".into());
+    }
+
+    let channel_doc = state.db.collection::<Document>("channels")
+        .find_one(doc! { "id": &request.channel_id }).await.map_err(e)?
+        .ok_or_else(|| "Channel not found".to_string())?;
+    let channel = bson_to_value(channel_doc);
+    let language = channel["language"].as_str().unwrap_or("English").to_string();
+    let region = channel["region"].as_str().unwrap_or("").trim().to_string();
+    let channel_name = channel["name"].as_str().unwrap_or("this channel").to_string();
+
+    let settings_doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
+        .map(bson_to_value).unwrap_or_default();
+    let api_key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
+    if api_key.is_empty() { return Err("Configure openrouter_api_key in Settings first".into()); }
+    let model = settings_doc["openrouter_model"].as_str()
+        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free").to_string();
+
+    let musical = request.kind.eq_ignore_ascii_case("musical");
+    let role = if musical { "a music production consultant" } else { "a visual art director" };
+    let guidance = if musical {
+        "Blend in instrumentation, rhythm, or vocal-delivery motifs authentically associated with \
+         the region/culture — real instruments, scales, or production techniques, not \
+         stereotypes. Keep it a comma-separated Suno/ACE-Step-style descriptor (genre tags, \
+         instrumentation, tempo) — not a sentence."
+    } else {
+        "Blend in visual motifs, color palettes, or aesthetic references authentically associated \
+         with the region/culture — genuine artistic touchpoints, not stereotypes or caricature. \
+         Keep it a short comma-separated prompt fragment (the way an image-gen style prefix \
+         reads) — not a sentence."
+    };
+    let limit = 300usize;
+    let region_bit = if region.is_empty() { String::new() } else { format!(" (audience region: {region})") };
+    let kind_label = if musical { "musical" } else { "visual" };
+
+    let system_prompt = format!(
+        r#"You are {role} adapting a {kind_label} style descriptor with authentic cultural flavor
+for a YouTube channel whose audience speaks {language}{region_bit}.
+
+Channel: {channel_name}
+Current style descriptor: {base_text}
+
+{guidance}
+
+Stay tasteful and respectful — genuine cultural texture, never a stereotype or caricature. Keep
+the core style/genre intact; you're layering flavor onto it, not replacing it. Max {limit} characters.
+
+Return ONLY a JSON object with exactly these keys:
+{{"flavored_text": string, "rationale": string (max 1 sentence — why these specific choices)}}"#,
+        role = role, kind_label = kind_label, language = language, region_bit = region_bit,
+        channel_name = channel_name, base_text = request.base_text, guidance = guidance, limit = limit,
+    );
+
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(60)).build().map_err(e)?;
+    let body = serde_json::json!({
+        "model": model,
+        "temperature": 0.8,
+        "response_format": { "type": "json_object" },
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": "Adapt it now." },
+        ]
+    });
+
+    let response = http
+        .post("https://openrouter.ai/api/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("HTTP-Referer", "https://lightkid.studio")
+        .header("X-Title", "Lightkid AI Studio")
+        .json(&body)
+        .send()
+        .await
+        .map_err(e)?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("OpenRouter API error {}: {}", status, text));
+    }
+
+    let result: Value = response.json().await.map_err(e)?;
+    let content = result["choices"][0]["message"]["content"].as_str().unwrap_or("{}");
+    let parsed: Value = serde_json::from_str(content)
+        .map_err(|err| format!("AI returned unparseable JSON: {} (raw: {})", err, content.chars().take(300).collect::<String>()))?;
+
+    let flavored_text = truncate_chars(
+        parsed.get("flavored_text").and_then(|v| v.as_str()).unwrap_or(&request.base_text),
+        limit,
+    );
+    let rationale = parsed.get("rationale").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    Ok(serde_json::json!({ "flavored_text": flavored_text, "rationale": rationale }))
 }

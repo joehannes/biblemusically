@@ -1,6 +1,6 @@
     [package]
 name = "ai-music-video-studio"
-version = "0.24.1"
+version = "0.53.0"
 edition = "2021"
 
 [lib]
@@ -11,7 +11,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri            = { version = "2", features = ["devtools"] }
+tauri            = { version = "2", features = ["devtools", "unstable"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -28,8 +28,13 @@ tokio            = { version = "1", features = ["full"] }
 tokio-stream     = { version = "0.1", features = ["net"] }
 futures-util     = "0.3"
 
-# HTTP client
-reqwest          = { version = "0.12", features = ["json", "multipart", "blocking"] }
+# HTTP client. rustls instead of the default native-tls/openssl backend: openssl-sys needs a
+# target-matching OpenSSL (headers + libs) to cross-compile, which desktop builds get from the
+# system package but which isn't available for Android's NDK targets — the mobile build failed
+# here with "openssl/opensslconf.h file not found" until this switched to a pure-Rust TLS stack
+# with no C toolchain/target-specific library dependency. mongodb already uses rustls too, so
+# this also means the app links one TLS implementation instead of two.
+reqwest          = { version = "0.12", default-features = false, features = ["json", "multipart", "blocking", "rustls-tls"] }
 
 # Lightweight local callback server used to receive proxy login notifications
 warp = "0.3"
@@ -51,6 +56,18 @@ dirs             = "5"
 url = "2"
 open = "3"
 urlencoding = "2"
+tar = "0.4.40"
+
+# Tauri's set_position/set_size are no-ops for child webviews on Linux (see commands/webview.rs),
+# so the embedded browser places them through GTK itself. Must track the gtk version tauri links
+# against, or the widget types won't match.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+# Same pin as wry 0.55's own webkit2gtk/javascriptcore-rs dependencies (see commands/webview.rs
+# bmChannel bridge) — must be the exact same versions or cargo links two copies of the sys
+# crates and the types don't match.
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+javascriptcore = { package = "javascriptcore-rs", version = "=1.1.2", features = ["v2_28"] }
 
 [features]
 default          = ["custom-protocol"]

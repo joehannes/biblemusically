@@ -23,12 +23,29 @@ fn bson_to_value(doc: Document) -> Value {
 pub async fn list_characters(
     state: State<'_, AppState>,
     song_id: Option<String>,
+    project_id: Option<String>,
 ) -> Res<Vec<Value>> {
     use futures_util::StreamExt;
-    let filter = if let Some(sid) = song_id {
-        doc! { "$or": [ { "song_id": &sid }, { "song_id": { "$exists": false } }, { "song_id": null } ] }
-    } else {
-        doc! {}
+    // Characters are visible if they belong to the given song, OR if they're project-level
+    // (no song_id) and belong to the given project. Previously `project_id` wasn't accepted at
+    // all here, so a character created at the project level (Character.project_id has always
+    // existed in the model) had no way to actually be scoped/filtered by project — every
+    // song-less character showed up everywhere. Passing no filters at all preserves the old
+    // "list everything" behavior for any caller that wants it.
+    let song_clause = song_id.as_ref().map(|sid| doc! { "song_id": sid });
+    // Also match characters with no project_id at all (legacy data from before project-level
+    // scoping existed) so pre-existing song-less characters don't silently disappear.
+    let project_clause = project_id.as_ref().map(|pid| doc! {
+        "$and": [
+            { "$or": [ { "song_id": { "$exists": false } }, { "song_id": null } ] },
+            { "$or": [ { "project_id": pid }, { "project_id": { "$exists": false } }, { "project_id": null } ] },
+        ]
+    });
+    let filter = match (song_clause, project_clause) {
+        (Some(s), Some(p)) => doc! { "$or": [s, p] },
+        (Some(s), None) => s,
+        (None, Some(p)) => p,
+        (None, None) => doc! {},
     };
     let mut cursor = state.db.collection::<Document>("characters")
         .find(filter)
@@ -54,6 +71,7 @@ pub async fn create_character(
         image_url: None,
         image_variants: vec![],
         selected_variant: 0,
+        appearance_tags: body.appearance_tags.unwrap_or_default(),
         created_at: crate::models::now_iso(),
     };
     let bson = bson::to_document(&ch).map_err(e)?;
@@ -82,6 +100,10 @@ pub async fn update_character(
     }
     if let Some(project_id) = body["project_id"].as_str() {
         update.insert("project_id", project_id);
+    }
+    if let Some(tags) = body["appearance_tags"].as_array() {
+        let tags: Vec<String> = tags.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        update.insert("appearance_tags", tags);
     }
     if update.is_empty() {
         return Err("No fields to update".to_string());
@@ -122,9 +144,10 @@ pub async fn generate_character_image(
         .or_else(|| character["description"].as_str())
         .unwrap_or("")
         .to_string();
+    let has_tags = character["appearance_tags"].as_array().map(|a| !a.is_empty()).unwrap_or(false);
 
-    if prompt.is_empty() {
-        return Err("Character has no image prompt or description. Set one first.".to_string());
+    if prompt.is_empty() && !has_tags {
+        return Err("Character has no image prompt, description, or appearance tags. Set one first.".to_string());
     }
 
     // Enqueue an image job for this character
@@ -149,9 +172,10 @@ pub async fn vary_character_image(
         .or_else(|| character["description"].as_str())
         .unwrap_or("")
         .to_string();
+    let has_tags = character["appearance_tags"].as_array().map(|a| !a.is_empty()).unwrap_or(false);
 
-    if prompt.is_empty() {
-        return Err("Character has no image prompt or description.".to_string());
+    if prompt.is_empty() && !has_tags {
+        return Err("Character has no image prompt, description, or appearance tags. Set one first.".to_string());
     }
 
     let job = crate::jobs::enqueue("character_image", &char_id, &state_arc).await.map_err(e)?;
@@ -290,6 +314,7 @@ pub async fn propose_characters(
             image_url: None,
             image_variants: vec![],
             selected_variant: 0,
+            appearance_tags: vec![],
             created_at: crate::models::now_iso(),
         };
         let bson = bson::to_document(&character).map_err(e)?;
