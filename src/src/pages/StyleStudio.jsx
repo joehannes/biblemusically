@@ -7,6 +7,7 @@ import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Palette, Plus, Save, Trash2, Layers, Tv, Pin } from "lucide-react";
+import StyleSample from "../components/StyleSample";
 import { toast } from "sonner";
 
 const STYLE_OPTIONS = [
@@ -165,6 +166,8 @@ export default function StyleStudio() {
                         <div className="text-sm font-medium truncate">{p.name} {p.builtin && <Badge variant="secondary" className="ml-1 text-[9px]">built-in</Badge>}</div>
                         <div className="text-xs text-muted-foreground truncate">{p.params?.comfyui_style} · {p.params?.comfyui_prompt_prefix || "no nuance"}</div>
                       </button>
+                      <StyleSample kind="image" sampleKey={`style:${p.id}`} label={p.name}
+                        spec={`${p.params?.comfyui_style || "photoreal"} style${p.params?.comfyui_prompt_prefix ? ", " + p.params.comfyui_prompt_prefix : ""}, a serene landscape with a lone figure at golden hour`} />
                       <button className="text-muted-foreground hover:text-red-400 p-1" title="Delete" onClick={() => removePreset(p)}><Trash2 className="w-4 h-4" /></button>
                     </div>
                   ))}

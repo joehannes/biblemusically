@@ -14,6 +14,7 @@ import presets from "../lib/templates";
 import presetStore from "../lib/presetStore";
 import TemplatesManager from "../components/TemplatesManager";
 import ProjectBrief from "../components/ProjectBrief";
+import StyleSampleStudio from "../components/StyleSampleStudio";
 
 export default function Dashboard() {
   const { projects, refreshProjects, activeProjectId, selectProject, refreshSongs } = useStudio();
@@ -302,6 +303,7 @@ export default function Dashboard() {
       {/* The active project's creative DNA — steers lyrics, per-channel styles, translations and
           characters everywhere downstream. */}
       {activeProject && <ProjectBrief project={activeProject} onSaved={refreshProjects} />}
+      <StyleSampleStudio />
 
       <Card className="p-6 mb-8 glass">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">

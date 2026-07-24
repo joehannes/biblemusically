@@ -16,6 +16,7 @@ pub mod styles;
 pub mod webview;
 pub mod kaggle_monitor;
 pub mod learnings;
+pub mod style_samples;
 
 pub use settings::*;
 pub use projects::*;
@@ -35,3 +36,4 @@ pub use styles::*;
 pub use webview::*;
 pub use kaggle_monitor::*;
 pub use learnings::*;
+pub use style_samples::*;

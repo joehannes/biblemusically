@@ -713,6 +713,30 @@ async fn generate_song_api(
 }
 
 /// ACE-Step music engine — thin wrapper over the shared task-API client.
+/// Generate ONE image sample for a style descriptor, using the configured image engine. Returns the
+/// image URL. Used by the on-demand style-sample gallery (commands/style_samples.rs) so the user can
+/// see what a style/genre-mix actually looks like on their own engine — not a bundled library.
+pub(crate) async fn sample_image(style_prompt: &str, settings: &Value, db: &mongodb::Database, cancelled: &CancelSet) -> Option<String> {
+    gen_images(style_prompt, None, settings, "style-sample", db, cancelled).await
+        .and_then(|mut v| { if v.is_empty() { None } else { Some(v.remove(0)) } })
+}
+
+/// Generate ONE short music sample for a genre descriptor, using the configured music engine.
+/// Returns the audio URL. Short + lyric-light so it renders fast.
+pub(crate) async fn sample_music(genre: &str, settings: &Value, db: &mongodb::Database, cancelled: &CancelSet) -> Option<String> {
+    let engine = settings["music_engine"].as_str().unwrap_or("suno");
+    let song = serde_json::json!({
+        "styles": genre, "title": "style sample", "lyrics": "[Verse]\nlight and sound\n", "duration": 20.0
+    });
+    let clips = match engine {
+        "acestep" => real_acestep(&song, settings, "style-sample", db, cancelled).await,
+        "heartmula" => real_heartmula(&song, settings, "style-sample", db, cancelled).await,
+        _ => real_suno(&song, settings, "style-sample", db, cancelled).await,
+    }?;
+    clips.into_iter().next()
+        .and_then(|c| c["audio_url"].as_str().map(|s| s.to_string()))
+}
+
 async fn real_acestep(song: &Value, settings: &Value, job_id: &str, db: &mongodb::Database, cancelled: &CancelSet) -> Option<Vec<Value>> {
     let base = trim_base_url(settings.get("acestep_api_url").and_then(|v| v.as_str()).unwrap_or(""));
     let key = settings.get("acestep_api_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();

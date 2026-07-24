@@ -9,6 +9,7 @@ import { Badge } from "../components/ui/badge";
 import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
 import { Music2, Wand2, Save, Trash2, Layers, Shuffle, Check, Sparkles } from "lucide-react";
+import StyleSample from "../components/StyleSample";
 import { toast } from "sonner";
 
 // Rich, mixable genre catalog. Each entry is a Suno/ACE-Step-ready descriptor. Select several across
@@ -222,14 +223,16 @@ export default function SoundStudio() {
                   {Object.entries(items).map(([label, descriptor]) => {
                     const on = !!selected[descriptor];
                     return (
-                      <button
-                        key={label}
-                        onClick={() => toggleGenre(descriptor, label)}
-                        className={`text-xs rounded-full border px-2.5 py-1 transition-colors ${on ? "bg-primary text-primary-foreground border-primary" : "border-border/60 hover:border-primary/60"}`}
-                        title={descriptor}
-                      >
-                        {on && <Check className="w-3 h-3 mr-1 inline" />}{label}
-                      </button>
+                      <span key={label} className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => toggleGenre(descriptor, label)}
+                          className={`text-xs rounded-full border px-2.5 py-1 transition-colors ${on ? "bg-primary text-primary-foreground border-primary" : "border-border/60 hover:border-primary/60"}`}
+                          title={descriptor}
+                        >
+                          {on && <Check className="w-3 h-3 mr-1 inline" />}{label}
+                        </button>
+                        <StyleSample kind="music" sampleKey={`genre:${label}`} label={label} spec={descriptor} />
+                      </span>
                     );
                   })}
                 </div>
