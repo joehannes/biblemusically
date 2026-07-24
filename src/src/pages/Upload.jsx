@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/
 import { Checkbox } from "../components/ui/checkbox";
 import { UploadCloud, Send, Plus, Lock, Globe, Sparkles, Zap, Wand2, ShieldCheck, Loader2, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
+import { useRequireGuideStep } from "../components/GuideStepDialog";
 import { getStepForPath } from "../lib/pageSteps";
 
 const ALL_FORMATS = [
@@ -36,6 +37,8 @@ export default function Upload() {
   const [busy, setBusy] = useState("");
   const [oauthQueue, setOauthQueue] = useState([]); // [{channel_id, name, label}]
   const [currentOauth, setCurrentOauth] = useState(null);
+  // Re-usable guided YouTube/OAuth setup, opened on demand if publishing isn't authorized yet.
+  const { ensure: ensureYouTube, dialog: youTubeGuide } = useRequireGuideStep("youtube");
 
   const load = async () => { setChannels(await api.listChannels()); setUploads(await api.listUploads()); };
   useEffect(() => { load(); const t = setInterval(load, 3000); return () => clearInterval(t); }, []);
@@ -46,8 +49,16 @@ export default function Upload() {
     setTitle(""); setDesc(""); setTags(""); load(); toast.success("Added to upload queue");
   };
 
-  const publish = async (id) => { await api.publish(id); toast.success("Publishing"); setTimeout(load, 1500); };
-  const publishAll = async () => { const r = await api.publishAll(); toast.success(`Queued ${r.queued}`); setTimeout(load, 1500); };
+  // Publishing needs YouTube authorization. Rather than failing with a token error mid-upload, gate
+  // on the guided step: if it was skipped during onboarding, its panel opens right here.
+  const publish = async (id) => {
+    if (!(await ensureYouTube())) return;
+    await api.publish(id); toast.success("Publishing"); setTimeout(load, 1500);
+  };
+  const publishAll = async () => {
+    if (!(await ensureYouTube())) return;
+    const r = await api.publishAll(); toast.success(`Queued ${r.queued}`); setTimeout(load, 1500);
+  };
 
   const toggleBulkFmt = (f) => setBulkFormats(arr => arr.includes(f) ? arr.filter(x=>x!==f) : [...arr, f]);
   const runBulkCreate = async () => {
@@ -158,6 +169,7 @@ export default function Upload() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
+      {youTubeGuide}
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/upload")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Upload</h1>

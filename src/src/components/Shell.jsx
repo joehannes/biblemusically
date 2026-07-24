@@ -84,18 +84,20 @@ const NAV = [
     testid: "nav-bible",
     group: "content",
   },
-  {
-    to: "/composer",
-    label: "AI Composer",
-    icon: Bot,
-    testid: "nav-composer-ai",
-    group: "content",
-  },
+  // Freeform sits BEFORE the AI Composer: like Bible Sources, it is a *source* of raw material
+  // that the composer then turns into songs — so it belongs upstream in the flow.
   {
     to: "/freeform",
     label: "Freeform Composer",
     icon: Sparkles,
     testid: "nav-freeform",
+    group: "content",
+  },
+  {
+    to: "/composer",
+    label: "AI Composer",
+    icon: Bot,
+    testid: "nav-composer-ai",
     group: "content",
   },
   {

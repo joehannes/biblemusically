@@ -190,6 +190,20 @@ pub async fn provider_chat(
 ) -> Result<(String, String), String> {
     let provider = settings_doc["ai_provider"].as_str().unwrap_or("openrouter").trim();
 
+    // ── Per-engine tunables ──────────────────────────────────────────
+    // Settings-driven knobs that apply to whichever provider is selected. Each is opt-in: blank/0
+    // keeps the previous built-in behaviour, so an untouched install behaves exactly as before.
+    // The UI form stores numbers as text, hence the string fallbacks.
+    let num = |k: &str| -> Option<f64> {
+        settings_doc[k].as_f64()
+            .or_else(|| settings_doc[k].as_str().and_then(|s| s.trim().parse::<f64>().ok()))
+    };
+    let timeout_s = num("ai_timeout_s").filter(|v| *v >= 5.0).unwrap_or(120.0) as u64;
+    let max_tokens = num("ai_max_tokens").filter(|v| *v > 0.0).map(|v| v as u64);
+    // An explicit temperature overrides the per-call value (call sites pick e.g. 0.9 for style
+    // variation); leave blank to keep those per-task defaults.
+    let temperature = num("ai_temperature").map(|v| v as f32).unwrap_or(temperature);
+
     if provider == "gemini" {
         let key = settings_doc["gemini_api_key"].as_str().unwrap_or("").trim().to_string();
         let mut model = settings_doc["gemini_model"].as_str()
@@ -206,13 +220,16 @@ pub async fn provider_chat(
         }
 
         let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(timeout_s))
             .build()
             .map_err(e)?;
 
         let mut gen_config = serde_json::json!({ "temperature": temperature.clamp(0.0, 2.0) });
         if json_mode {
             gen_config["responseMimeType"] = serde_json::json!("application/json");
+        }
+        if let Some(mt) = max_tokens {
+            gen_config["maxOutputTokens"] = serde_json::json!(mt);
         }
         let body = serde_json::json!({
             "system_instruction": { "parts": [ { "text": system } ] },
@@ -263,7 +280,7 @@ pub async fn provider_chat(
     }
 
     let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(timeout_s))
         .user_agent("Lightkid AI Studio")
         .build()
         .map_err(e)?;
@@ -280,6 +297,9 @@ pub async fn provider_chat(
     });
     if json_mode {
         body["response_format"] = serde_json::json!({ "type": "json_object" });
+    }
+    if let Some(mt) = max_tokens {
+        body["max_tokens"] = serde_json::json!(mt);
     }
 
     let mut req_builder = http.post("https://openrouter.ai/api/v1/chat/completions")

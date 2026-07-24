@@ -225,7 +225,7 @@ export const api = {
   channelPickedClient: (id) => invokeCommand("channel_picked_client", { cid: id }),
   discoverYoutubeChannels: (users, timeoutSec) => invokeCommand("discover_youtube_channels", { users, timeout_sec: timeoutSec }),
   importDiscoveredChannels: (channels) => invokeCommand("import_discovered_channels", { channels }),
-  connectAllChannelsOneShot: (oauthClientId) => invokeCommand("connect_all_channels_one_shot", { oauth_client_id: oauthClientId }),
+  connectAllChannelsOneShot: (oauthClientId) => invokeCommand("connect_all_channels_one_shot", { oauthClientId }),
   refreshAllChannelMetadata: () => invokeCommand("refresh_all_channel_metadata"),
   importFromGoogleAccount: (oauthClientId) => invokeCommand("import_from_google_account", { oauthClientId: oauthClientId }),
 

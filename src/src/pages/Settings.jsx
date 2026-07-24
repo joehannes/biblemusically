@@ -115,6 +115,10 @@ const initialSettings = {
   heartmula_api_url: "",
   heartmula_api_key: "",
   ai_provider: "openrouter",
+  // Opt-in engine tuning: blank/0 keeps the built-in per-task behaviour.
+  ai_temperature: "",
+  ai_max_tokens: "",
+  ai_timeout_s: "",
   gemini_api_key: "",
   gemini_model: "gemini-3.5-flash",
   image_engine: "midjourney",
@@ -772,6 +776,24 @@ const SettingsComponent = () => {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground mt-1">Both are free. Configure whichever you select; the other can stay filled in and unused.</p>
+        </div>
+
+        {/* Tunables applied to whichever provider is active. Each is opt-in — leave blank/0 to keep
+            the built-in behaviour (per-task temperatures, 120s timeout, no token cap). */}
+        <div className="mb-6 rounded-md border border-border p-4">
+          <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Engine tuning (applies to the selected provider)</div>
+          <div className="grid md:grid-cols-3 gap-4">
+            <Field k="ai_temperature" label="Temperature override" placeholder="blank = per-task default" type="number"
+              testid="settings-ai-temperature" value={s.ai_temperature} onValueChange={updateS} />
+            <Field k="ai_max_tokens" label="Max output tokens" placeholder="0 = provider default" type="number"
+              testid="settings-ai-maxtokens" value={s.ai_max_tokens} onValueChange={updateS} />
+            <Field k="ai_timeout_s" label="Request timeout (s)" placeholder="120" type="number"
+              testid="settings-ai-timeout" value={s.ai_timeout_s} onValueChange={updateS} />
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Leave <b>Temperature</b> blank so each task keeps its own tuned value (lyrics are written more
+            conservatively than style variations). Raise <b>Max output tokens</b> if long lyrics get truncated.
+          </p>
         </div>
 
         {s.ai_provider === "gemini" && (
