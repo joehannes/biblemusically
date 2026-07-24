@@ -43,6 +43,7 @@ export default function FreeformComposer() {
 
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState([]);
+  const [channels, setChannels] = useState([]);
   const [listening, setListening] = useState(false);
   const recRef = useRef(null);
   const micSupported = useRef(false);
@@ -51,6 +52,16 @@ export default function FreeformComposer() {
     micSupported.current = !!getRecognition();
     return () => { try { recRef.current && recRef.current.stop(); } catch (_) {} };
   }, []);
+
+  // Channels drive multi-version cultural adaptation (one target per channel).
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.listChannels();
+        setChannels(Array.isArray(r) ? r : r?.channels || []);
+      } catch { setChannels([]); }
+    })();
+  }, [activeProjectId]);
 
   const toggleMic = () => {
     if (listening) {
@@ -79,6 +90,21 @@ export default function FreeformComposer() {
 
   const setTarget = (i, patch) => setTargets((t) => t.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   const addTarget = () => setTargets((t) => [...t, { language: "English", genre: "" }]);
+
+  // Build one target per channel in the project so cultural adaptation produces a distinct version
+  // for each audience. Passing the channel's name/region/styles through gives the AI the context it
+  // needs to adapt language, genre and imagery per channel rather than producing one generic song.
+  const targetsFromChannels = () => {
+    if (!channels.length) return toast.error("No channels in this project yet — add them in Channel Manager.");
+    const next = channels.map((c) => ({
+      language: c.language || "English",
+      genre: (c.styles || "").trim(),
+      channel: c.name || "",
+      region: c.region || "",
+    }));
+    setTargets(next);
+    toast.success(`Loaded ${next.length} target(s) from your channels.`);
+  };
   const removeTarget = (i) => setTargets((t) => t.filter((_, idx) => idx !== i));
 
   const generate = async () => {
@@ -242,7 +268,13 @@ export default function FreeformComposer() {
         <Card className="p-5 space-y-4">
           <div className="flex items-center justify-between">
             <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Targets (language × genre → channel)</Label>
-            <Button size="sm" variant="secondary" onClick={addTarget}><Plus className="w-3 h-3 mr-1" />Add</Button>
+            <div className="flex gap-1.5">
+              <Button size="sm" variant="secondary" onClick={targetsFromChannels} disabled={!channels.length}
+                title="One target per channel in this project — each gets its own culturally adapted version">
+                <Globe2 className="w-3 h-3 mr-1" />From channels{channels.length ? ` (${channels.length})` : ""}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={addTarget}><Plus className="w-3 h-3 mr-1" />Add</Button>
+            </div>
           </div>
           <div className="space-y-2">
             {targets.map((t, i) => (
