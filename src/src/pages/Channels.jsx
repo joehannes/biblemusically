@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import {
   Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound,
   RefreshCw, User, AtSign, Globe, Hash, Mail, Sparkles, Info,
-  ChevronDown, X, Lightbulb, Search, Settings, Languages,
+  ChevronDown, X, Lightbulb, Search, Settings, Languages, Loader2,
 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
@@ -192,6 +192,24 @@ export default function Channels() {
   const [name, setName] = useState(""); const [ytId, setYtId] = useState(""); const [lang, setLang] = useState(""); const [region, setRegion] = useState("");
   const [styles, setStyles] = useState("");
   const [oauthDialog, setOauthDialog] = useState(null);
+  // Import-by-@handle: paste a channel's public handle (e.g. right after creating it on YouTube)
+  // and it lands here with id/title/avatar scraped — no OAuth needed until upload time.
+  const [importHandle, setImportHandle] = useState("");
+  const [importingHandle, setImportingHandle] = useState(false);
+  const doImportHandle = async () => {
+    if (!importHandle.trim()) return;
+    setImportingHandle(true);
+    try {
+      const r = await api.importChannelByHandle(importHandle);
+      toast.success(r?.detail || `Imported ${r?.name || importHandle}.`);
+      setImportHandle("");
+      load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setImportingHandle(false);
+    }
+  };
   const [refresh, setRefresh] = useState(""); const [yt, setYt] = useState(""); const [subs, setSubs] = useState("");
   const [pickedClient, setPickedClient] = useState({});
   // Discovery tags (replaces the old textarea)
@@ -602,6 +620,21 @@ export default function Channels() {
           <Button data-testid="channels-connect-all-btn" onClick={connectAllChannels} disabled={isConnectingAll || !channels.length}>
             <ShieldCheck className="w-4 h-4 mr-2" />{isConnectingAll ? "Connecting..." : "Connect all"}
           </Button>
+        </div>
+        <div className="w-full flex flex-wrap items-center gap-2 mt-3">
+          <Button size="sm" variant="secondary" data-testid="channels-create-new"
+            title="Opens YouTube's official create-channel page (needs your Google session there); then import it here by its @handle"
+            onClick={() => api.openYoutubeCreateChannel().catch((e) => toast.error(String(e)))}>
+            <Plus className="w-3.5 h-3.5 mr-1.5" />Create channel on YouTube
+          </Button>
+          <div className="flex items-center gap-1.5">
+            <Input value={importHandle} onChange={(e) => setImportHandle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") doImportHandle(); }}
+              placeholder="@handle of a (new) channel" className="h-8 w-52 text-sm" data-testid="channels-import-handle" />
+            <Button size="sm" variant="outline" className="h-8" onClick={doImportHandle} disabled={importingHandle || !importHandle.trim()}>
+              {importingHandle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Import"}
+            </Button>
+          </div>
         </div>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Add YouTube channels and connect each via Google OAuth. Manage multiple OAuth clients below to spread upload quota across language groups.</p>

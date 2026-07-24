@@ -155,9 +155,15 @@ pub async fn create_project(state: State<'_, AppState>, body: Value) -> Res<Valu
         git_status: None,
         created_at: now_iso(),
     };
-    let bson = bson::to_document(&p).map_err(e)?;
+    // Christian projects (default) get Bible Sources + the Jewish/Messianic musical layers; the
+    // flag isn't on the typed Project struct, so it rides along on the stored doc directly.
+    let is_christian = body["is_christian"].as_bool().unwrap_or(true);
+    let mut bson = bson::to_document(&p).map_err(e)?;
+    bson.insert("is_christian", is_christian);
     state.db.collection::<Document>("projects").insert_one(bson).await.map_err(e)?;
-    Ok(serde_json::to_value(&p).map_err(e)?)
+    let mut out = serde_json::to_value(&p).map_err(e)?;
+    out["is_christian"] = Value::Bool(is_christian);
+    Ok(out)
 }
 
 /// Write a file straight into the project's own folder (created at project creation, under

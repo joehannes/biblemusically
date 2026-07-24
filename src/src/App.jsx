@@ -6,6 +6,7 @@ import { api } from "./lib/api";
 import { initServerLifecycle } from "./lib/serverLifecycle";
 import Shell from "./components/Shell";
 import Onboarding from "./pages/Onboarding";
+import { GUIDE_STEPS } from "./lib/guideSteps";
 import Dashboard from "./pages/Dashboard";
 import Workflow from "./pages/Workflow";
 import Lyrics from "./pages/Lyrics";
@@ -36,14 +37,22 @@ import { Toaster } from "sonner";
 function RootGate() {
   const [ready, setReady] = useState(false);
   const [onboarded, setOnboarded] = useState(true);
+  // Steps still outstanding on this launch. First run shows the full wizard; afterwards we re-pop a
+  // compact "finish setup" wizard holding ONLY the unfinished steps (skipping anything already
+  // ticked off), which the user can dismiss for the session. Once every step is done, nothing pops.
+  const [pending, setPending] = useState([]);
+  const [dismissed, setDismissed] = useState(false);
   // Arm the GPU-quota watchdog: idles down any server this session started after 15 min of
   // inactivity, and asks them to stop on shutdown. Servers are never started here — only on demand.
   useEffect(() => { initServerLifecycle(); }, []);
   useEffect(() => {
     (async () => {
       try {
-        const s = await api.getSettings();
-        setOnboarded(s?.onboarded === true);
+        const s = (await api.getSettings()) || {};
+        setOnboarded(s.onboarded === true);
+        // The user can opt out of the startup re-pop; the guide stays reachable from the Tours button.
+        setDismissed(s.onboarding_autopop_disabled === true);
+        setPending(GUIDE_STEPS.filter((step) => { try { return !step.isDone(s); } catch { return false; } }));
       } catch {
         setOnboarded(true);
       } finally {
@@ -53,7 +62,19 @@ function RootGate() {
   }, []);
 
   if (!ready) return null;
-  if (!onboarded) return <Onboarding onDone={() => setOnboarded(true)} />;
+  // First run: the full welcome + all steps.
+  if (!onboarded) return <Onboarding onDone={() => { setOnboarded(true); setPending([]); }} />;
+  // Later runs: re-pop only the still-useful steps, dismissible.
+  if (pending.length > 0 && !dismissed) {
+    return (
+      <Onboarding
+        resume
+        steps={pending}
+        onDone={() => setDismissed(true)}
+        onSkip={() => setDismissed(true)}
+      />
+    );
+  }
 
   return (
     <Shell>

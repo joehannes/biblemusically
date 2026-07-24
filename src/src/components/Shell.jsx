@@ -2,6 +2,8 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { UI_LANGUAGES, getUiLanguage, setUiLanguage, subscribeLanguage, initUiLanguage } from "../lib/uiTranslate";
+import { useRequireGuideStep } from "./GuideStepDialog";
+import ToursFab from "./Tours";
 import { api } from "../lib/api";
 import { getVersion } from "@tauri-apps/api/app";
 // Fallback only, for the very first paint before getVersion() resolves — this file lives
@@ -497,7 +499,19 @@ export default function Shell({ children }) {
   const { theme, setTheme, activeProjectId, projects, jobs } = useStudio();
   // Re-apply a previously chosen interface language (cached strings paint with no AI call).
   useEffect(() => { initUiLanguage(); }, []);
+  // When a Kaggle run is denied a GPU and no other account can be rotated to, the server pipeline
+  // fires this event; Shell is always mounted, so it's the reliable place to pop the guided step
+  // that connects another free account (GPU quota is per-account).
+  const { dialog: kaggleAccountGuide, openStep: openKaggleAccountGuide } = useRequireGuideStep("kaggle");
+  useEffect(() => {
+    const onNeedsAccount = () => openKaggleAccountGuide();
+    window.addEventListener("bm:kaggle-needs-account", onNeedsAccount);
+    return () => window.removeEventListener("bm:kaggle-needs-account", onNeedsAccount);
+  }, [openKaggleAccountGuide]);
   const project = projects.find((p) => p.id === activeProjectId);
+  // Non-christian projects work from freeform material only — Bible Sources disappears for them
+  // (and christian-specific musical layers hide elsewhere off the same flag).
+  const visibleNav = NAV.filter((n) => n.to !== "/bible" || project?.is_christian !== false);
   const running = jobs.filter(
     (j) => j.status === "running" || j.status === "queued",
   ).length;
@@ -795,6 +809,7 @@ export default function Shell({ children }) {
     // Browser page's native child webview is positioned over a placeholder in that box, and a
     // window-level scroll would slide the placeholder out from under it.
     <div className="h-screen overflow-hidden flex bg-background text-foreground">
+      {kaggleAccountGuide}
       <aside
         className={`${collapsed ? "w-16" : "w-64"} hidden md:flex shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex-col h-full transition-all`}
       >
@@ -826,9 +841,9 @@ export default function Shell({ children }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3 scroll-thin">
-          {NAV.map(({ to, label, icon: Icon, testid, group }) => {
+          {visibleNav.map(({ to, label, icon: Icon, testid, group }) => {
             const prevGroup =
-              NAV[NAV.indexOf(NAV.find((n) => n.to === to)) - 1]?.group;
+              visibleNav[visibleNav.indexOf(visibleNav.find((n) => n.to === to)) - 1]?.group;
             const showGroupHeader = group !== prevGroup;
             return (
               <div key={to}>
@@ -889,8 +904,8 @@ export default function Shell({ children }) {
               </button>
             </div>
             <nav className="flex-1 overflow-y-auto py-3 scroll-thin">
-              {NAV.map(({ to, label, icon: Icon, testid, group }, idx) => {
-                const prevGroup = NAV[idx - 1]?.group;
+              {visibleNav.map(({ to, label, icon: Icon, testid, group }, idx) => {
+                const prevGroup = visibleNav[idx - 1]?.group;
                 const showGroupHeader = group !== prevGroup;
                 return (
                   <div key={to}>
@@ -1003,6 +1018,7 @@ export default function Shell({ children }) {
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Theme picker (moved here from the sidebar) */}
+            <ToursFab />
             <LanguageFab />
               <ThemeFab theme={theme} setTheme={setTheme} />
 

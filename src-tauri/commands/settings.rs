@@ -745,13 +745,52 @@ pub async fn open_kaggle_login() -> Res<Value> {
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
 
-/// Write a pasted kaggle.json to `~/.kaggle/kaggle.json` (0600) and verify it authenticates.
-///
-/// The app previously only *opened* the token page and made the user hand-place the file; the
-/// onboarding wizard needs to accept the token directly. Accepts the raw kaggle.json content
-/// (`{"username":"…","key":"…"}`). The CLI refuses a world-readable token, so we chmod 600.
+/// Write a kaggle.json to `~/.kaggle/kaggle.json` (0600 — the CLI refuses a world-readable token).
+async fn write_kaggle_json(username: &str, key: &str) -> Res<String> {
+    let home = env::var("HOME").map_err(|_| "Could not locate your home directory.".to_string())?;
+    let dir = PathBuf::from(&home).join(".kaggle");
+    fs::create_dir_all(&dir).await.map_err(e)?;
+    let path = dir.join("kaggle.json");
+    fs::write(&path, serde_json::json!({ "username": username, "key": key }).to_string()).await.map_err(e)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Lightweight CLI auth check → (verified, detail).
+async fn verify_kaggle_auth() -> (bool, String) {
+    let kaggle = locate_kaggle();
+    match tokio::process::Command::new(&kaggle)
+        .args(["kernels", "list", "--mine", "--page-size", "1"]).output().await
+    {
+        Ok(o) => {
+            let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+            let low = out.to_lowercase();
+            let bad = low.contains("401") || low.contains("403") || low.contains("unauthorized") || low.contains("forbidden");
+            (o.status.success() && !bad, out.chars().take(300).collect())
+        }
+        Err(err) => (false, format!("could not run the kaggle CLI: {err}")),
+    }
+}
+
+/// Read the stored Kaggle accounts (`[{username, key}]`) from the settings singleton.
+async fn stored_kaggle_accounts(db: &mongodb::Database) -> Vec<Document> {
+    db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten()
+        .and_then(|d| d.get_array("kaggle_accounts").ok().cloned())
+        .map(|arr| arr.iter().filter_map(|b| b.as_document().cloned()).collect())
+        .unwrap_or_default()
+}
+
+/// Save a pasted kaggle.json: write it, verify, and record it in the multi-account store as the
+/// ACTIVE account. Kaggle's free GPU quota is per-account, so the app keeps every account the user
+/// connects and can rotate to the next when one is exhausted (see `rotate_kaggle_account`).
+/// Keys live in the local settings DB only, alongside the app's other credentials, and are never
+/// returned to the UI.
 #[tauri::command]
-pub async fn save_kaggle_token(token_json: String) -> Res<Value> {
+pub async fn save_kaggle_token(state: State<'_, AppState>, token_json: String) -> Res<Value> {
     let parsed: Value = serde_json::from_str(token_json.trim()).map_err(|_|
         "That doesn't look like a valid kaggle.json — it should be {\"username\":\"…\",\"key\":\"…\"}.".to_string())?;
     let username = parsed["username"].as_str().unwrap_or("").trim().to_string();
@@ -759,33 +798,97 @@ pub async fn save_kaggle_token(token_json: String) -> Res<Value> {
     if username.is_empty() || key.is_empty() {
         return Err("The token is missing \"username\" or \"key\". Download a fresh one from Kaggle → Settings → Create New API Token.".into());
     }
-    let home = env::var("HOME").map_err(|_| "Could not locate your home directory.".to_string())?;
-    let dir = PathBuf::from(&home).join(".kaggle");
-    fs::create_dir_all(&dir).await.map_err(e)?;
-    let path = dir.join("kaggle.json");
-    fs::write(&path, serde_json::json!({ "username": username, "key": key }).to_string())
-        .await.map_err(e)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    // Verify the token actually authenticates, with a lightweight CLI call, so the wizard can show
-    // a green check instead of the user discovering later that the token was wrong.
-    let kaggle = locate_kaggle();
-    let (verified, detail) = match tokio::process::Command::new(&kaggle)
-        .args(["kernels", "list", "--mine", "--page-size", "1"]).output().await
-    {
-        Ok(o) => {
-            let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-            let low = out.to_lowercase();
-            let bad = low.contains("401") || low.contains("403") || low.contains("unauthorized") || low.contains("forbidden");
-            (o.status.success() && !bad, out.chars().take(300).collect::<String>())
-        }
-        Err(err) => (false, format!("could not run the kaggle CLI: {err}")),
-    };
+    let path = write_kaggle_json(&username, &key).await?;
+    let (verified, detail) = verify_kaggle_auth().await;
+
+    // Upsert into the account list (dedupe by username), then mark it active.
+    let coll = state.db.collection::<Document>("settings");
+    let mut accts = stored_kaggle_accounts(&state.db).await;
+    accts.retain(|a| a.get_str("username").ok() != Some(username.as_str()));
+    accts.push(doc! { "username": &username, "key": &key });
+    let bson_accts = bson::to_bson(&accts).map_err(e)?;
+    coll.update_one(
+        doc! { "_id": "singleton" },
+        doc! { "$set": { "kaggle_accounts": bson_accts, "kaggle_active": &username,
+                         "kaggle_connected": true, "kaggle_username": &username } },
+    ).with_options(mongodb::options::UpdateOptions::builder().upsert(true).build()).await.map_err(e)?;
+
     Ok(serde_json::json!({ "ok": true, "username": username, "verified": verified, "detail": detail,
-        "path": path.to_string_lossy() }))
+        "path": path, "account_count": accts.len() }))
+}
+
+/// List connected Kaggle accounts (usernames + which is active). Never returns keys.
+#[tauri::command]
+pub async fn list_kaggle_accounts(state: State<'_, AppState>) -> Res<Value> {
+    let doc = state.db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten();
+    let active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
+    let accts = stored_kaggle_accounts(&state.db).await;
+    let list: Vec<Value> = accts.iter().filter_map(|a| a.get_str("username").ok().map(|u| {
+        serde_json::json!({ "username": u, "active": u == active })
+    })).collect();
+    Ok(serde_json::json!({ "accounts": list, "active": active }))
+}
+
+/// Activate a stored account: write its kaggle.json and mark it active.
+#[tauri::command]
+pub async fn activate_kaggle_account(state: State<'_, AppState>, username: String) -> Res<Value> {
+    let accts = stored_kaggle_accounts(&state.db).await;
+    let acct = accts.iter().find(|a| a.get_str("username").ok() == Some(username.as_str()))
+        .ok_or_else(|| format!("No stored account '{}'.", username))?;
+    let key = acct.get_str("key").map_err(|_| "Stored account is missing its key.".to_string())?;
+    write_kaggle_json(&username, key).await?;
+    let (verified, _) = verify_kaggle_auth().await;
+    state.db.collection::<Document>("settings").update_one(
+        doc! { "_id": "singleton" },
+        doc! { "$set": { "kaggle_active": &username, "kaggle_username": &username, "kaggle_connected": true } },
+    ).await.map_err(e)?;
+    Ok(serde_json::json!({ "ok": true, "username": username, "verified": verified }))
+}
+
+/// Remove a stored account. If it was active, the first remaining account becomes active.
+#[tauri::command]
+pub async fn remove_kaggle_account(state: State<'_, AppState>, username: String) -> Res<Value> {
+    let coll = state.db.collection::<Document>("settings");
+    let mut accts = stored_kaggle_accounts(&state.db).await;
+    accts.retain(|a| a.get_str("username").ok() != Some(username.as_str()));
+    let new_active = accts.first().and_then(|a| a.get_str("username").ok().map(|s| s.to_string()));
+    let bson_accts = bson::to_bson(&accts).map_err(e)?;
+    coll.update_one(
+        doc! { "_id": "singleton" },
+        doc! { "$set": { "kaggle_accounts": bson_accts, "kaggle_active": new_active.clone().unwrap_or_default() } },
+    ).await.map_err(e)?;
+    if let Some(u) = &new_active {
+        // Re-point the CLI token at whatever is now active.
+        if let Some(acct) = accts.iter().find(|a| a.get_str("username").ok() == Some(u.as_str())) {
+            if let Ok(key) = acct.get_str("key") { let _ = write_kaggle_json(u, key).await; }
+        }
+    }
+    Ok(serde_json::json!({ "ok": true, "active": new_active }))
+}
+
+/// Rotate to the next stored account after the active one (wraps). Returns the new active username,
+/// or `ok:false` with `only_one:true` when there's nothing to rotate to — the app then prompts the
+/// user to connect another free account. Called automatically when a run is denied a GPU (quota
+/// exhausted), since Kaggle's quota is per-account.
+#[tauri::command]
+pub async fn rotate_kaggle_account(state: State<'_, AppState>) -> Res<Value> {
+    let doc = state.db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten();
+    let active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
+    let accts = stored_kaggle_accounts(&state.db).await;
+    if accts.len() < 2 {
+        return Ok(serde_json::json!({ "ok": false, "only_one": true,
+            "detail": "Only one Kaggle account is connected — connect another free account to rotate to it when quota runs out." }));
+    }
+    let idx = accts.iter().position(|a| a.get_str("username").ok() == Some(active.as_str())).unwrap_or(0);
+    let next = &accts[(idx + 1) % accts.len()];
+    let next_user = next.get_str("username").map_err(|_| "next account missing username".to_string())?.to_string();
+    let key = next.get_str("key").map_err(|_| "next account missing key".to_string())?;
+    write_kaggle_json(&next_user, key).await?;
+    state.db.collection::<Document>("settings").update_one(
+        doc! { "_id": "singleton" },
+        doc! { "$set": { "kaggle_active": &next_user, "kaggle_username": &next_user, "kaggle_connected": true } },
+    ).await.map_err(e)?;
+    Ok(serde_json::json!({ "ok": true, "username": next_user, "rotated_from": active }))
 }
 
 /// Native folder picker (used by onboarding to choose where project files/exports live).

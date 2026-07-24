@@ -272,14 +272,21 @@ pub async fn propose_characters(
         return Err("Song has no lyrics to analyze".to_string());
     }
 
+    // The project's Brief shapes who these characters ARE — their bearing, expression and styling
+    // should embody the project's mood/personality and read right to its audience, not be generic
+    // portraits detached from the channel's voice.
+    let project_id = song["project_id"].as_str().unwrap_or("");
+    let brief = crate::commands::ai::project_brief_block(&state.db, project_id).await;
+
     // Use AI to propose characters from lyrics
     let context = serde_json::json!({
         "title": title,
         "lyrics": lyrics,
         "styles": styles,
+        "project_brief": brief,
     });
 
-    let system_prompt = "You are a creative assistant that analyzes song lyrics and identifies potential characters (people, personifications, or narrative voices) that appear in the text. For each character, provide a name and a short visual description suitable for generating a character portrait image. Return JSON exactly as {\"characters\":[{\"name\":\"...\",\"description\":\"...\",\"image_prompt\":\"...\"}]}. The image_prompt should be a detailed Midjourney-style prompt for a portrait of this character.";
+    let system_prompt = "You are a creative assistant that analyzes song lyrics and identifies potential characters (people, personifications, or narrative voices) that appear in the text. For each character, provide a name and a short visual description suitable for generating a character portrait image. Return JSON exactly as {\"characters\":[{\"name\":\"...\",\"description\":\"...\",\"image_prompt\":\"...\"}]}. The image_prompt should be a detailed Midjourney-style prompt for a portrait of this character. When a project_brief is provided, let it shape each character's bearing, expression, wardrobe and atmosphere so they embody the project's mood, personality and audience.";
 
     let result = crate::commands::ai::call_openrouter(
         &state.db,

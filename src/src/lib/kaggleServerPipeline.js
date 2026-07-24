@@ -161,10 +161,30 @@ export async function autoStartKaggleServer(engine) {
     patch(engine, { status: m.phase === "error" ? "error" : "waiting", phase: m.phase, url: m.url || null, monitor: m });
 
     if (m.phase === "error" || (m.done && !m.url_live)) {
+      api.kaggleStopMonitor(engine).catch(() => {});
+
+      // GPU quota is per-account: when Kaggle denies this account a GPU, automatically rotate to the
+      // next connected account and retry. Only if none is left do we stop and prompt the user to
+      // connect another free account (a global listener in Shell opens the guided step).
+      if (m.hint === "gpu_denied") {
+        pushLog(engine, "This Kaggle account got no GPU (quota spent) — trying another connected account…", "error");
+        let rot = null;
+        try { rot = await api.rotateKaggleAccount(); } catch { /* ignore */ }
+        if (rot?.ok) {
+          pushLog(engine, `Switched to Kaggle account "${rot.username}" — retrying the server start.`);
+          return autoStartKaggleServer(engine); // restart the whole flow on the fresh account
+        }
+        patch(engine, { status: "error", phase: "error", hint: "gpu_denied", needsAccount: true,
+          detail: "This Kaggle account is out of free GPU time, and no other account is connected.",
+          next_step: HINT_NEXT_STEP.gpu_denied });
+        pushLog(engine, "Out of GPU quota — connect another free Kaggle account to keep going.", "error");
+        try { window.dispatchEvent(new CustomEvent("bm:kaggle-needs-account", { detail: { engine } })); } catch { /* non-browser */ }
+        return;
+      }
+
       const next_step = HINT_NEXT_STEP[m.hint] || "Open the notebook (button above) to see the full log, fix the cause, then Start & connect again.";
       patch(engine, { status: "error", phase: "error", detail: m.error || "The run ended before a server came up.", next_step, hint: m.hint });
       pushLog(engine, m.error || "The run ended before a server came up.", "error");
-      api.kaggleStopMonitor(engine).catch(() => {});
       return;
     }
     if (m.url && m.url_live) {

@@ -717,6 +717,9 @@ export default function AIComposer() {
     try {
       const r = await api.composeLyrics({
         chapter_text: chapterText,
+        // Lets the backend pull the project's Brief + daily topic + cached per-channel research
+        // into the prompt, so lyrics/translations speak with the project's voice per channel.
+        project_id: activeProjectId || "",
         sections: cfg.sections || [],
         targets: cfg.targets || [],
         themes: cfg.themes || {},

@@ -1002,3 +1002,91 @@ pub async fn refresh_all_channel_metadata(state: State<'_, AppState>) -> Res<Val
 
     Ok(serde_json::json!({ "ok": true, "updated": updated, "failed": failed }))
 }
+// ────────────────────────────────────────────────────────────────
+// New-channel creation + @handle import
+// ────────────────────────────────────────────────────────────────
+
+/// Open YouTube's create-channel page in the system browser. Creating a channel requires a signed-in
+/// Google session and YouTube's own UI — it cannot be automated — so the app opens the official page
+/// and the user then imports the fresh channel here by its @handle.
+#[tauri::command]
+pub async fn open_youtube_create_channel() -> Res<Value> {
+    let url = "https://www.youtube.com/create_channel";
+    open::that(url).map_err(|err| format!("Failed to open YouTube: {err}"))?;
+    Ok(serde_json::json!({ "ok": true, "url": url }))
+}
+
+/// Import a YouTube channel by its public @handle — no OAuth needed for the metadata.
+///
+/// Fetches the channel's public page and scrapes the canonical channel id (`UC…`), title and
+/// description from the embedded metadata. The channel is created unconnected; uploading later
+/// still requires the normal OAuth connect flow, but this makes "I just created a channel on
+/// YouTube → it exists in the app" a single paste.
+#[tauri::command]
+pub async fn import_channel_by_handle(state: State<'_, AppState>, handle: String) -> Res<Value> {
+    let h = handle.trim().trim_start_matches('@').to_string();
+    if h.is_empty() { return Err("Give the channel's @handle (e.g. @mychannel).".into()); }
+    let url = format!("https://www.youtube.com/@{h}");
+
+    let http = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(20))
+        .build().map_err(e)?;
+    let resp = http.get(&url).send().await.map_err(|err| format!("Could not reach YouTube: {err}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("YouTube returned HTTP {} for @{h} — check the handle.", resp.status()));
+    }
+    let html = resp.text().await.map_err(e)?;
+
+    // The page embeds the canonical id in several places; externalId / channel_id are the stable ones.
+    let chan_id = Regex::new(r#""externalId"\s*:\s*"(UC[0-9A-Za-z_-]{22})""#).ok()
+        .and_then(|re| re.captures(&html).map(|c| c[1].to_string()))
+        .or_else(|| Regex::new(r#"channel_id=(UC[0-9A-Za-z_-]{22})"#).ok()
+            .and_then(|re| re.captures(&html).map(|c| c[1].to_string())))
+        .ok_or_else(|| format!("Couldn't find a channel id on youtube.com/@{h} — is the handle right?"))?;
+
+    let title = Regex::new(r#"<meta property="og:title" content="([^"]+)""#).ok()
+        .and_then(|re| re.captures(&html).map(|c| c[1].to_string()))
+        .unwrap_or_else(|| h.clone());
+    let description = Regex::new(r#"<meta property="og:description" content="([^"]*)""#).ok()
+        .and_then(|re| re.captures(&html).map(|c| c[1].to_string()))
+        .unwrap_or_default();
+    let avatar = Regex::new(r#"<meta property="og:image" content="([^"]+)""#).ok()
+        .and_then(|re| re.captures(&html).map(|c| c[1].to_string()));
+
+    // Dedupe on the YouTube id: re-importing an existing channel refreshes its metadata instead of
+    // creating a twin the upload picker would then split stats across.
+    let coll = state.db.collection::<Document>("channels");
+    if let Ok(Some(existing)) = coll.find_one(doc! { "youtube_channel_id": &chan_id }).await {
+        let _ = coll.update_one(
+            doc! { "youtube_channel_id": &chan_id },
+            doc! { "$set": { "name": &title, "description": &description, "handle": format!("@{h}"),
+                             "avatar": avatar.clone().unwrap_or_default() } },
+        ).await;
+        let ch = bson_to_value(existing);
+        return Ok(serde_json::json!({ "ok": true, "updated": true, "channel_id": ch["id"],
+            "youtube_channel_id": chan_id, "name": title,
+            "detail": format!("'{title}' was already imported — refreshed its metadata instead.") }));
+    }
+
+    let ch = Channel {
+        id: Uuid::new_v4().to_string(),
+        name: title.clone(),
+        youtube_channel_id: chan_id.clone(),
+        language: "English".into(),
+        styles: String::new(),
+        region: String::new(),
+        refresh_token: None,
+        connected: false,
+        avatar,
+        subscriber_count: 0,
+        oauth_client_id: None,
+    };
+    let mut d = bson::to_document(&ch).map_err(e)?;
+    d.insert("handle", format!("@{h}"));
+    d.insert("description", &description);
+    coll.insert_one(d).await.map_err(e)?;
+    Ok(serde_json::json!({ "ok": true, "created": true, "channel_id": ch.id,
+        "youtube_channel_id": chan_id, "name": title,
+        "detail": format!("Imported '{title}' (@{h}). Connect it (OAuth) when you're ready to upload.") }))
+}

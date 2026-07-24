@@ -419,15 +419,27 @@ const SettingsComponent = () => {
     }
   };
 
-  // Switch to a different Google/Kaggle account. Free GPU quota is per-account, so when one is
-  // spent the practical fix is to connect another free account — this clears the stored connection
-  // and re-opens the SAME guided Kaggle step used during first-run setup.
-  const switchKaggleAccount = async () => {
-    try {
-      await api.saveSettings({ kaggle_connected: false, kaggle_username: "" });
-    } catch { /* non-fatal */ }
-    openKaggleGuide();
+  // Connected Kaggle accounts (GPU quota is per-account; the app rotates between them on
+  // exhaustion). Keys never leave the backend — this only ever shows usernames + which is active.
+  const [kaggleAccounts, setKaggleAccounts] = useState([]);
+  const loadKaggleAccounts = async () => {
+    try { const r = await api.listKaggleAccounts(); setKaggleAccounts(r?.accounts || []); }
+    catch { setKaggleAccounts([]); }
   };
+  useEffect(() => { loadKaggleAccounts(); }, []);
+  const activateAccount = async (username) => {
+    try { await api.activateKaggleAccount(username); toast.success(`Now using ${username}.`); loadKaggleAccounts(); }
+    catch (e) { toast.error(String(e)); }
+  };
+  const removeAccount = async (username) => {
+    try { await api.removeKaggleAccount(username); loadKaggleAccounts(); }
+    catch (e) { toast.error(String(e)); }
+  };
+
+  // Add another Google/Kaggle account. Free GPU quota is per-account, so connecting more accounts
+  // lets the app rotate to a fresh one when a quota runs out — it re-opens the SAME guided Kaggle
+  // step from first-run setup, which also deploys the engines to the new account.
+  const switchKaggleAccount = () => { openKaggleGuide(); };
 
   // Manually end a session so it stops consuming the free weekly GPU quota.
   const stopKaggleServer = async (engine) => {
@@ -699,6 +711,32 @@ const SettingsComponent = () => {
             );
           })}
         </div>
+      </Card>
+
+      <Card className="p-6 mb-5">
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div className="flex items-center gap-2"><UserCog className="w-4 h-4 text-primary" /><h2 className="font-semibold">Kaggle accounts</h2></div>
+          <Button size="sm" variant="secondary" data-testid="settings-kaggle-add-account" onClick={switchKaggleAccount}><UserCog className="w-3 h-3 mr-2" />Add another account</Button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Free GPU time is per Kaggle account. Connect several and the app automatically rotates to the next one when a run is denied a GPU (quota spent). Keys stay on your machine — only usernames are shown here.</p>
+        {kaggleAccounts.length === 0 ? (
+          <div className="text-xs text-muted-foreground">No Kaggle account connected yet. Use "Add another account" to connect one.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {kaggleAccounts.map((a) => (
+              <div key={a.username} className="flex items-center justify-between gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="truncate">{a.username}</span>
+                  {a.active && <Badge variant="default" className="text-[9px]">active</Badge>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!a.active && <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => activateAccount(a.username)}>Use</Button>}
+                  <Button size="sm" variant="ghost" className="h-7 text-[11px] text-destructive hover:text-destructive" onClick={() => removeAccount(a.username)}>Remove</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card className="p-6 mb-5">

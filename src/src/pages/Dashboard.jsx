@@ -13,6 +13,7 @@ import { readTextFile } from "@tauri-apps/plugin-fs";
 import presets from "../lib/templates";
 import presetStore from "../lib/presetStore";
 import TemplatesManager from "../components/TemplatesManager";
+import ProjectBrief from "../components/ProjectBrief";
 
 export default function Dashboard() {
   const { projects, refreshProjects, activeProjectId, selectProject, refreshSongs } = useStudio();
@@ -20,6 +21,9 @@ export default function Dashboard() {
   const [topic, setTopic] = useState("");
   const [schedule, setSchedule] = useState("");
   const [template, setTemplate] = useState("default");
+  // Christian projects get the Bible Sources tab and the Jewish/Messianic musical layers; a
+  // non-christian project hides both and works purely from freeform material.
+  const [isChristian, setIsChristian] = useState(true);
   const [remotePresetUrl, setRemotePresetUrl] = useState("");
   const [localPresets, setLocalPresets] = useState(() => presetStore.loadPresets() || presets || []);
   const [availableChannels, setAvailableChannels] = useState([]);
@@ -216,7 +220,7 @@ export default function Dashboard() {
     if (!name.trim()) return toast.error("Project name required");
     // Build project payload from selected template
     const t = localPresets.find(p => p.id === template) || {};
-    const payload = { name, topic, schedule: schedule || null, ...(t.projectOverrides || {}) };
+    const payload = { name, topic, schedule: schedule || null, is_christian: isChristian, ...(t.projectOverrides || {}) };
     const created = await api.createProject(payload);
 
     // If template requests reset of global settings or channels, perform actions
@@ -285,6 +289,8 @@ export default function Dashboard() {
     }
   };
 
+  const activeProject = projects.find((p) => p.id === activeProjectId);
+
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
       <div className="mb-10">
@@ -292,6 +298,10 @@ export default function Dashboard() {
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">Projects</h1>
         <p className="mt-3 text-muted-foreground max-w-2xl">Each project orchestrates a topic across multiple channels, languages and music styles — from lyrics to scheduled upload.</p>
       </div>
+
+      {/* The active project's creative DNA — steers lyrics, per-channel styles, translations and
+          characters everywhere downstream. */}
+      {activeProject && <ProjectBrief project={activeProject} onSaved={refreshProjects} />}
 
       <Card className="p-6 mb-8 glass">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
@@ -321,6 +331,10 @@ export default function Dashboard() {
           <Input data-testid="project-name-input" placeholder="Project name (e.g. John 1 Multilingual)" value={name} onChange={e=>setName(e.target.value)} className="md:col-span-3 h-10" />
           <Input data-testid="project-topic-input" placeholder="Topic / theme" value={topic} onChange={e=>setTopic(e.target.value)} className="md:col-span-3 h-10" />
           <Input data-testid="project-schedule-input" placeholder="Schedule (e.g. weekly Sunday 9am)" value={schedule} onChange={e=>setSchedule(e.target.value)} className="md:col-span-2 h-10" />
+          <label className="md:col-span-2 flex items-center gap-2 text-sm cursor-pointer select-none" title="Christian projects get Bible Sources and the Jewish/Messianic musical layers; non-christian projects hide both and work from freeform material.">
+            <input type="checkbox" className="accent-primary" checked={isChristian} onChange={(e)=>setIsChristian(e.target.checked)} data-testid="project-christian-toggle" />
+            <span>Christian / Bible project</span>
+          </label>
           <Button data-testid="project-create-btn" onClick={create} className="md:col-span-1 h-10"><Plus className="w-4 h-4" /></Button>
         </div>
         {localPresets.find(p => p.id === template)?.description && (

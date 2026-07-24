@@ -157,12 +157,13 @@ fn clean_style_line(content: &str, max_len: usize) -> String {
 /// back to the raw styles: this is an enhancement and must never be able to block a render.
 async fn adapt_styles_for_engine(
     engine: &str,
-    styles: &str,
-    title: &str,
+    song: &Value,
     settings: &Value,
     job_id: &str,
     db: &mongodb::Database,
 ) -> String {
+    let styles = song.get("styles").and_then(|v| v.as_str()).unwrap_or("");
+    let title = song.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let raw = styles.trim();
     if raw.is_empty() {
         return String::new();
@@ -172,9 +173,30 @@ async fn adapt_styles_for_engine(
         "You adapt music style descriptions for a specific AI music generator. {brief}\n\
          Reply with ONLY the tag list on a single line — no quotes, no markdown, no preamble."
     );
+
+    // Project Brief + today's topic + this channel's cached research bias the rewrite, so each
+    // channel's DAILY style leans into the project's mood and its region's musical culture instead
+    // of being a context-free reshuffle of the same tags.
+    let project_id = song.get("project_id").and_then(|v| v.as_str()).unwrap_or("");
+    let brief_block = crate::commands::ai::project_brief_block(db, project_id).await;
+    let mut research_note = String::new();
+    if let Some(cid) = song.get("channel_id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if let Ok(Some(ch)) = db.collection::<Document>("channels").find_one(doc! { "id": cid }).await {
+            if let Ok(r) = ch.get_str("research") {
+                if !r.trim().is_empty() {
+                    research_note = format!("Channel research (regional/cultural/musical notes — lean the styles toward this): {}\n", r.trim());
+                }
+            }
+        }
+    }
+    let language = song.get("language").and_then(|v| v.as_str()).unwrap_or("");
+
     let user = format!(
-        "Song title: {}\nCurrent style description: {}\n\nRewrite it for the target engine.",
+        "{brief_block}{research_note}Song title: {}\nLanguage: {}\nCurrent style description: {}\n\n\
+         Rewrite it for the target engine, letting the brief's mood, today's topic and the channel's \
+         regional musical culture shade the choice of genres/instrumentation.",
         if title.trim().is_empty() { "(untitled)" } else { title.trim() },
+        if language.is_empty() { "unspecified" } else { language },
         raw
     );
 
@@ -269,12 +291,7 @@ async fn real_suno(
         }
     }
     
-    let styles_suno = adapt_styles_for_engine(
-        "suno",
-        song.get("styles").and_then(|v| v.as_str()).unwrap_or(""),
-        song.get("title").and_then(|v| v.as_str()).unwrap_or(""),
-        settings, job_id, db,
-    ).await;
+    let styles_suno = adapt_styles_for_engine("suno", song, settings, job_id, db).await;
 
     db_log(db, job_id, "suno: submitting music generation request...").await;
 
@@ -455,7 +472,6 @@ async fn generate_song_api(
         }
     }
 
-    let styles_raw = song.get("styles").and_then(|v| v.as_str()).unwrap_or("");
     let title = song.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let lyrics = song.get("lyrics").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -473,7 +489,7 @@ async fn generate_song_api(
     // failure, so it can never block a render.
     set_stage(db, job_id, "preparing", 4,
               &format!("Tuning the style for {}…", label), true).await;
-    let styles = adapt_styles_for_engine(label, styles_raw, title, settings, job_id, db).await;
+    let styles = adapt_styles_for_engine(label, song, settings, job_id, db).await;
     let prompt = format!("{} — {}", styles, title);
     set_stage(db, job_id, "preparing", 6,
               &format!("Preparing a {:.0}s track…", duration), false).await;

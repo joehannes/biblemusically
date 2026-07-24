@@ -75,11 +75,15 @@ const GENRE_CATALOG = {
 };
 
 export default function SoundStudio() {
-  const { activeProjectId, songs, refreshSongs } = useStudio();
+  const { activeProjectId, projects, songs, refreshSongs } = useStudio();
+  // Christian projects get the Jewish/Ancient-Jewish/Messianic packs and the superflavor top layer;
+  // non-christian projects mix plainly without a flavor layer.
+  const isChristian = (projects.find((p) => p.id === activeProjectId)?.is_christian) !== false;
 
   const [selected, setSelected] = useState({});   // descriptor -> label
   const [mood, setMood] = useState("");
   const [useAi, setUseAi] = useState(true);
+  const [flavorLayer, setFlavorLayer] = useState("");
   const [mixed, setMixed] = useState("");
   const [mixing, setMixing] = useState(false);
 
@@ -109,7 +113,7 @@ export default function SoundStudio() {
     if (!genres.length) return toast.error("Select at least one genre to mix.");
     setMixing(true);
     try {
-      const r = await api.mixGenres({ genres, mood, ai: useAi });
+      const r = await api.mixGenres({ genres, mood, ai: useAi, flavor_layer: isChristian ? flavorLayer : "" });
       if (r.error) return toast.error(r.error);
       setMixed(r.styles || "");
       toast.success(`Mixed via ${r.model || "combiner"}.`);
@@ -185,7 +189,10 @@ export default function SoundStudio() {
     } catch (e) { console.error(e); toast.error("Apply failed."); }
   };
 
-  const packs = [...new Set(presets.map((p) => p.pack || "Custom"))].sort();
+  // Non-christian projects don't see the christian-specific packs.
+  const CHRISTIAN_PACKS = new Set(["Jewish Heritage", "Messianic Jewish", "Jewish", "Ancient Jewish"]);
+  const visiblePresets = isChristian ? presets : presets.filter((p) => !CHRISTIAN_PACKS.has(p.pack || ""));
+  const packs = [...new Set(visiblePresets.map((p) => p.pack || "Custom"))].sort();
   const selectedCount = Object.keys(selected).length;
 
   return (
@@ -239,6 +246,21 @@ export default function SoundStudio() {
               <label className="flex items-center gap-2 text-sm"><Sparkles className="w-4 h-4 text-primary" /> Intelligent AI fusion</label>
               <Switch checked={useAi} onCheckedChange={setUseAi} />
             </div>
+            {isChristian && (
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Superflavor top layer (christian projects)</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[["", "None"], ["jewish", "Jewish"], ["ancient-jewish", "Ancient Jewish"], ["messianic", "Messianic"]].map(([val, label]) => (
+                    <button key={val} onClick={() => setFlavorLayer(val)}
+                      className={`text-xs rounded-full border px-2.5 py-1 transition-colors ${flavorLayer === val ? "bg-primary text-primary-foreground border-primary" : "border-border/60 hover:border-primary/60"}`}
+                      title={val ? "Laid OVER the fused base as a coloring layer — the base genres keep driving the groove" : "Plain fusion, no top layer"}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">A Jewish / Ancient-Jewish / Messianic layer woven over the fused base — shofar, klezmer, Davidic-dance color on top of whatever you mixed.</p>
+              </div>
+            )}
             <Button onClick={combine} disabled={mixing}><Wand2 className="w-4 h-4 mr-2" />{mixing ? "Mixing…" : "Combine intelligently"}</Button>
           </div>
         </Card>
@@ -267,7 +289,7 @@ export default function SoundStudio() {
                 <div key={pack}>
                   <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{pack}</div>
                   <div className="flex flex-wrap gap-1.5">
-                    {presets.filter((p) => (p.pack || "Custom") === pack).map((p) => {
+                    {visiblePresets.filter((p) => (p.pack || "Custom") === pack).map((p) => {
                       const on = !!selPresets[p.id];
                       return (
                         <span key={p.id} className={`inline-flex items-center gap-1 text-xs rounded-md border pl-2 pr-1 py-1 transition-colors ${on ? "bg-primary/15 border-primary" : "border-border/60"}`}>

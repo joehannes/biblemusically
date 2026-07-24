@@ -78,6 +78,10 @@ pub async fn save_compose_config(state: State<'_, AppState>, payload: Value) -> 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComposeRequest {
     pub chapter_text: String,
+    /// When set, the project's Brief + daily topic + cached per-channel research are pulled into
+    /// the prompt so lyrics/translations speak with the project's voice, adapted per channel.
+    #[serde(default)]
+    pub project_id: String,
     #[serde(default)]
     pub sections: Vec<Value>,
     #[serde(default)]
@@ -151,6 +155,30 @@ pub struct MixGenresRequest {
     /// Use the LLM to intelligently fuse (true) or the fast deterministic combiner (false).
     #[serde(default = "yes_bool")]
     pub ai: bool,
+    /// Optional "superflavor" laid OVER the fused base as a top layer (christian projects):
+    /// "jewish" | "ancient-jewish" | "messianic". Empty/None = plain fusion, no top layer.
+    #[serde(default)]
+    pub flavor_layer: Option<String>,
+}
+
+/// Instrumentation/character brief for each superflavor top layer. These describe a LAYER over an
+/// existing fused base — the base genres keep driving rhythm and form; the flavor colors them.
+fn flavor_layer_brief(layer: &str) -> Option<&'static str> {
+    match layer {
+        "jewish" => Some(
+            "Overlay a JEWISH musical top layer: klezmer clarinet and violin lines, freygish/Ahava \
+             Raba scale colorings, hora/freylekhs rhythmic accents, cimbalom or accordion touches — \
+             woven OVER the base mix as ornament and melody, not replacing its groove."),
+        "ancient-jewish" => Some(
+            "Overlay an ANCIENT-JEWISH top layer: shofar calls, kinnor/lyre and harp figures, frame \
+             drums (tof), reed flutes, antiphonal temple-chant feel, modal (non-tempered) inflections — \
+             an ancient ceremonial atmosphere floating over the modern base."),
+        "messianic" => Some(
+            "Overlay a MESSIANIC-JEWISH worship top layer: Davidic-dance rhythmic lift, Hebrew worship \
+             hooks and call-and-response, violin+guitar interplay, joyful minor-major turns, modern \
+             worship production blended with klezmer/Israeli folk color over the base."),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -500,8 +528,19 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     let per_lang_themes = serde_json::to_string(&payload.themes["per_language"]).unwrap_or_else(|_| "{}".to_string());
     let per_chan_themes = serde_json::to_string(&payload.themes["per_channel"]).unwrap_or_else(|_| "{}".to_string());
 
+    // The project's creative DNA + cached per-channel research, when a project is in play. These
+    // are what make each channel's version feel native (regional, cultural, linguistic) and
+    // on-brand (mood/audience/personality + today's angle) rather than a bare translation.
+    let brief_block = project_brief_block(&state.db, &payload.project_id).await;
+    let research_block = if payload.project_id.trim().is_empty() {
+        String::new()
+    } else {
+        channel_research_block(&state.db).await
+    };
+
     let user_prompt = format!(
-        "Source chapter text:\n{}\n\n\
+        "{brief_block}{research_block}\
+         Source chapter text:\n{}\n\n\
          User-authored section ideas (apply to bracket prompts when matching lines):\n{}\n\n\
          Global theme: {}\n\
          Per-language themes: {}\n\
@@ -786,10 +825,16 @@ pub async fn mix_genres(state: State<'_, AppState>, payload: MixGenresRequest) -
                actually works together — reconcile tempo into one BPM, resolve conflicting instrumentation \
                tastefully, and keep the best defining traits of each. Output ONLY a single line of \
                comma-separated style keywords (no prose, no lists, no quotes), ending with one '<n> bpm'.";
+    let flavor = payload.flavor_layer.as_deref().map(|l| l.trim().to_ascii_lowercase()).unwrap_or_default();
+    let flavor_block = flavor_layer_brief(&flavor)
+        .map(|b| format!("\n\nTOP LAYER (apply OVER the fused base, coloring not replacing it): {b}"))
+        .unwrap_or_default();
+
     let user = format!(
-        "Genres to fuse:\n- {}\n\nMood/vibe to honor: {}\n\nReturn the single fused style line now.",
+        "Genres to fuse:\n- {}\n\nMood/vibe to honor: {}{}\n\nReturn the single fused style line now.",
         cleaned.join("\n- "),
         if payload.mood.trim().is_empty() { "(none specified)" } else { payload.mood.trim() },
+        flavor_block,
     );
 
     match provider_chat(&settings_doc, sys, &user, 0.7, false).await {
@@ -956,4 +1001,112 @@ pub async fn ai_translate_ui(state: State<'_, AppState>, payload: TranslateUiReq
         out.insert(s.clone(), Value::String(t.to_string()));
     }
     Ok(serde_json::json!({ "translations": Value::Object(out), "model": model }))
+}
+
+// ────────────────────────────────────────────────────────────────
+// Project brief + per-channel background research
+// ────────────────────────────────────────────────────────────────
+
+/// Render a project's Brief (its creative DNA from the Dashboard) into a compact prompt block.
+/// Returns an empty string when there's no project or no brief — callers just append it.
+pub async fn project_brief_block(db: &mongodb::Database, project_id: &str) -> String {
+    if project_id.trim().is_empty() { return String::new(); }
+    let Some(doc) = db.collection::<Document>("projects")
+        .find_one(doc! { "id": project_id }).await.ok().flatten() else { return String::new(); };
+    let proj = bson_to_value(doc);
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(b) = proj["brief"].as_object() {
+        for (label, key) in [
+            ("Mood", "mood"), ("Attitude", "attitude"), ("Motivation", "motivation"),
+            ("Aims & goals", "goals"), ("Audience", "audience"), ("Storyline", "storyline"),
+            ("Humor", "humor"), ("Personality", "personality"),
+        ] {
+            if let Some(v) = b.get(key).and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                lines.push(format!("{}: {}", label, v.trim()));
+            }
+        }
+    }
+    // The daily topic only steers TODAY's generations — a stale one from a previous day is noise.
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    if proj["daily_topic_date"].as_str() == Some(today.as_str()) {
+        if let Some(t) = proj["daily_topic"].as_str().filter(|s| !s.trim().is_empty()) {
+            lines.push(format!("Today's topic/angle: {}", t.trim()));
+        }
+    }
+    if lines.is_empty() { return String::new(); }
+    format!("PROJECT BRIEF (the project's voice — let it shape tone, imagery, style and word choice):\n{}\n", lines.join("\n"))
+}
+
+/// Cached research notes per channel, rendered as one prompt block (empty when none).
+pub async fn channel_research_block(db: &mongodb::Database) -> String {
+    use futures_util::StreamExt;
+    let Ok(mut cursor) = db.collection::<Document>("channels").find(doc! {}).await else { return String::new(); };
+    let mut lines: Vec<String> = Vec::new();
+    while let Some(Ok(d)) = cursor.next().await {
+        let ch = bson_to_value(d);
+        if let Some(r) = ch["research"].as_str().filter(|s| !s.trim().is_empty()) {
+            let name = ch["name"].as_str().unwrap_or("channel");
+            let lang = ch["language"].as_str().unwrap_or("");
+            lines.push(format!("- {} ({}): {}", name, lang, r.trim()));
+        }
+    }
+    if lines.is_empty() { return String::new(); }
+    format!("CHANNEL RESEARCH (per-channel regional/cultural/linguistic notes — apply to the matching target):\n{}\n", lines.join("\n"))
+}
+
+/// Run the background research pass: for each channel, have the AI produce compact notes on the
+/// regional, cultural and linguistic reality of that channel's audience — measured against the
+/// project's brief — and cache them on the channel doc. Called from the Dashboard's "Research
+/// channels now" button and automatically after a materially changed brief is saved.
+#[tauri::command]
+pub async fn research_project_channels(state: State<'_, AppState>, project_id: String) -> Res<Value> {
+    use futures_util::StreamExt;
+    let brief = project_brief_block(&state.db, &project_id).await;
+
+    let mut channels: Vec<Value> = Vec::new();
+    let mut cursor = state.db.collection::<Document>("channels").find(doc! {}).await.map_err(e)?;
+    while let Some(Ok(d)) = cursor.next().await { channels.push(bson_to_value(d)); }
+    if channels.is_empty() {
+        return Ok(serde_json::json!({ "researched": 0, "detail": "No channels exist yet — create channels first." }));
+    }
+
+    let system =
+        "You are a cultural research assistant for a multi-channel music-video studio. \
+         For the given channel, produce a COMPACT set of notes (max 90 words, plain text, no lists) \
+         covering: what resonates musically and lyrically with this language/region's audience, \
+         cultural and faith-context sensitivities to respect, linguistic register to use, and one \
+         concrete stylistic lean that would make content feel native rather than translated. \
+         Ground it in the project brief when one is given.";
+
+    let mut researched = 0usize;
+    for ch in channels.iter().take(12) {
+        let (Some(id), Some(name)) = (ch["id"].as_str(), ch["name"].as_str()) else { continue; };
+        let user = format!(
+            "{brief}\nCHANNEL: {name}\nLanguage: {}\nRegion: {}\nDeclared style: {}\n\nWrite the notes now.",
+            ch["language"].as_str().unwrap_or("English"),
+            ch["region"].as_str().unwrap_or("unspecified"),
+            ch["styles"].as_str().unwrap_or("unspecified"),
+        );
+        match provider_chat(&{
+            state.db.collection::<Document>("settings")
+                .find_one(doc! { "_id": "singleton" }).with_options(proj0())
+                .await.map_err(e)?.map(bson_to_value).unwrap_or_default()
+        }, system, &user, 0.4, false).await {
+            Ok((notes, _model)) => {
+                let clean: String = notes.trim().chars().take(900).collect();
+                if !clean.is_empty() {
+                    let _ = state.db.collection::<Document>("channels").update_one(
+                        doc! { "id": id },
+                        doc! { "$set": { "research": &clean, "research_at": chrono::Utc::now().to_rfc3339() } },
+                    ).await;
+                    researched += 1;
+                }
+            }
+            Err(err) => {
+                // First failure usually means no AI key — stop instead of failing 12 times.
+                if researched == 0 { return Err(format!("Research needs the AI provider: {err}")); }
+            }
+        }
+    }
+    Ok(serde_json::json!({ "researched": researched, "total": channels.len() }))
 }
