@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import GenerationProgress from "../components/GenerationProgress";
+import ImageLightbox from "../components/ImageLightbox";
 import { api } from "../lib/api";
 import { usePageActions } from "../lib/pageActions";
 import { Card } from "../components/ui/card";
@@ -22,7 +23,7 @@ const FORMATS = [
 ];
 
 export default function Images() {
-  const { songs, activeSongId, selectSong } = useStudio();
+  const { songs, activeSongId, selectSong, activeProjectId } = useStudio();
   const nav = useNavigate();
   const [sections, setSections] = useState([]);
   const [view, setView] = useState("grid");
@@ -102,6 +103,34 @@ export default function Images() {
   };
   
   const rotateVariant = (id, total) => setVariantIdx(v => ({ ...v, [id]: ((v[id] || 0) + 1) % total }));
+
+  // ── Image explorer (lightbox) ─────────────────────────────────────────────
+  const [lightbox, setLightbox] = useState(null); // { sectionId }
+  const lbSection = lightbox ? sections.find((s) => s.id === lightbox.sectionId) : null;
+  const lbImages = lbSection ? (lbSection.image_variants?.length ? lbSection.image_variants : (lbSection.image_url ? [lbSection.image_url] : [])) : [];
+  const lbPrimary = lbSection ? Math.max(0, lbImages.indexOf(lbSection.image_url)) : 0;
+
+  const setSectionPrimary = async (sec, i) => {
+    const url = (sec.image_variants || [])[i] || sec.image_url;
+    if (!url) return;
+    try {
+      await api.updateSection(sec.id, { image_url: url });
+      // Learn from the pick: the section's mood + prompt keywords are what the user kept.
+      const tags = [sec.mood, ...(sec.image_prompt || "").split(/[,\n]/).map((t) => t.trim())].filter(Boolean).slice(0, 4);
+      for (const t of tags) api.recordLearningSignal("project", activeProjectId, "kept_image_style", t, null).catch(() => {});
+      load();
+      toast.success("Set as the primary image.");
+    } catch (e) { toast.error(String(e)); }
+  };
+  const discardSectionVariant = async (sec, i) => {
+    const variants = [...(sec.image_variants || [])];
+    if (variants.length <= 1) return;
+    const removed = variants.splice(i, 1)[0];
+    const patch = { image_variants: variants };
+    if (sec.image_url === removed) patch.image_url = variants[0];
+    try { await api.updateSection(sec.id, patch); load(); }
+    catch (e) { toast.error(String(e)); }
+  };
 
   const ar = FORMATS.find(f=>f.id===format).ar;
   const aspect = ar === "16:9" ? "aspect-video" : "aspect-[9/16]";
@@ -183,7 +212,9 @@ export default function Images() {
             <Card key={s.id} data-testid={`image-card-${s.index}`} className={`overflow-hidden ${view==="list"?"flex gap-3":""} ${hasError ? "border-destructive/50" : ""}`}>
               <div className={`relative ${view==="list"?"w-48 shrink-0":"w-full"} ${aspect} bg-muted/30 ${view==="list"?"":"rounded-t-md"} overflow-hidden`}>
                 {img ? (
-                  <img src={img} alt="" className="w-full h-full object-cover" />
+                  <img src={img} alt="" className="w-full h-full object-cover cursor-zoom-in"
+                    title="Open the image explorer — compare variants, generate alternates"
+                    onClick={() => setLightbox({ sectionId: s.id })} />
                 ) : jobStatus?.status === "running" ? (
                   <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground text-mono bg-muted/50">
                     <Loader2 className="w-5 h-5 animate-spin mr-2" />generating...
@@ -227,6 +258,19 @@ export default function Images() {
         })}
         {!sections.length && <Card className="p-10 col-span-full text-center text-muted-foreground border-dashed">No sections — run analysis first.</Card>}
       </div>
+
+      <ImageLightbox
+        open={!!lbSection}
+        title={lbSection ? `${lbSection.mood || "Section"} · ${(lbSection.image_prompt || "").slice(0, 60)}` : ""}
+        images={lbImages}
+        startIndex={lbSection ? (variantIdx[lbSection.id] || 0) : 0}
+        primaryIndex={lbPrimary}
+        busy={lbSection ? jobs[lbSection.id]?.status === "running" || jobs[lbSection.id]?.status === "queued" : false}
+        onClose={() => setLightbox(null)}
+        onGenerateAlternate={() => lbSection && gen(lbSection.id)}
+        onSetPrimary={(i) => lbSection && setSectionPrimary(lbSection, i)}
+        onDiscard={(i) => lbSection && discardSectionVariant(lbSection, i)}
+      />
     </div>
   );
 }

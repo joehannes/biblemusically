@@ -182,6 +182,40 @@ pub async fn vary_character_image(
     Ok(serde_json::to_value(job).map_err(e)?)
 }
 
+/// Generate a channel-adapted take of a character: the SAME character (appearance tags + its base
+/// image as the IP-Adapter reference keep it recognizable) rendered in a given channel's visual
+/// culture — so a figure stays coherent across channels while leaning into each channel's taste.
+///
+/// Sets a transient `variant_channel_id` the character_image job reads to blend the channel's
+/// style/research into the prompt and file the result under `channel_variants.<channel_id>`.
+#[tauri::command]
+pub async fn generate_character_channel_variant(
+    state: State<'_, AppState>,
+    state_arc: State<'_, std::sync::Arc<AppState>>,
+    char_id: String,
+    channel_id: String,
+) -> Res<Value> {
+    let coll = state.db.collection::<Document>("characters");
+    let ch = coll.find_one(doc! { "id": &char_id }).await.map_err(e)?
+        .ok_or_else(|| "Character not found".to_string())?;
+    let character = bson_to_value(ch);
+    // Need a base image (or at least appearance) for consistency to mean anything.
+    let has_ref = ["reference_image", "image_url"].iter().any(|k| character[*k].as_str().map(|s| !s.is_empty()).unwrap_or(false))
+        || character["image_variants"].as_array().map(|a| !a.is_empty()).unwrap_or(false);
+    let has_tags = character["appearance_tags"].as_array().map(|a| !a.is_empty()).unwrap_or(false)
+        || character["image_prompt"].as_str().map(|s| !s.is_empty()).unwrap_or(false)
+        || character["description"].as_str().map(|s| !s.is_empty()).unwrap_or(false);
+    if !has_tags {
+        return Err("Give the character appearance tags or a prompt first — that's what keeps it consistent.".into());
+    }
+    if !has_ref {
+        return Err("Generate a base image for this character first; per-channel variants build on it for consistency.".into());
+    }
+    coll.update_one(doc! { "id": &char_id }, doc! { "$set": { "variant_channel_id": &channel_id } }).await.map_err(e)?;
+    let job = crate::jobs::enqueue("character_image", &char_id, &state_arc).await.map_err(e)?;
+    Ok(serde_json::to_value(job).map_err(e)?)
+}
+
 #[tauri::command]
 pub async fn select_character_variant(
     state: State<'_, AppState>,

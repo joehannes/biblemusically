@@ -15,6 +15,7 @@ pub mod scheduler;
 pub mod styles;
 pub mod webview;
 pub mod kaggle_monitor;
+pub mod learnings;
 
 pub use settings::*;
 pub use projects::*;
@@ -33,3 +34,4 @@ pub use scheduler::*;
 pub use styles::*;
 pub use webview::*;
 pub use kaggle_monitor::*;
+pub use learnings::*;

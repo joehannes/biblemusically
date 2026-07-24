@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
+import ImageLightbox from "../components/ImageLightbox";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -67,6 +68,28 @@ export default function Characters() {
     scope: "song", // "song" (tied to the selected song) or "project" (reusable project-wide)
   });
   const [viewMode, setViewMode] = useState("grid");
+  const [channels, setChannels] = useState([]);
+  const [lightboxChar, setLightboxChar] = useState(null); // character id open in the explorer
+  useEffect(() => { api.listChannels().then((c) => setChannels(c || [])).catch(() => {}); }, []);
+
+  // Generate a channel-adapted take: same character, this channel's visual culture.
+  const adaptToChannel = async (charId, channelId) => {
+    if (!channelId) return;
+    try {
+      await api.generateCharacterChannelVariant(charId, channelId);
+      setGenerating((g) => ({ ...g, [charId]: true }));
+      toast.success("Adapting this character to the channel's style…");
+      // Poll for the new variant like handleVary does.
+      const start = Date.now();
+      const poll = setInterval(async () => {
+        try {
+          const chars = await api.listCharacters(activeSongId || null, activeProjectId || null);
+          setCharacters(chars || []);
+          if (Date.now() - start > 180000) { clearInterval(poll); setGenerating((g) => ({ ...g, [charId]: false })); }
+        } catch { /* keep polling */ }
+      }, 4000);
+    } catch (e) { toast.error(String(e)); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -415,7 +438,9 @@ export default function Characters() {
                     <img
                       src={img}
                       alt={char.name}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover cursor-zoom-in"
+                      title="Open the explorer — compare takes, generate alternates"
+                      onClick={() => setLightboxChar(char.id)}
                     />
                   ) : isGenerating ? (
                     <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground bg-muted/50">
@@ -529,6 +554,19 @@ export default function Characters() {
                         <RefreshCw className="w-3 h-3 mr-1" />
                         Vary
                       </Button>
+                    )}
+                    {img && channels.length > 0 && (
+                      <select
+                        className="text-xs bg-background border border-border rounded px-1.5 h-8"
+                        defaultValue=""
+                        disabled={isGenerating}
+                        title="Make a channel-adapted take — same character, that channel's visual style"
+                        onChange={(e) => { if (e.target.value) { adaptToChannel(char.id, e.target.value); e.target.value = ""; } }}
+                        data-testid={`char-adapt-${char.id}`}
+                      >
+                        <option value="">Adapt to channel…</option>
+                        {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
                     )}
                     <Button
                       size="sm"
@@ -759,6 +797,25 @@ export default function Characters() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {(() => {
+        const c = characters.find((x) => x.id === lightboxChar);
+        const imgs = c ? (c.image_variants?.length ? c.image_variants : (c.image_url ? [c.image_url] : [])) : [];
+        return (
+          <ImageLightbox
+            open={!!c}
+            title={c ? `${c.name} — takes` : ""}
+            images={imgs}
+            startIndex={c?.selected_variant || 0}
+            primaryIndex={c?.selected_variant || 0}
+            busy={c ? !!generating[c.id] : false}
+            onClose={() => setLightboxChar(null)}
+            onGenerateAlternate={() => c && handleVary(c.id)}
+            onSetPrimary={(i) => c && handleSelectVariant(c.id, i)}
+            onDiscard={(i) => c && handleDiscardVariant(c.id, i)}
+          />
+        );
+      })()}
     </div>
   );
 }

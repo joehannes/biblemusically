@@ -228,6 +228,75 @@ fn engine_lyric_annotation_guide(engine: &str) -> &'static str {
     }
 }
 
+/// Grounded (live-web-search) chat. When the provider is Gemini, this enables the built-in
+/// `google_search` tool so the model researches the live web and cites sources; it returns
+/// `(content, model_label, sources)`. Grounding is incompatible with JSON response mode, so this is
+/// always a plain-text call — callers that need structure parse the text themselves.
+///
+/// When the provider isn't Gemini (e.g. OpenRouter/Qwen, which has no native search) or no Gemini
+/// key is set, it transparently falls back to `provider_chat` (ungrounded, model knowledge only),
+/// returning an empty `sources` list so callers can tell the difference and label the result.
+pub async fn provider_chat_grounded(
+    settings_doc: &Value,
+    system: &str,
+    user: &str,
+    temperature: f32,
+) -> Result<(String, String, Vec<Value>), String> {
+    let provider = settings_doc["ai_provider"].as_str().unwrap_or("openrouter").trim();
+    let gkey = settings_doc["gemini_api_key"].as_str().unwrap_or("").trim();
+    if provider != "gemini" || gkey.is_empty() {
+        let (content, model) = provider_chat(settings_doc, system, user, temperature, false).await?;
+        return Ok((content, model, Vec::new()));
+    }
+
+    let mut model = settings_doc["gemini_model"].as_str()
+        .filter(|s| !s.trim().is_empty()).unwrap_or("gemini-3.5-flash").to_string();
+    if matches!(model.as_str(), "gemini-2.0-flash" | "gemini-2.0-flash-lite" | "gemini-1.5-flash" | "gemini-1.5-pro" | "gemini-2.5-flash" | "gemini-2.5-flash-lite") {
+        model = "gemini-3.5-flash".to_string();
+    }
+    let timeout_s = settings_doc["ai_timeout_s"].as_f64()
+        .or_else(|| settings_doc["ai_timeout_s"].as_str().and_then(|s| s.trim().parse().ok()))
+        .filter(|v| *v >= 5.0).unwrap_or(120.0) as u64;
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(timeout_s)).build().map_err(e)?;
+
+    // `google_search` is the current grounding tool; no responseMimeType (incompatible with tools).
+    let body = serde_json::json!({
+        "system_instruction": { "parts": [ { "text": system } ] },
+        "contents": [ { "role": "user", "parts": [ { "text": user } ] } ],
+        "generationConfig": { "temperature": temperature.clamp(0.0, 2.0) },
+        "tools": [ { "google_search": {} } ],
+    });
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent");
+    let r = http.post(&url).header("x-goog-api-key", gkey).json(&body).send().await.map_err(e)?;
+    if !r.status().is_success() {
+        let status = r.status();
+        let txt = r.text().await.unwrap_or_default();
+        // Some models/versions reject the tool — fall back ungrounded rather than failing the task.
+        if status.as_u16() == 400 {
+            let (content, model2) = provider_chat(settings_doc, system, user, temperature, false).await?;
+            return Ok((content, model2, Vec::new()));
+        }
+        let safe: String = txt.chars().take(400).collect();
+        return Err(format!("Gemini (grounded) HTTP {status}: {safe}"));
+    }
+    let res: Value = r.json().await.map_err(e)?;
+    let content = res["candidates"][0]["content"]["parts"].as_array()
+        .map(|parts| parts.iter().filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join(""))
+        .unwrap_or_default().trim().to_string();
+    // groundingMetadata.groundingChunks[].web.{uri,title} are the cited sources.
+    let sources: Vec<Value> = res["candidates"][0]["groundingMetadata"]["groundingChunks"].as_array()
+        .map(|arr| arr.iter().filter_map(|c| {
+            let w = &c["web"];
+            w["uri"].as_str().map(|uri| serde_json::json!({ "uri": uri, "title": w["title"].as_str().unwrap_or("") }))
+        }).collect())
+        .unwrap_or_default();
+    if content.is_empty() {
+        let (content2, model2) = provider_chat(settings_doc, system, user, temperature, false).await?;
+        return Ok((content2, model2, Vec::new()));
+    }
+    Ok((content, format!("gemini:{model}+search"), sources))
+}
+
 pub async fn provider_chat(
     settings_doc: &Value,
     system: &str,
@@ -537,9 +606,12 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     } else {
         channel_research_block(&state.db).await
     };
+    // The user's accumulated taste (from JSON learnings files), so output drifts toward what they
+    // keep choosing over time.
+    let learnings_block = crate::commands::learnings::learnings_prompt_block(state.inner(), &payload.project_id).await;
 
     let user_prompt = format!(
-        "{brief_block}{research_block}\
+        "{brief_block}{research_block}{learnings_block}\
          Source chapter text:\n{}\n\n\
          User-authored section ideas (apply to bracket prompts when matching lines):\n{}\n\n\
          Global theme: {}\n\
@@ -1071,14 +1143,20 @@ pub async fn research_project_channels(state: State<'_, AppState>, project_id: S
     }
 
     let system =
-        "You are a cultural research assistant for a multi-channel music-video studio. \
-         For the given channel, produce a COMPACT set of notes (max 90 words, plain text, no lists) \
-         covering: what resonates musically and lyrically with this language/region's audience, \
-         cultural and faith-context sensitivities to respect, linguistic register to use, and one \
-         concrete stylistic lean that would make content feel native rather than translated. \
-         Ground it in the project brief when one is given.";
+        "You are a cultural research assistant for a multi-channel music-video studio. When web \
+         search is available, USE IT to check what music and content are currently resonating in \
+         this language/region. Produce a COMPACT set of notes (max 110 words, plain text, no lists) \
+         covering: what resonates musically and lyrically with this audience right now, cultural and \
+         faith-context sensitivities to respect, the linguistic register to use, and one concrete \
+         stylistic lean that would make content feel native rather than translated. Ground it in \
+         the project brief when one is given.";
+
+    let settings = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).with_options(proj0())
+        .await.map_err(e)?.map(bson_to_value).unwrap_or_default();
 
     let mut researched = 0usize;
+    let mut grounded_any = false;
     for ch in channels.iter().take(12) {
         let (Some(id), Some(name)) = (ch["id"].as_str(), ch["name"].as_str()) else { continue; };
         let user = format!(
@@ -1087,26 +1165,25 @@ pub async fn research_project_channels(state: State<'_, AppState>, project_id: S
             ch["region"].as_str().unwrap_or("unspecified"),
             ch["styles"].as_str().unwrap_or("unspecified"),
         );
-        match provider_chat(&{
-            state.db.collection::<Document>("settings")
-                .find_one(doc! { "_id": "singleton" }).with_options(proj0())
-                .await.map_err(e)?.map(bson_to_value).unwrap_or_default()
-        }, system, &user, 0.4, false).await {
-            Ok((notes, _model)) => {
-                let clean: String = notes.trim().chars().take(900).collect();
+        // Grounded when the provider is Gemini (live web search); ungrounded fallback otherwise.
+        match provider_chat_grounded(&settings, system, &user, 0.4).await {
+            Ok((notes, _model, sources)) => {
+                let clean: String = notes.trim().chars().take(1000).collect();
                 if !clean.is_empty() {
+                    if !sources.is_empty() { grounded_any = true; }
+                    let src_bson = bson::to_bson(&sources).unwrap_or(bson::Bson::Array(vec![]));
                     let _ = state.db.collection::<Document>("channels").update_one(
                         doc! { "id": id },
-                        doc! { "$set": { "research": &clean, "research_at": chrono::Utc::now().to_rfc3339() } },
+                        doc! { "$set": { "research": &clean, "research_at": chrono::Utc::now().to_rfc3339(),
+                                         "research_sources": src_bson } },
                     ).await;
                     researched += 1;
                 }
             }
             Err(err) => {
-                // First failure usually means no AI key — stop instead of failing 12 times.
                 if researched == 0 { return Err(format!("Research needs the AI provider: {err}")); }
             }
         }
     }
-    Ok(serde_json::json!({ "researched": researched, "total": channels.len() }))
+    Ok(serde_json::json!({ "researched": researched, "total": channels.len(), "grounded": grounded_any }))
 }

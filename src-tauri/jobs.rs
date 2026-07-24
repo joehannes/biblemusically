@@ -2381,11 +2381,30 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 let appearance_tags: Vec<String> = character["appearance_tags"].as_array()
                     .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
                     .unwrap_or_default();
-                let prompt = if appearance_tags.is_empty() {
+                let mut prompt = if appearance_tags.is_empty() {
                     base_prompt
                 } else {
                     format!("{}, {}", appearance_tags.join(", "), base_prompt)
                 };
+                // Optional per-channel adaptation: blend the target channel's style + research into
+                // the prompt so this take leans into that channel's visual culture while the
+                // appearance tags + IP-Adapter reference keep the SAME character recognizable.
+                let variant_channel = character["variant_channel_id"].as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
+                if let Some(cid) = &variant_channel {
+                    if let Ok(Some(chan)) = db.collection::<Document>("channels").find_one(doc! { "id": cid }).await {
+                        let cstyles = chan.get_str("styles").unwrap_or("");
+                        let cresearch = chan.get_str("research").unwrap_or("");
+                        let clang = chan.get_str("language").unwrap_or("");
+                        let mut extra = Vec::new();
+                        if !cstyles.trim().is_empty() { extra.push(format!("visual style: {}", cstyles.trim())); }
+                        if !clang.trim().is_empty() { extra.push(format!("styled for a {} audience", clang.trim())); }
+                        if !cresearch.trim().is_empty() { extra.push(cresearch.trim().chars().take(200).collect::<String>()); }
+                        if !extra.is_empty() {
+                            prompt = format!("{}, {} — keep the SAME character identity and face, only adapt styling/atmosphere", prompt, extra.join(", "));
+                            db_log(db, job_id, &format!("character: adapting to channel {} style", cid)).await;
+                        }
+                    }
+                }
                 // For ComfyUI character consistency, feed the character's existing avatar/example
                 // image as the IP-Adapter reference so re-generations stay on-model.
                 let char_ref = character["reference_image"].as_str()
@@ -2410,13 +2429,26 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                     }
                 }
                 let bson_variants: Vec<bson::Bson> = all_variants.iter().map(|s| bson::Bson::String(s.clone())).collect();
-                db.collection::<Document>("characters").update_one(
-                    doc! { "id": tgt },
-                    doc! { "$set": {
-                        "image_url": &v[0],
-                        "image_variants": bson_variants,
-                    }},
-                ).await?;
+                let mut set = doc! {
+                    "image_url": &v[0],
+                    "image_variants": bson_variants,
+                };
+                // When this was a per-channel adaptation, also file the takes under
+                // channel_variants.<cid> so the UI can show "this character, per channel", and clear
+                // the transient request flag so a later plain generation isn't still channel-biased.
+                let mut unset: Option<Document> = None;
+                if let Some(cid) = &variant_channel {
+                    let existing_cv: Vec<bson::Bson> = character["channel_variants"][cid.as_str()].as_array()
+                        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| bson::Bson::String(s.to_string()))).collect())
+                        .unwrap_or_default();
+                    let mut cv = existing_cv;
+                    for url in &v { cv.push(bson::Bson::String(url.clone())); }
+                    set.insert(format!("channel_variants.{}", cid), cv);
+                    unset = Some(doc! { "variant_channel_id": "" });
+                }
+                let mut update = doc! { "$set": set };
+                if let Some(u) = unset { update.insert("$unset", u); }
+                db.collection::<Document>("characters").update_one(doc! { "id": tgt }, update).await?;
                 set_stage(db, job_id, "done", 100, &format!("Done — {} character take(s) ready.", v.len()), true).await;
                 serde_json::json!({ "variants": v.len(), "total_variants": all_variants.len(), "real": true })
             }
