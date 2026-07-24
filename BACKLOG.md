@@ -45,6 +45,68 @@ The project's stated purpose is "topic → multi-language → multi-style → mu
 - **Multi-user / team support** — everything today is single-machine, single-user (local Mongo, local OAuth client pool, local git repos). If this is ever meant to be used by a small team producing content together, that's a fundamentally different architecture (shared DB, shared credential vault, conflict resolution on the git-versioned projects).
 - **In-app cost/quota visibility** — OpenRouter free-tier models, Suno's unofficial rate limits, and YouTube's daily upload quota are all real constraints the user currently discovers by trial and error; a lightweight "budget/quota" dashboard would reduce surprise failures.
 
+## Requested 2026-07-24 — Social presence: self-knowledge, co-creation, co-publishing
+
+Directly requested. The goal is to widen the app from "YouTube video factory" into a **personal media-presence engine**: it should learn who *you* are, use that to make better and more relevant content, automatically spin up smaller/alternate versions of each day's output, and co-publish them across many channels for marketing/publicity. Grounded in what the app already has — a bundled Playwright browser, the embedded child-webview + `bmChannel` injection bridge (see `memory/embedded-webview-csp-bridge`), OAuth loopback, free in-app AI (OpenRouter Qwen + Gemini), and the JSON learnings store — so most of this is reachable without new paid services. Organized under the five enhancement axes the request named.
+
+### A. Get to know the user (self-profile that stays current)
+- **Credential vault for social accounts.** Let the user store logins for their networks, used to sign in *through the built-in webview browser* (not a headless API), reusing the existing persistent-profile/session pattern already used for Suno/Midjourney. **Security is a hard requirement:** these are the user's real social passwords — encrypt at rest (OS keyring / a passphrase-derived key), never plaintext JSON, never logged, never sent to any AI provider. This is a prerequisite for everything below that needs an authenticated session.
+- **Personal-feed ingestion via an OSS scraper.** Integrate a ready-made open-source scraper rather than building one. Candidates by surface:
+  - *Instagram* — [Instaloader](https://github.com/instaloader/instaloader) (most-maintained OSS, ~12k★, but login-gated and rate-limited — account-ban risk, use the user's own session sparingly).
+  - *Generic / ToS-fragile surfaces* — drive the **already-bundled Playwright** browser with the user's logged-in session (the flexible, no-extra-dep route; same fragility class as the current Suno/MJ automation).
+  - *Open protocols (cheapest, no scraping)* — Mastodon and Bluesky/AT-Protocol expose the user's own timeline via clean public APIs; prefer these where the user has accounts.
+  - AI-orchestrated: the local free AI plans *what* to pull and *prompt-enhances* extraction (e.g. "summarize the aesthetic of the last 50 posts this account liked"), so scraping is targeted, not a firehose.
+- **Taste/profile model.** Feed ingested signals — own posts, who they follow, what they like, friends/audience — into a per-user JSON profile in the learnings store (mobile-friendly, no Mongo). This becomes creative-DNA context the AI reads alongside the Project Brief.
+
+### B. AI assistance for more relevant, interesting content
+- Wire the self-profile into the DailyGuide (`Tours.jsx`) and `compose_assist` context so angle suggestions, follow-up themes/topics, and ideation are grounded in the user's actual tastes and audience — not just the project brief.
+- **Ideation partner**: a back-and-forth "what should I make next?" mode that reasons over the profile + recent performance ("your audience engages most with reflective Psalms shorts on Sunday evenings").
+- **Macros**: recordable/replayable browser-automation macros (a captured Playwright/webview sequence) for repetitive posting/scraping flows the AI can then trigger — the semi-automated middle ground between a real API and full manual clicking.
+
+### C. Co-creation of smaller / alternate versions (the "partner" auto-derivative feature)
+- For each daily generation, automatically derive **shorts/micro-versions**: a vertical <60s cut of the video (TikTok/Reels/Shorts), a still-image + poetic-summary text post, a carousel, a "preview" teaser linking back to the full YouTube video.
+- Each derivative is **style-adapted per destination** (poetry summary in the channel's voice, aspect ratio + length per platform spec) — reuse the per-channel adaptation machinery already used for lyrics/imagery.
+- FFmpeg (already bundled) handles the re-cuts; the free AI writes the adapted captions/poetry and the link-back copy.
+
+### D & E. Publicity / co-publishing + co-upload to many channels
+- **Integrate an OSS cross-poster instead of hand-rolling each network.** [Postiz](https://github.com/gitroomhq/postiz-app) (AGPL-3.0, ~32k★, self-hostable, 30+ networks incl. TikTok/Instagram/Facebook/LinkedIn/Bluesky/Mastodon/Telegram/Discord/Reddit/Pinterest, with AI-assist built in) is the strongest fit; [Mixpost](https://mixpost.app/) is the lighter alternative. Either can run as a local sidecar the app posts to, mirroring how Kaggle engines are already treated as external services.
+- **Platform automation feasibility (2026), tiered by cost/effort:**
+  - *Free open APIs, no gatekeeping* — **Bluesky (AT Protocol), Mastodon, Nostr, Telegram, Discord** and the already-integrated **YouTube**. Start here.
+  - *Free but review-gated* — **Meta Graph API** (Instagram/Facebook/Threads: $0 to call but needs App Review beyond 25 test users) and **TikTok Content Posting API** (no fee, but forces private-visibility until a ~1–2 week app audit passes).
+  - *Now paid* — **X/Twitter** is pay-per-use as of Feb 2026 (~$0.01/post) — deprioritize or reach via webview-macro instead.
+  - *No API / webview-macro only* — anything without a usable API falls back to the built-in-browser + recorded-macro route from (A)/(B).
+  - *Escape hatch* — a unified API (Ayrshare/Blotato) trades per-platform review for usage-based cost; keep as an option, not the default, to preserve the free/self-hosted ethos.
+- **Auto co-publish**: opt-in, so nothing reaches a real audience without a human toggle — same conservative default as the scheduler. Each daily run fans its derivatives out to the enabled channels with links back to the canonical YouTube video.
+
+**Cross-cutting flags:** (1) credential encryption is non-negotiable; (2) scraping/automation against no-API networks carries the same ToS/ban fragility already noted for Suno/Midjourney — surface health/expiry, don't fail silently; (3) build all new persistence as **JSON, not Mongo**, so it survives the mobile migration; (4) sequence it: open-protocol APIs first (cheap, robust), review-gated APIs next, webview-macros last.
+
+## Requested 2026-07-24 — Mobile build (Android first, iOS later)
+
+Directly requested: investigate what it takes to ship a mobile build. **Findings from inspecting the tree (2026-07-24):**
+
+**What already exists (good news):**
+- Tauri Android was **initialized** on 2026-07-19 — `src-tauri/gen/android/` has the full Gradle project (`app`, `buildSrc`, `gradlew`, `build.gradle.kts`). No app has been built yet (no `.apk`/`.aab`).
+- All four **Rust Android targets are installed** (`aarch64/armv7/i686/x86_64-linux-android`).
+- `ANDROID_HOME` is set (`/home/johannes/Android`); GPU generation is already off-device (Kaggle over HTTP), which is inherently mobile-friendly.
+
+**Toolchain gaps to close first:**
+- **`NDK_HOME` is unset** — required for the Rust→Android cross-compile. Install an NDK via Android Studio's SDK Manager and export it.
+- **JDK is 26; the Android Gradle Plugin wants JDK 17** — installing a JDK 17 and pointing Gradle at it will almost certainly be necessary (26 is too new for current AGP).
+
+**The real blocker — desktop-only subsystems that cannot run on Android (none are cfg-guarded today; 0 `cfg(mobile/desktop)` guards in the crate):**
+- **Bundled `mongod` sidecar** (referenced across ~17 files) — a native x86_64 Linux server process. Android can't run it. **The Mongo→JSON migration is a hard prerequisite for mobile**, not just a nicety.
+- **Playwright browser automation** (~6 files — Midjourney, YouTube channel switching) — spawns Node + Chromium. No equivalent on Android; these features must be cfg-gated off or re-implemented via the system WebView.
+- **Sidecar / subprocess spawning** (`Command::new`/`.spawn()` across ~11 files, incl. FFmpeg) — Android has no general desktop subprocess model. FFmpeg needs an ARM/`ffmpeg-kit` build or a mobile media pipeline; other spawns need mobile substitutes.
+- **GTK child-webview** (the embedded in-app browser) — Linux/GTK-specific; Android has a single system WebView with a different embedding model.
+- **OAuth loopback servers** — binding `localhost` for the OAuth redirect works on desktop; mobile needs custom URI schemes / App Links instead.
+
+**Recommended path:**
+1. Finish the **Mongo→JSON migration** (already underway) — the gating dependency.
+2. Add `cfg(desktop)` / `cfg(mobile)` guards so the crate *compiles* for Android with desktop-only features (Playwright, sidecars, GTK webview, mongod) excluded — target a **"mobile-lite" build first**: dashboard, brief, compose, and Kaggle-backed generation over HTTP, with the browser-automation and local-sidecar features hidden on mobile.
+3. Install NDK + JDK 17, then `cargo tauri android dev` / `build` to produce a debug `.apk`.
+4. For release: an Android signing keystore → `.aab` for Play Store (or sideload `.apk`).
+5. **iOS later** — needs macOS + Xcode hardware the current Linux box doesn't have; revisit once Android is proven.
+
 ## Explicitly out of scope for now (per current architecture)
 
 - Building a real Suno/Midjourney/YouTube *server-side* SaaS — the whole design (bundled `mongod`, local file paths, local git repos, local OAuth loopback servers) is single-desktop by construction. Any of the above should keep that constraint unless there's an explicit decision to re-architect toward a hosted service.
