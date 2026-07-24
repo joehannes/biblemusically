@@ -60,20 +60,47 @@ fn builtin_presets() -> Vec<Value> {
         json!({ "id":"builtin-watercolor-dream", "name":"Watercolor Dream", "pack":"Illustrated", "builtin":true,
             "params":{ "comfyui_style":"watercolor", "comfyui_steps":30, "comfyui_cfg":6.0, "comfyui_width":1024, "comfyui_height":1024,
                        "comfyui_prompt_prefix":"loose expressive washes, luminous color bleed" } }),
+        json!({ "id":"builtin-anime-key", "name":"Anime Key Visual", "pack":"Illustrated", "builtin":true,
+            "params":{ "comfyui_style":"anime", "comfyui_steps":28, "comfyui_cfg":6.5, "comfyui_width":1024, "comfyui_height":1024,
+                       "comfyui_prompt_prefix":"anime key visual, clean cel shading, expressive eyes, studio quality" } }),
+        json!({ "id":"builtin-oil-master", "name":"Oil Painting (Old Master)", "pack":"Painterly", "builtin":true,
+            "params":{ "comfyui_style":"oil_painting", "comfyui_steps":34, "comfyui_cfg":6.5, "comfyui_width":1024, "comfyui_height":1024,
+                       "comfyui_prompt_prefix":"old master oil painting, chiaroscuro, rich impasto, gilded warmth" } }),
+        json!({ "id":"builtin-fresco-sacred", "name":"Sacred Fresco", "pack":"Sacred", "builtin":true,
+            "params":{ "comfyui_style":"oil_painting", "comfyui_steps":32, "comfyui_cfg":6.5, "comfyui_width":1024, "comfyui_height":1024,
+                       "comfyui_prompt_prefix":"renaissance fresco, sacred iconography, soft gold leaf, reverent light, muted earth palette" } }),
+        json!({ "id":"builtin-stained-glass", "name":"Stained Glass", "pack":"Sacred", "builtin":true,
+            "params":{ "comfyui_style":"illustration", "comfyui_steps":30, "comfyui_cfg":7.0, "comfyui_width":1024, "comfyui_height":1024,
+                       "comfyui_prompt_prefix":"stained glass window, bold lead lines, luminous jewel tones, backlit glow" } }),
+        json!({ "id":"builtin-concept-epic", "name":"Epic Concept Art", "pack":"Concept", "builtin":true,
+            "params":{ "comfyui_style":"photoreal", "comfyui_steps":34, "comfyui_cfg":7.0, "comfyui_width":1152, "comfyui_height":896,
+                       "comfyui_prompt_prefix":"epic concept art, vast scale, atmospheric depth, volumetric light, matte painting" } }),
+        json!({ "id":"builtin-synthwave-retro", "name":"Synthwave Retro", "pack":"Stylized", "builtin":true,
+            "params":{ "comfyui_style":"illustration", "comfyui_steps":28, "comfyui_cfg":6.5, "comfyui_width":1152, "comfyui_height":896,
+                       "comfyui_prompt_prefix":"synthwave, neon grid, retro-futuristic sunset, chromatic glow, 80s aesthetic" } }),
+        json!({ "id":"builtin-paper-cut", "name":"Layered Paper-Cut", "pack":"Stylized", "builtin":true,
+            "params":{ "comfyui_style":"illustration", "comfyui_steps":28, "comfyui_cfg":6.5, "comfyui_width":1024, "comfyui_height":1024,
+                       "comfyui_prompt_prefix":"layered paper cut art, soft depth shadows, tactile craft, warm storybook feel" } }),
+        json!({ "id":"builtin-charcoal", "name":"Charcoal Sketch", "pack":"Painterly", "builtin":true,
+            "params":{ "comfyui_style":"graphic_novel", "comfyui_steps":30, "comfyui_cfg":6.0, "comfyui_width":1024, "comfyui_height":1024,
+                       "comfyui_prompt_prefix":"expressive charcoal sketch, smudged shading, raw gestural lines, monochrome" } }),
+        json!({ "id":"builtin-golden-hour", "name":"Golden Hour Film", "pack":"Cinematic", "builtin":true,
+            "params":{ "comfyui_style":"photoreal", "comfyui_steps":32, "comfyui_cfg":6.0, "comfyui_width":1152, "comfyui_height":896,
+                       "comfyui_prompt_prefix":"golden hour, warm backlight, lens flare, 35mm film, nostalgic tones" } }),
     ]
 }
 
 #[tauri::command]
 pub async fn list_style_presets(state: State<'_, AppState>) -> Res<Value> {
     let coll = state.db.collection::<Document>("style_presets");
-    // Seed built-ins once if the collection is empty.
-    if coll.count_documents(doc! {}).await.map_err(e)? == 0 {
-        for p in builtin_presets() {
-            if let Ok(mut d) = bson::to_document(&p) {
-                let id = p["id"].as_str().unwrap_or("").to_string();
-                d.insert("_id", &id);
-                let _ = coll.insert_one(d).await;
-            }
+    // Upsert the built-ins every load (keyed by _id) so newly-added packs reach existing users too;
+    // user-created presets are untouched. (Previously this only seeded when the collection was
+    // empty, so anyone who had opened Style Studio once never saw new built-in packs.)
+    for p in builtin_presets() {
+        if let Ok(mut d) = bson::to_document(&p) {
+            let id = p["id"].as_str().unwrap_or("").to_string();
+            d.insert("_id", &id);
+            let _ = coll.update_one(doc! { "_id": &id }, doc! { "$set": &d }).upsert(true).await;
         }
     }
     use futures_util::StreamExt;

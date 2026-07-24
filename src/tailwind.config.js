@@ -54,7 +54,13 @@ module.exports = {
   				foreground: 'hsl(var(--sidebar-foreground))',
   				border: 'hsl(var(--sidebar-border))',
   				accent: 'hsl(var(--sidebar-accent))',
-  				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))'
+  				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+  				bar: 'hsl(var(--sidebar-bar))',
+  				'bar-foreground': 'hsl(var(--sidebar-bar-foreground))'
+  			},
+  			mainbar: {
+  				DEFAULT: 'hsl(var(--main-bar))',
+  				foreground: 'hsl(var(--main-bar-foreground))'
   			},
   			chart: {
   				'1': 'hsl(var(--chart-1))',

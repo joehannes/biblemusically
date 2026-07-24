@@ -256,6 +256,10 @@ const THEMES = [
   { id: "daybreak", label: "Daybreak" },
   { id: "sandstone", label: "Sandstone" },
   { id: "arctic", label: "Arctic" },
+  { id: "ember", label: "Ember" },
+  { id: "cosmos", label: "Cosmos" },
+  { id: "slate", label: "Slate" },
+  { id: "mint", label: "Mint" },
 ];
 
 // Theme picker as a menubar action button (moved out of the sidebar). A Palette button that opens
@@ -283,7 +287,7 @@ function ThemeFab({ theme, setTheme }) {
         <Palette className="w-4 h-4" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 z-40 w-44 rounded-lg border border-border bg-card shadow-xl p-2">
+        <div className="absolute right-0 top-full mt-2 z-50 w-44 rounded-lg border border-border bg-card shadow-xl p-2">
           <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1 pb-1.5 flex items-center gap-1.5">
             <Palette className="w-3 h-3" /> Theme
           </div>
@@ -372,11 +376,21 @@ function LanguageFab() {
     setOpen(false);
     if (code === lang) return;
     setBusy(true);
+    // Notify only AFTER the UI is actually translated & in place (or truthfully report a failure) —
+    // never a premature "translated" toast.
+    const t = code !== "en" ? toast.loading("Translating the interface…") : null;
     try {
-      await setUiLanguage(code);
-      if (code !== "en") toast.success("Interface translated.");
+      const r = await setUiLanguage(code);
+      if (code === "en") { toast.success("Back to English."); return; }
+      if (r?.ok && r.applied > 0) {
+        toast.success(`Interface translated (${r.applied} labels).`, { id: t });
+      } else if (r?.error) {
+        toast.error(`Couldn't translate: ${r.error}. Check your AI provider key in Settings.`, { id: t });
+      } else {
+        toast.message("Nothing to translate right now.", { id: t });
+      }
     } catch (e) {
-      toast.error(`Translation failed: ${e}`);
+      toast.error(`Translation failed: ${e}`, { id: t });
     } finally { setBusy(false); }
   };
 
@@ -395,7 +409,7 @@ function LanguageFab() {
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{cur.code}</span>
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 z-40 w-52 max-h-80 overflow-y-auto scroll-thin rounded-lg border border-border bg-card shadow-xl p-1.5">
+        <div className="absolute right-0 top-full mt-2 z-50 w-52 max-h-80 overflow-y-auto scroll-thin rounded-lg border border-border bg-card shadow-xl p-1.5">
           <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1.5 pb-1 flex items-center gap-1.5">
             <Languages className="w-3 h-3" /> Interface language
           </div>
@@ -813,9 +827,10 @@ export default function Shell({ children }) {
       <aside
         className={`${collapsed ? "w-16" : "w-64"} hidden md:flex shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex-col h-full transition-all`}
       >
-        {/* h-16 matches the main header exactly, so the top bar reads as one continuous strip. */}
-        <div className="h-16 shrink-0 px-3 border-b border-sidebar-border flex items-center gap-2">
-          <div className="w-9 h-9 flex items-center justify-center">
+        {/* h-16 matches the main header exactly, so the top bar reads as one continuous strip.
+            The header inverts to the sidebar's complementary color (see --sidebar-bar tokens). */}
+        <div className={`h-16 shrink-0 px-3 border-b border-sidebar-border flex items-center gap-2 bg-sidebar-bar text-sidebar-bar-foreground ${collapsed ? "justify-center" : ""}`}>
+          <div className="w-9 h-9 flex items-center justify-center shrink-0">
             <img
               src="/icon.png"
               alt="Lightkid AI"
@@ -824,20 +839,20 @@ export default function Shell({ children }) {
           </div>
           {!collapsed && (
             <div>
-              <div className="text-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+              <div className="text-mono text-[11px] uppercase tracking-[0.2em] opacity-70">
                 Studio
               </div>
               <div className="font-semibold text-base leading-tight flex items-baseline gap-2">
                 Lightkid AI{" "}
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs opacity-70">
                   v{appVersion}
                 </span>
               </div>
             </div>
           )}
-          {/* Keyboard-shortcut hint, tucked behind an info icon (was a permanent block at the
-              bottom of the sidebar). Opens on hover or click; click-again / Escape closes. */}
-          <ShortcutHint collapsed={collapsed} />
+          {/* Keyboard-shortcut hint behind an info icon — hidden when collapsed so the logo icon
+              keeps the narrow rail to itself and stays reasonably big. */}
+          {!collapsed && <ShortcutHint collapsed={collapsed} />}
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3 scroll-thin">
@@ -939,7 +954,10 @@ export default function Shell({ children }) {
 
       <main className="flex-1 flex flex-col min-w-0 min-h-0 pb-16 md:pb-0">
         {/* ── Top navigation bar (always on top) ── */}
-        <header className="h-16 z-30 border-b border-border bg-card shadow-sm flex items-center justify-between px-3 sm:px-6 gap-3 sm:gap-4 shrink-0">
+        {/* The top bar carries the COMPLEMENTARY colour of the main region below it (see --main-bar),
+            so both top strips (this + the sidebar header) contrast their own body rather than each
+            other. */}
+        <header className="h-16 z-30 border-b border-border bg-mainbar text-mainbar-foreground shadow-sm flex items-center justify-between px-3 sm:px-6 gap-3 sm:gap-4 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <button
               className="p-2 rounded hover:bg-muted/30 shrink-0 md:hidden"

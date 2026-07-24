@@ -73,6 +73,34 @@ const GENRE_CATALOG = {
     "Worship Pop": "modern worship pop, anthemic build, bright pads, emotional, 72 bpm",
     "Choir": "sacred choir, layered harmonies, cathedral reverb, majestic, slow",
   },
+  "Regional EDM Fusion": {
+    "Amapiano": "amapiano, log drum bassline, deep house shuffle, soulful vocal chops, airy piano, 112 bpm",
+    "Afro House": "afro house, driving tribal percussion, hypnotic synth arps, festival drops, 122 bpm",
+    "Reggaeton Tech": "reggaeton dembow fused with tech house, rolling latin percussion, dark club bass, 100 bpm",
+    "Brazilian Bass": "brazilian bass, baile funk drums, carnival whistle, gritty low-end bounce, 126 bpm",
+    "Arabic Trap": "arabic trap, maqam oud and ney, 808 slides, desert reverb, oriental strings, 140 bpm",
+    "Desi Bass": "bhangra dhol fused with bass house, punjabi hooks, tumbi riffs, festival drops, 128 bpm",
+    "K-Wave EDM": "k-pop hooks over future bass, glossy hyperpop synths, tight vocal stacks, neon, 128 bpm",
+    "Balkan Bass": "balkan brass over heavy electro bass, odd-meter breaks, wild party energy, 130 bpm",
+    "Celtic Trance": "celtic fiddle and whistle over uplifting trance, supersaw swells, euphoric, 138 bpm",
+    "Nordic Techno": "melodic techno with nordic folk vocal drones, icy pads, hypnotic build, 122 bpm",
+  },
+  "Latino & Global": {
+    "Reggaeton": "reggaeton, dembow beat, catchy latin hook, club energy, 95 bpm",
+    "Cumbia Electro": "electro cumbia, accordion hooks, digital güira, danceable, cheeky, 100 bpm",
+    "Salsa": "salsa, punchy horns, montuno piano, congas and timbales, fiery, 96 bpm",
+    "Bachata": "bachata, romantic nylon guitar, bongo & güira, tender sway, 130 bpm",
+    "Afrobeats": "afrobeats, log drum, smooth vocals, sunny groove, 108 bpm",
+    "Bhangra": "bhangra, dhol rhythm, tumbi, punjabi vocals, jubilant, 130 bpm",
+  },
+  // Christian-only Jewish/Messianic flavors — filtered out for non-christian projects at render.
+  "Jewish / Messianic": {
+    "Klezmer": "klezmer, lively clarinet, freygish scale, hora rhythm, celebratory, 130 bpm",
+    "Ancient Temple": "ancient hebraic, shofar calls, kinnor lyre and harp, frame drums, modal chant, ceremonial",
+    "Sephardic": "sephardic, oud and ney, hand percussion, andalusian melody, warm, 100 bpm",
+    "Messianic Worship": "messianic worship, davidic dance lift, hebrew hooks, violin and guitar, joyful, 120 bpm",
+    "Davidic Dance": "davidic dance, energetic hora, tambourine, klezmer violin, festive celebration, 140 bpm",
+  },
 };
 
 export default function SoundStudio() {
@@ -216,7 +244,7 @@ export default function SoundStudio() {
             <Badge variant="secondary">{selectedCount} selected</Badge>
           </div>
           <div className="space-y-3 max-h-[340px] overflow-auto pr-1">
-            {Object.entries(GENRE_CATALOG).map(([cat, items]) => (
+            {Object.entries(GENRE_CATALOG).filter(([cat]) => isChristian || cat !== "Jewish / Messianic").map(([cat, items]) => (
               <div key={cat}>
                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">{cat}</div>
                 <div className="flex flex-wrap gap-1.5">

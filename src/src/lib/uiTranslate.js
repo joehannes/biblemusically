@@ -90,6 +90,7 @@ const originalOf = (node) => {
 };
 
 function applyMap(nodes, map) {
+  let n = 0;
   for (const node of nodes) {
     const orig = originalOf(node);
     const key = orig.trim();
@@ -98,8 +99,10 @@ function applyMap(nodes, map) {
     // Preserve the original leading/trailing whitespace around the label.
     const lead = orig.match(/^\s*/)[0];
     const tail = orig.match(/\s*$/)[0];
-    node.nodeValue = `${lead}${translated}${tail}`;
+    const next = `${lead}${translated}${tail}`;
+    if (node.nodeValue !== next) { node.nodeValue = next; n++; }
   }
+  return n;
 }
 
 function restoreOriginals(root) {
@@ -110,32 +113,38 @@ function restoreOriginals(root) {
   }
 }
 
+// Returns { applied, error } — how many nodes actually got non-trivial translated text, and the
+// first provider error if the AI call failed (so the caller can report the truth, not a fake success).
 async function translateNodes(nodes, code, langName) {
-  if (!nodes.length) return;
+  if (!nodes.length) return { applied: 0, error: null };
   const cache = loadCache(code);
   const wanted = [...new Set(nodes.map((n) => originalOf(n).trim()))];
   const missing = wanted.filter((s) => cache[s] === undefined);
 
   // Paint what we already know immediately, so cached UI switches feel instant.
-  applyMap(nodes, cache);
+  let applied = applyMap(nodes, cache);
+  let error = null;
 
   for (let i = 0; i < missing.length; i += BATCH) {
     const batch = missing.slice(i, i + BATCH);
     try {
       const r = await api.aiTranslateUi(batch, langName);
-      Object.assign(cache, r?.translations || {});
+      const t = r?.translations || {};
+      Object.assign(cache, t);
       saveCache(code, cache);
-      applyMap(nodes, cache);
+      applied += applyMap(nodes, cache);
     } catch (err) {
-      console.warn("[i18n] batch failed:", err);
-      break; // leave the rest untranslated rather than hammering a failing provider
+      error = String(err?.message || err);
+      console.warn("[i18n] batch failed:", error);
+      break; // don't hammer a failing provider
     }
   }
+  return { applied, error };
 }
 
 async function translateWhole(code, langName) {
   const root = document.getElementById("root") || document.body;
-  await translateNodes(collectNodes(root), code, langName);
+  return translateNodes(collectNodes(root), code, langName);
 }
 
 function startObserver(code, langName) {
@@ -181,9 +190,18 @@ export async function setUiLanguage(code) {
   if (translating) return { ok: false, busy: true };
   translating = true;
   try {
-    await translateWhole(lang.code, lang.label);
+    const { applied, error } = await translateWhole(lang.code, lang.label);
+    // Only keep observing (and count it a success) if the provider actually produced translations;
+    // otherwise restore English so the UI isn't left in a half-state, and report the real error.
+    if (error && applied === 0) {
+      restoreOriginals(document.getElementById("root") || document.body);
+      current = "en";
+      try { localStorage.setItem(LANG_KEY, "en"); } catch { /* ignore */ }
+      emit();
+      return { ok: false, error };
+    }
     startObserver(lang.code, lang.label);
-    return { ok: true };
+    return { ok: true, applied, error };
   } finally {
     translating = false;
   }
