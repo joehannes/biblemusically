@@ -12,6 +12,7 @@
 // just poll that monitor and gate "ready" on an actual API test.
 
 import { api } from "./api";
+import { markStarted } from "./serverLifecycle";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -132,6 +133,9 @@ export async function autoStartKaggleServer(engine) {
     pushLog(engine, detail || "Could not start the server.", "error");
     return;
   }
+  // Track it so the lifecycle watchdog can shut it down again — a running GPU session burns the
+  // free weekly quota whether or not anything is using it.
+  markStarted(engine);
   pushLog(engine, start.detail || "Push accepted — booting…");
   patch(engine, { status: "waiting", phase: "queued" });
 

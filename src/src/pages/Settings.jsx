@@ -11,9 +11,11 @@ import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
-import { Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge } from "lucide-react";
+import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { autoStartKaggleServer, subscribeKaggle } from "../lib/kaggleServerPipeline";
+import { markStopped } from "../lib/serverLifecycle";
+import { useRequireGuideStep } from "../components/GuideStepDialog";
 import OAuthClientsPanel from "../components/OAuthClientsPanel";
 import { toast } from "sonner";
 import { AutoSaveChip } from "../lib/hooks";
@@ -191,6 +193,7 @@ const SettingsComponent = () => {
   const [loginInProgress, setLoginInProgress] = useState(false);
   const [mjGenerating, setMjGenerating] = useState(false);
   const navigate = useNavigate();
+  const { dialog: kaggleGuideDialog, openStep: openKaggleGuide } = useRequireGuideStep("kaggle");
   const [mjPrompt, setMjPrompt] = useState("");
   const [mjGenerateError, setMjGenerateError] = useState(null);
   const [mjResults, setMjResults] = useState([]);
@@ -414,6 +417,25 @@ const SettingsComponent = () => {
       console.error(err);
       toast.error("Fetch failed — is the kaggle CLI installed and ~/.kaggle/kaggle.json present?");
     }
+  };
+
+  // Switch to a different Google/Kaggle account. Free GPU quota is per-account, so when one is
+  // spent the practical fix is to connect another free account — this clears the stored connection
+  // and re-opens the SAME guided Kaggle step used during first-run setup.
+  const switchKaggleAccount = async () => {
+    try {
+      await api.saveSettings({ kaggle_connected: false, kaggle_username: "" });
+    } catch { /* non-fatal */ }
+    openKaggleGuide();
+  };
+
+  // Manually end a session so it stops consuming the free weekly GPU quota.
+  const stopKaggleServer = async (engine) => {
+    try {
+      const r = await api.stopKaggleServer(engine);
+      markStopped(engine);
+      r?.ok ? toast.success(r.detail || `${engine} stopped.`) : toast.error(r?.detail || "Could not stop the session.");
+    } catch (e) { toast.error(String(e)); }
   };
 
   const startKaggleServer = async (engine) => {
@@ -640,6 +662,7 @@ const SettingsComponent = () => {
 
   return (
     <div className="p-8 max-w-5xl mx-auto fade-in">
+      {kaggleGuideDialog}
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/settings")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <div>
@@ -705,9 +728,11 @@ const SettingsComponent = () => {
           <Button size="sm" data-testid="settings-kaggle-auto-acestep" onClick={()=>autoStartServer("acestep")} disabled={kaggleState.acestep && ["checking","starting","waiting","testing"].includes(kaggleState.acestep.status)}><Bot className="w-3 h-3 mr-2" />Start & connect</Button>
           <Button size="sm" variant="outline" data-testid="settings-kaggle-open-acestep" onClick={()=>openKaggleNb("acestep")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-start-acestep" onClick={()=>startKaggleServer("acestep")}><Bot className="w-3 h-3 mr-2" />Start server</Button>
+          <Button size="sm" variant="secondary" data-testid="settings-kaggle-stop-acestep" title="End the Kaggle session now so it stops using your free weekly GPU hours" onClick={()=>stopKaggleServer("acestep")}><PowerOff className="w-3 h-3 mr-2" />Stop server</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-fetch-acestep" onClick={()=>fetchKaggleUrl("acestep")}><DownloadCloud className="w-3 h-3 mr-2" />Fetch live URL</Button>
           <Button size="sm" variant="secondary" data-testid="settings-test-acestep" onClick={()=>testS("acestep")}><KeyRound className="w-3 h-3 mr-2" />Test connection</Button>
           <Button size="sm" variant="ghost" data-testid="settings-kaggle-token" onClick={openKaggleToken}><KeyRound className="w-3 h-3 mr-2" />Kaggle API token</Button>
+          <Button size="sm" variant="ghost" data-testid="settings-kaggle-switch-account" title="Connect a different free Google/Kaggle account — GPU quota is per account" onClick={switchKaggleAccount}><UserCog className="w-3 h-3 mr-2" />Switch account</Button>
         </div>
         <KaggleAutoStatus engine="acestep" />
         <div className="mt-3 text-xs text-muted-foreground">Run the ACE-Step notebook (<code>scripts/kaggle_acestep/</code>) on a free Kaggle/Colab GPU — it prints a public URL you paste above. Note: Kaggle/Colab share URLs rotate roughly every 72 hours, so re-paste when it expires. For a permanent setup, run <code>acestep-api</code> on a local GPU and use <code>http://localhost:8001</code>.</div>
@@ -723,6 +748,7 @@ const SettingsComponent = () => {
           <Button size="sm" data-testid="settings-kaggle-auto-heartmula" onClick={()=>autoStartServer("heartmula")} disabled={kaggleState.heartmula && ["checking","starting","waiting","testing"].includes(kaggleState.heartmula.status)}><Bot className="w-3 h-3 mr-2" />Start & connect</Button>
           <Button size="sm" variant="outline" data-testid="settings-kaggle-open-heartmula" onClick={()=>openKaggleNb("heartmula")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-start-heartmula" onClick={()=>startKaggleServer("heartmula")}><Bot className="w-3 h-3 mr-2" />Start server</Button>
+          <Button size="sm" variant="secondary" data-testid="settings-kaggle-stop-heartmula" title="End the Kaggle session now so it stops using your free weekly GPU hours" onClick={()=>stopKaggleServer("heartmula")}><PowerOff className="w-3 h-3 mr-2" />Stop server</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-fetch-heartmula" onClick={()=>fetchKaggleUrl("heartmula")}><DownloadCloud className="w-3 h-3 mr-2" />Fetch live URL</Button>
           <Button size="sm" variant="secondary" data-testid="settings-test-heartmula" onClick={()=>testS("heartmula")}><KeyRound className="w-3 h-3 mr-2" />Test connection</Button>
         </div>
@@ -965,6 +991,7 @@ const SettingsComponent = () => {
           <Button size="sm" data-testid="settings-kaggle-auto-comfy" onClick={()=>autoStartServer("comfyui")} disabled={kaggleState.comfyui && ["checking","starting","waiting","testing"].includes(kaggleState.comfyui.status)}><Bot className="w-3 h-3 mr-2" />Start & connect</Button>
           <Button size="sm" variant="outline" data-testid="settings-kaggle-open-comfy" onClick={()=>openKaggleNb("comfyui")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-start-comfy" onClick={()=>startKaggleServer("comfyui")}><Bot className="w-3 h-3 mr-2" />Start server</Button>
+          <Button size="sm" variant="secondary" data-testid="settings-kaggle-stop-comfy" title="End the Kaggle session now so it stops using your free weekly GPU hours" onClick={()=>stopKaggleServer("comfyui")}><PowerOff className="w-3 h-3 mr-2" />Stop server</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-fetch-comfy" onClick={()=>fetchKaggleUrl("comfyui")}><DownloadCloud className="w-3 h-3 mr-2" />Fetch live URL</Button>
           <Button size="sm" variant="secondary" data-testid="settings-test-comfy" onClick={()=>testS("comfy")}><KeyRound className="w-3 h-3 mr-2" />Test connection</Button>
         </div>
@@ -982,6 +1009,7 @@ const SettingsComponent = () => {
           <Button size="sm" data-testid="settings-kaggle-auto-flux" onClick={()=>autoStartServer("flux")} disabled={kaggleState.flux && ["checking","starting","waiting","testing"].includes(kaggleState.flux.status)}><Bot className="w-3 h-3 mr-2" />Start & connect</Button>
           <Button size="sm" variant="outline" data-testid="settings-kaggle-open-flux" onClick={()=>openKaggleNb("flux")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-start-flux" onClick={()=>startKaggleServer("flux")}><Bot className="w-3 h-3 mr-2" />Start server</Button>
+          <Button size="sm" variant="secondary" data-testid="settings-kaggle-stop-flux" title="End the Kaggle session now so it stops using your free weekly GPU hours" onClick={()=>stopKaggleServer("flux")}><PowerOff className="w-3 h-3 mr-2" />Stop server</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-fetch-flux" onClick={()=>fetchKaggleUrl("flux")}><DownloadCloud className="w-3 h-3 mr-2" />Fetch live URL</Button>
           <Button size="sm" variant="secondary" data-testid="settings-test-flux" onClick={()=>testS("flux")}><KeyRound className="w-3 h-3 mr-2" />Test connection</Button>
         </div>

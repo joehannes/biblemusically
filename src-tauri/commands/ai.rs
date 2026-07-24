@@ -181,6 +181,25 @@ fn default_assist_temperature() -> f32 { 0.55 }
 ///
 /// Both the lyrics composer and the small assist helpers route through this, so switching the
 /// provider in Settings transparently changes which backend every AI feature uses.
+/// Section-annotation convention per music engine. The lyric text reaches the engine verbatim, and
+/// each one parses structure differently — Suno reads rich bracketed performance tags, ACE-Step
+/// wants plain lowercase structure tags, and HeartMuLa writes the text straight into a lyrics file
+/// where anything but a section header is sung. Emitting the wrong dialect degrades the result.
+fn engine_lyric_annotation_guide(engine: &str) -> &'static str {
+    match engine {
+        "suno" => "Target engine: Suno. Put capitalised bracketed structure tags on their own lines: \
+                   [Intro], [Verse], [Pre-Chorus], [Chorus], [Bridge], [Outro]. Suno also honours short \
+                   performance hints in brackets (e.g. [Instrumental], [Soft female vocal]) — use them \
+                   sparingly, only where they genuinely shape the arrangement.",
+        "acestep" => "Target engine: ACE-Step. Put plain lowercase bracketed structure tags on their own \
+                      lines: [intro], [verse], [chorus], [bridge], [outro]. Do NOT add performance \
+                      directions inside the lyric text — ACE-Step does not interpret them.",
+        _ => "Target engine: HeartMuLa. The lyric text is written verbatim into a lyrics file, so use only \
+              plain capitalised section headers on their own lines: [Verse], [Chorus], [Bridge], [Outro]. \
+              No performance directions and no inline notes — anything that is not a section header is sung.",
+    }
+}
+
 pub async fn provider_chat(
     settings_doc: &Value,
     system: &str,
@@ -429,14 +448,34 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     // lyrics — invisible in the AI Composer's own results panel (which specifically handles
     // both shapes) but missing everywhere else, and the array shape also crashed the Lyrics
     // editor's preview (React can't render an array of plain objects as children).
-    let sys = "You compose multilingual song lyrics JSON for AI music video production.\n\
-               Return ONLY a valid JSON array — no prose, no markdown fences.\n\
-               Each element MUST have: title (string), language (string), styles (string), \
-               lyrics (string): the full lyrics as plain text with [section] headers (e.g. [verse 1], [chorus]) \
-               on their own lines, annotations (string), image_styles (string).\n\
-               Example lyrics: \"[verse 1]\\nThe Lord is my shepherd\\n\\n[chorus]\\n...\".\n\
-               annotations format: alternating lines — first a bracketed midjourney-style image prompt in square brackets, then the matching lyric line.\n\
-               Translate lyrics into the target language faithfully if it isn't English. Keep section ideas + themes embedded in the bracket prompts.";
+    // The lyric text is consumed VERBATIM by whichever music engine is selected, and each engine
+    // reads section structure differently — so the composer is told the right convention up front
+    // instead of emitting one generic format that only some engines understand.
+    let engine = {
+        let sdoc = state.db.collection::<Document>("settings")
+            .find_one(doc! { "_id": "singleton" })
+            .with_options(proj0())
+            .await.ok().flatten()
+            .map(bson_to_value).unwrap_or_default();
+        sdoc["music_engine"].as_str().unwrap_or("heartmula").to_string()
+    };
+    let annotation_guide = engine_lyric_annotation_guide(&engine);
+
+    let sys = format!(
+        "You compose multilingual song lyrics JSON for AI music video production.\n\
+         Return ONLY a valid JSON array — no prose, no markdown fences.\n\
+         Each element MUST have: title (string), language (string), styles (string), \
+         lyrics (string): the full lyrics as plain text with section headers on their own lines, \
+         annotations (string), image_styles (string).\n\
+         SECTION STRUCTURE — {}\n\
+         annotations format: alternating lines — first a bracketed midjourney-style image prompt in square brackets, then the matching lyric line.\n\
+         IMAGERY: give EACH section its own distinct visual idea and carry it through that section's \
+         lines — consecutive sections must not repeat the same scene. Let the imagery progress with the \
+         song (establishing shot → development → climax → resolution) so the finished video has visual variety.\n\
+         Translate lyrics into the target language faithfully if it isn't English. Keep section ideas + themes embedded in the bracket prompts.",
+        annotation_guide
+    );
+    let sys = sys.as_str();
 
     let targets_str = serde_json::to_string(&payload.targets).unwrap_or_default();
     let sections_str = serde_json::to_string(&payload.sections).unwrap_or_default();

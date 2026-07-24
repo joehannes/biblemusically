@@ -880,6 +880,25 @@ pub async fn start_kaggle_server(engine: String) -> Res<Value> {
     }
 }
 
+/// Stop `engine`'s Kaggle session so it stops consuming the free weekly GPU quota.
+///
+/// A running GPU batch session bills quota for its whole life, used or not — so the app shuts a
+/// server down as soon as the workflow no longer needs it, after 15 min of app inactivity, and on
+/// exit. Mechanically this is the same GPU-off supersede push used for zombie recovery: pushing a
+/// new kernel version ends the one session Kaggle allows per kernel, and a GPU-off run needs no
+/// GPU slot. (The Kaggle CLI/API has no "stop session" call.)
+#[tauri::command]
+pub async fn stop_kaggle_server(engine: String) -> Res<Value> {
+    let r = supersede_kaggle_session(engine.clone()).await?;
+    let ok = r["ok"].as_bool().unwrap_or(false);
+    Ok(serde_json::json!({
+        "ok": ok,
+        "engine": engine,
+        "detail": if ok { format!("{} stopped — its GPU slot is released.", engine) }
+                  else { r["detail"].as_str().unwrap_or("Could not stop the session.").to_string() },
+    }))
+}
+
 /// Auto-recover a stuck/zombie session for `engine` by pushing a GPU-OFF version of its kernel.
 ///
 /// The Kaggle CLI/API has no "stop session" — but pushing a new kernel version SUPERSEDES the one

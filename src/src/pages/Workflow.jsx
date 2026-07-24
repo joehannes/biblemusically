@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
+import { stopAllStarted } from "../lib/serverLifecycle";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -196,6 +197,12 @@ export default function Workflow() {
     } finally {
       setRunningAll(false);
       pushLog("── Full pipeline run finished ──");
+      // The GPU servers are no longer needed: shut down anything this session started so the run
+      // stops billing against the free weekly Kaggle GPU quota.
+      try {
+        const stopped = await stopAllStarted("workflow finished");
+        if (stopped) pushLog(`Stopped ${stopped} GPU server(s) to save your Kaggle quota.`);
+      } catch { /* non-fatal */ }
     }
   };
 

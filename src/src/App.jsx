@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { StudioProvider } from "./lib/store";
 import { api } from "./lib/api";
+import { initServerLifecycle } from "./lib/serverLifecycle";
 import Shell from "./components/Shell";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
@@ -35,6 +36,9 @@ import { Toaster } from "sonner";
 function RootGate() {
   const [ready, setReady] = useState(false);
   const [onboarded, setOnboarded] = useState(true);
+  // Arm the GPU-quota watchdog: idles down any server this session started after 15 min of
+  // inactivity, and asks them to stop on shutdown. Servers are never started here — only on demand.
+  useEffect(() => { initServerLifecycle(); }, []);
   useEffect(() => {
     (async () => {
       try {
