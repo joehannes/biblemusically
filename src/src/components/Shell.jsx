@@ -245,11 +245,15 @@ function ThemeBtn({ id, label, current, setTheme }) {
 const THEMES = [
   { id: "obsidian", label: "Obsidian" },
   { id: "aurora", label: "Aurora" },
+  { id: "twilight", label: "Twilight" },
+  { id: "midnight", label: "Midnight" },
+  { id: "forest", label: "Forest" },
+  { id: "rosewood", label: "Rosewood" },
   { id: "vellum", label: "Vellum" },
   { id: "dawn", label: "Dawn" },
   { id: "daybreak", label: "Daybreak" },
-  { id: "twilight", label: "Twilight" },
-  { id: "midnight", label: "Midnight" },
+  { id: "sandstone", label: "Sandstone" },
+  { id: "arctic", label: "Arctic" },
 ];
 
 // Theme picker as a menubar action button (moved out of the sidebar). A Palette button that opens
@@ -792,9 +796,10 @@ export default function Shell({ children }) {
     // window-level scroll would slide the placeholder out from under it.
     <div className="h-screen overflow-hidden flex bg-background text-foreground">
       <aside
-        className={`${collapsed ? "w-16" : "w-64"} hidden md:flex shrink-0 border-r border-border bg-card/40 flex-col h-full transition-all`}
+        className={`${collapsed ? "w-16" : "w-64"} hidden md:flex shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex-col h-full transition-all`}
       >
-        <div className="px-3 py-3 border-b border-border flex items-center gap-2">
+        {/* h-16 matches the main header exactly, so the top bar reads as one continuous strip. */}
+        <div className="h-16 shrink-0 px-3 border-b border-sidebar-border flex items-center gap-2">
           <div className="w-9 h-9 flex items-center justify-center">
             <img
               src="/icon.png"
@@ -828,7 +833,7 @@ export default function Shell({ children }) {
             return (
               <div key={to}>
                 {showGroupHeader && !collapsed && (
-                  <div className="px-5 pt-3 pb-1 text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60 font-medium">
+                  <div className="px-5 pt-4 pb-1.5 text-[9px] uppercase tracking-[0.2em] text-sidebar-foreground/45 font-semibold">
                     {GROUP_LABELS[group]}
                   </div>
                 )}
@@ -836,14 +841,14 @@ export default function Shell({ children }) {
                   to={to}
                   data-testid={testid}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-5 py-2 text-sm transition-colors border-l-2 ${
+                    `flex items-center gap-3 px-5 py-2.5 text-sm transition-colors border-l-2 ${
                       isActive
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                        ? "border-sidebar-accent bg-sidebar-accent/15 text-sidebar-foreground font-medium"
+                        : "border-transparent text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/10"
                     }`
                   }
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4 h-4 shrink-0" />
                   {!collapsed && <span>{label}</span>}
                 </NavLink>
               </div>
@@ -860,8 +865,8 @@ export default function Shell({ children }) {
             aria-label="Close navigation"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="absolute inset-y-0 left-0 w-[min(82vw,320px)] bg-card border-r border-border shadow-2xl flex flex-col">
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div className="absolute inset-y-0 left-0 w-[min(82vw,320px)] bg-sidebar text-sidebar-foreground border-r border-sidebar-border shadow-2xl flex flex-col">
+            <div className="h-16 shrink-0 px-4 border-b border-sidebar-border flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
                 <img
                   src="/icon.png"
@@ -890,7 +895,7 @@ export default function Shell({ children }) {
                 return (
                   <div key={to}>
                     {showGroupHeader && (
-                      <div className="px-5 pt-3 pb-1 text-[9px] uppercase text-muted-foreground/60 font-medium">
+                      <div className="px-5 pt-4 pb-1.5 text-[9px] uppercase tracking-[0.2em] text-sidebar-foreground/45 font-semibold">
                         {GROUP_LABELS[group]}
                       </div>
                     )}
@@ -901,8 +906,8 @@ export default function Shell({ children }) {
                       className={({ isActive }) =>
                         `flex items-center gap-3 px-5 py-3 text-sm border-l-2 ${
                           isActive
-                            ? "border-primary bg-primary/10 text-foreground"
-                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                            ? "border-sidebar-accent bg-sidebar-accent/15 text-sidebar-foreground font-medium"
+                            : "border-transparent text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/10"
                         }`
                       }
                     >
@@ -919,7 +924,7 @@ export default function Shell({ children }) {
 
       <main className="flex-1 flex flex-col min-w-0 min-h-0 pb-16 md:pb-0">
         {/* ── Top navigation bar (always on top) ── */}
-        <header className="z-30 border-b border-border bg-card shadow-sm flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 gap-3 sm:gap-4 shrink-0">
+        <header className="h-16 z-30 border-b border-border bg-card shadow-sm flex items-center justify-between px-3 sm:px-6 gap-3 sm:gap-4 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <button
               className="p-2 rounded hover:bg-muted/30 shrink-0 md:hidden"
@@ -1148,11 +1153,13 @@ export default function Shell({ children }) {
             usePageActions() — e.g. a page-wide "Generate" button next to the running-jobs
             indicator instead of buried in the page body. */}
         <PageActionsContext.Provider value={setPageActions}>
-          <div className="flex-1 min-h-0 overflow-auto scroll-thin">{children}</div>
+          {/* pb-16 on mobile clears the fixed bottom nav so the last of a page's content isn't
+              hidden behind it; safe-area inset keeps it above a phone's home indicator. */}
+          <div className="flex-1 min-h-0 overflow-auto scroll-thin pb-16 md:pb-0 [padding-bottom:calc(4rem+env(safe-area-inset-bottom))] md:[padding-bottom:0]">{children}</div>
         </PageActionsContext.Provider>
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 [padding-bottom:env(safe-area-inset-bottom)]">
         <div className="grid grid-cols-5">
           {mobileQuickNav.map(({ to, label, icon: Icon }) => (
             <NavLink

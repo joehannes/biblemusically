@@ -29,8 +29,11 @@ impl AppState {
         // Load .env from the crate root so dev overrides work out of the box.
         let _ = dotenvy::dotenv();
 
+        // The app runs ONE MongoDB: the bundled `mongod` sidecar, which lib.rs starts on 27018 and
+        // exports as MONGO_URL before this runs. The fallback matches that port (not the stock
+        // 27017) so there's no stray reference implying a separate/system Mongo — there isn't one.
         let mongo_url = std::env::var("MONGO_URL")
-            .unwrap_or_else(|_| "mongodb://localhost:27017".into());
+            .unwrap_or_else(|_| "mongodb://localhost:27018".into());
         let db_name = std::env::var("DB_NAME")
             .unwrap_or_else(|_| "studio".into());
 

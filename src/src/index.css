@@ -39,6 +39,11 @@ code, .mono { font-family: var(--font-mono); }
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
+    --sidebar: 222 20% 12%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-border: 222 15% 22%;
+    --sidebar-accent: 0 0% 98%;
+    --sidebar-accent-foreground: 222 20% 12%;
     --radius: 0.5rem;
   }
 
@@ -63,6 +68,11 @@ code, .mono { font-family: var(--font-mono); }
     --border: 222 10% 18%;
     --input: 222 10% 18%;
     --ring: 38 92% 55%;
+    --sidebar: 250 45% 6%;
+    --sidebar-foreground: 250 25% 90%;
+    --sidebar-border: 250 30% 16%;
+    --sidebar-accent: 38 92% 55%;
+    --sidebar-accent-foreground: 222 14% 7%;
     color-scheme: dark;
   }
 
@@ -87,6 +97,11 @@ code, .mono { font-family: var(--font-mono); }
     --border: 230 20% 20%;
     --input: 230 20% 20%;
     --ring: 175 80% 55%;
+    --sidebar: 280 45% 8%;
+    --sidebar-foreground: 280 22% 92%;
+    --sidebar-border: 280 30% 18%;
+    --sidebar-accent: 175 80% 55%;
+    --sidebar-accent-foreground: 230 30% 8%;
     color-scheme: dark;
   }
 
@@ -111,6 +126,11 @@ code, .mono { font-family: var(--font-mono); }
     --border: 38 20% 80%;
     --input: 38 20% 80%;
     --ring: 18 70% 40%;
+    --sidebar: 25 35% 16%;
+    --sidebar-foreground: 38 40% 92%;
+    --sidebar-border: 25 24% 28%;
+    --sidebar-accent: 18 75% 52%;
+    --sidebar-accent-foreground: 38 30% 97%;
     color-scheme: light;
   }
 
@@ -135,6 +155,11 @@ code, .mono { font-family: var(--font-mono); }
     --border: 35 25% 82%;
     --input: 35 25% 82%;
     --ring: 25 75% 55%;
+    --sidebar: 220 34% 18%;
+    --sidebar-foreground: 30 40% 94%;
+    --sidebar-border: 220 24% 30%;
+    --sidebar-accent: 25 80% 56%;
+    --sidebar-accent-foreground: 35 45% 98%;
     color-scheme: light;
   }
 
@@ -159,6 +184,11 @@ code, .mono { font-family: var(--font-mono); }
     --border: 210 20% 85%;
     --input: 210 20% 85%;
     --ring: 200 80% 45%;
+    --sidebar: 215 46% 15%;
+    --sidebar-foreground: 210 40% 94%;
+    --sidebar-border: 215 30% 27%;
+    --sidebar-accent: 200 82% 52%;
+    --sidebar-accent-foreground: 0 0% 100%;
     color-scheme: light;
   }
 
@@ -183,6 +213,11 @@ code, .mono { font-family: var(--font-mono); }
     --border: 260 18% 25%;
     --input: 260 18% 25%;
     --ring: 280 70% 60%;
+    --sidebar: 200 45% 9%;
+    --sidebar-foreground: 200 22% 90%;
+    --sidebar-border: 200 30% 18%;
+    --sidebar-accent: 280 70% 60%;
+    --sidebar-accent-foreground: 260 25% 12%;
     color-scheme: dark;
   }
 
@@ -207,8 +242,141 @@ code, .mono { font-family: var(--font-mono); }
     --border: 240 20% 18%;
     --input: 240 20% 18%;
     --ring: 210 75% 55%;
+    --sidebar: 196 60% 8%;
+    --sidebar-foreground: 196 22% 88%;
+    --sidebar-border: 196 35% 16%;
+    --sidebar-accent: 210 75% 55%;
+    --sidebar-accent-foreground: 240 35% 6%;
     color-scheme: dark;
   }
+
+  /* Forest: deep evergreen + warm gold accent (dark) */
+  html[data-theme="forest"] {
+    --background: 160 22% 7%;
+    --foreground: 90 20% 92%;
+    --card: 160 20% 10%;
+    --card-foreground: 90 20% 92%;
+    --popover: 160 20% 9%;
+    --popover-foreground: 90 20% 92%;
+    --primary: 45 85% 58%;
+    --primary-foreground: 160 22% 7%;
+    --secondary: 160 16% 15%;
+    --secondary-foreground: 90 20% 92%;
+    --muted: 160 16% 15%;
+    --muted-foreground: 150 12% 62%;
+    --accent: 45 85% 58%;
+    --accent-foreground: 160 22% 7%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 160 14% 18%;
+    --input: 160 14% 18%;
+    --ring: 45 85% 58%;
+    --sidebar: 20 40% 8%;
+    --sidebar-foreground: 40 25% 90%;
+    --sidebar-border: 20 28% 18%;
+    --sidebar-accent: 45 85% 58%;
+    --sidebar-accent-foreground: 160 22% 7%;
+    color-scheme: dark;
+  }
+
+  /* Rosewood: warm plum-black + rose accent, teal rail (dark) */
+  html[data-theme="rosewood"] {
+    --background: 345 22% 8%;
+    --foreground: 350 18% 92%;
+    --card: 345 20% 11%;
+    --card-foreground: 350 18% 92%;
+    --popover: 345 20% 10%;
+    --popover-foreground: 350 18% 92%;
+    --primary: 345 80% 62%;
+    --primary-foreground: 345 22% 8%;
+    --secondary: 345 16% 16%;
+    --secondary-foreground: 350 18% 92%;
+    --muted: 345 16% 16%;
+    --muted-foreground: 345 12% 64%;
+    --accent: 345 80% 62%;
+    --accent-foreground: 345 22% 8%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 345 14% 20%;
+    --input: 345 14% 20%;
+    --ring: 345 80% 62%;
+    --sidebar: 175 45% 8%;
+    --sidebar-foreground: 175 20% 90%;
+    --sidebar-border: 175 30% 17%;
+    --sidebar-accent: 345 80% 62%;
+    --sidebar-accent-foreground: 345 22% 8%;
+    color-scheme: dark;
+  }
+
+  /* Sandstone: warm desert light + deep teal accent */
+  html[data-theme="sandstone"] {
+    --background: 40 44% 94%;
+    --foreground: 30 30% 16%;
+    --card: 42 50% 97%;
+    --card-foreground: 30 30% 16%;
+    --popover: 42 50% 97%;
+    --popover-foreground: 30 30% 16%;
+    --primary: 190 70% 36%;
+    --primary-foreground: 42 50% 98%;
+    --secondary: 40 30% 88%;
+    --secondary-foreground: 30 30% 16%;
+    --muted: 40 30% 88%;
+    --muted-foreground: 35 18% 42%;
+    --accent: 190 70% 36%;
+    --accent-foreground: 42 50% 98%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 24% 80%;
+    --input: 40 24% 80%;
+    --ring: 190 70% 36%;
+    --sidebar: 200 45% 15%;
+    --sidebar-foreground: 40 30% 93%;
+    --sidebar-border: 200 30% 27%;
+    --sidebar-accent: 190 75% 50%;
+    --sidebar-accent-foreground: 200 45% 12%;
+    color-scheme: light;
+  }
+
+  /* Arctic: cool bright white-blue + indigo accent */
+  html[data-theme="arctic"] {
+    --background: 205 45% 97%;
+    --foreground: 222 40% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 40% 16%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 40% 16%;
+    --primary: 245 70% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 35% 91%;
+    --secondary-foreground: 222 40% 16%;
+    --muted: 210 35% 91%;
+    --muted-foreground: 218 20% 44%;
+    --accent: 245 70% 56%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 28% 84%;
+    --input: 210 28% 84%;
+    --ring: 245 70% 56%;
+    --sidebar: 235 50% 14%;
+    --sidebar-foreground: 210 40% 94%;
+    --sidebar-border: 235 30% 26%;
+    --sidebar-accent: 245 80% 66%;
+    --sidebar-accent-foreground: 235 50% 12%;
+    color-scheme: light;
+  }
+}
+
+/* ── Typography polish ──────────────────────────────────────────────────────
+   Spacious, confident type so the eye lands on the next action without hunting:
+   tighter tracking + heavier weight on headings, comfortable body line-height. */
+@layer base {
+  h1, h2, h3 { letter-spacing: -0.02em; }
+  h1 { font-weight: 700; line-height: 1.1; }
+  h2 { font-weight: 650; line-height: 1.2; }
+  h3 { font-weight: 600; }
+  p { line-height: 1.65; }
+  .text-mono, .text-\[10px\], .text-\[11px\] { letter-spacing: 0.01em; }
 }
 
 @layer base {

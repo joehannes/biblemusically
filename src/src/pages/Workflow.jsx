@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
 import { stopAllStarted } from "../lib/serverLifecycle";
+import { autoStartKaggleServer, getKaggleState } from "../lib/kaggleServerPipeline";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -173,6 +174,34 @@ export default function Workflow() {
     await runStage(stage);
   };
 
+  // Kaggle GPU engines the app can start on demand (Suno/Midjourney are browser flows, not servers).
+  const KAGGLE_ENGINES = { music: ["heartmula", "acestep"], images: ["comfyui", "flux"] };
+
+  // Auto-start the server a stage needs, so a full run is hands-off: start before, stop after (the
+  // `finally` below). Idempotent — autoStartKaggleServer skips straight to a health check if the
+  // server is already live. Returns false only if it ended in an error state, so the caller can
+  // surface a clear message instead of the stage failing cryptically against a dead URL.
+  const ensureServerForStage = async (stage) => {
+    const engine = stage.id === "music" ? engines?.music_engine
+                 : stage.id === "images" ? engines?.image_engine : null;
+    if (!engine || !(KAGGLE_ENGINES[stage.id] || []).includes(engine)) return true; // nothing to start
+    const st = getKaggleState(engine);
+    if (st?.status === "ready") return true; // already up
+    pushLog(`${stage.label}: making sure the ${engine} server is running…`);
+    try {
+      await autoStartKaggleServer(engine);
+    } catch (e) {
+      pushLog(`${stage.label}: could not start ${engine} (${e}).`, "error");
+      return false;
+    }
+    const after = getKaggleState(engine);
+    if (after?.status === "error") {
+      pushLog(`${stage.label}: ${engine} server didn't come up — ${after.detail || "see Settings"}.`, "error");
+      return false;
+    }
+    return true;
+  };
+
   const runFullPipeline = async () => {
     if (runningStageId || runningAll) return;
     setRunningAll(true);
@@ -187,6 +216,12 @@ export default function Workflow() {
           setStage(stage.id, { status: "done", note: "nothing pending" });
           pushLog(`${stage.label}: nothing pending, skipping.`);
           continue;
+        }
+        // Bring the stage's GPU server up first (no-op for browser engines / already-live servers).
+        const serverOk = await ensureServerForStage(stage);
+        if (!serverOk && stopOnError) {
+          pushLog("Full pipeline stopped — a required server didn't start.", "error");
+          break;
         }
         const ok = await runStage(stage);
         if (!ok && stopOnError) {
