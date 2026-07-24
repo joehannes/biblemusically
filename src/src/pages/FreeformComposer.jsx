@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
 import { usePageActions } from "../lib/pageActions";
@@ -10,7 +11,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Switch } from "../components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Sparkles, Mic, MicOff, Plus, Trash2, Wand2, Import, Globe2, Palette, Music2, Image as ImageIcon } from "lucide-react";
+import { Sparkles, Mic, MicOff, Plus, Trash2, Wand2, Import, Globe2, Palette, Music2, Image as ImageIcon, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 // Web Speech API — supported in Chromium (which Tauri's webview uses on Linux/Windows).
@@ -29,6 +30,7 @@ const DEFAULT_TARGETS = [
 ];
 
 export default function FreeformComposer() {
+  const nav = useNavigate();
   const { activeProjectId, projects, selectProject, refreshSongs } = useStudio();
 
   const [topic, setTopic] = useState("");
@@ -110,6 +112,31 @@ export default function FreeformComposer() {
     }
   };
 
+  // Hand this freeform material to the AI Composer as a *source*, the same way Bible Sources does,
+  // so non-scripture projects can drive the composer's section/lyric workflow instead of only
+  // importing finished songs.
+  const sendToComposer = () => {
+    const body = items.length
+      ? items.map((it) => {
+          const lyr = typeof it.lyrics === "string" ? it.lyrics : "";
+          return `## ${it.title || "Untitled"}${it.language ? ` (${it.language})` : ""}\n${lyr}`.trim();
+        }).join("\n\n")
+      : "";
+    const text = [
+      topic.trim() && `Topic: ${topic.trim()}`,
+      moodDriver.trim() && `Mood: ${moodDriver.trim()}`,
+      body,
+    ].filter(Boolean).join("\n\n");
+    if (!text.trim()) return toast.error("Describe a topic (or generate songs) first.");
+    localStorage.setItem("studio:composer-source", JSON.stringify({
+      reference: topic.trim() ? `Freeform — ${topic.trim().slice(0, 60)}` : "Freeform material",
+      text,
+      language: targets[0]?.language || "English",
+    }));
+    toast.success("Sent to the AI Composer as a source.");
+    nav("/composer");
+  };
+
   const importAll = async () => {
     if (!activeProjectId) return toast.error("Select a project first.");
     if (!items.length) return toast.error("Generate songs first.");
@@ -128,12 +155,16 @@ export default function FreeformComposer() {
       <Button size="sm" onClick={generate} disabled={busy} data-testid="freeform-generate">
         <Wand2 className="w-4 h-4 mr-2" />{busy ? "Composing…" : "Compose songs"}
       </Button>
+      <Button size="sm" variant="secondary" onClick={sendToComposer} data-testid="freeform-to-composer"
+        title="Use this material as the AI Composer's source, like a Bible chapter">
+        <ArrowRight className="w-4 h-4 mr-2" />To AI Composer
+      </Button>
       <Button size="sm" variant="secondary" onClick={importAll} disabled={!items.length} data-testid="freeform-import">
         <Import className="w-4 h-4 mr-2" />Import {items.length ? `(${items.length})` : ""}
       </Button>
     </>
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [busy, items.length]));
+  ), [busy, items.length, topic, moodDriver, targets]));
 
   return (
     <div className="p-6 max-w-6xl mx-auto">

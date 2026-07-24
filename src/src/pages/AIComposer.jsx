@@ -306,14 +306,19 @@ export default function AIComposer() {
         if (draft.chapterBook) setChapterBook(draft.chapterBook);
         if (draft.chapterNum) setChapterNum(draft.chapterNum);
       }
-      const raw = localStorage.getItem("studio:bible-selection");
+      // Source hand-off. `studio:bible-selection` comes from Bible Sources; `studio:composer-source`
+      // is the generic equivalent any upstream page can write (the Freeform Composer uses it), so
+      // non-scripture material can drive the composer exactly like a chapter does.
+      const rawKey = localStorage.getItem("studio:bible-selection") ? "studio:bible-selection" : "studio:composer-source";
+      const raw = localStorage.getItem(rawKey);
       if (raw) {
         try {
           const b = JSON.parse(raw);
           setChapterRef(b.reference); setChapterText(b.text); setChapterLang(b.language || "English");
-          setChapterBook(b.book || "john"); setChapterNum(b.chapter || 1);
+          if (b.book) setChapterBook(b.book);
+          if (b.chapter) setChapterNum(b.chapter);
         } catch {}
-        localStorage.removeItem("studio:bible-selection");
+        localStorage.removeItem(rawKey);
       }
       
       if (savedCfg && Object.keys(savedCfg).length > 1) {
