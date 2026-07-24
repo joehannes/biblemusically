@@ -114,6 +114,7 @@ export const api = {
   getChannelStyle: (channelId) => invokeCommand("get_channel_style", { channelId }),
   setChannelStyle: (channelId, payload) => invokeCommand("set_channel_style", { channelId, payload }),
   mixGenres: (payload) => invokeCommand("mix_genres", { payload }),
+  aiTranslateUi: (strings, language) => invokeCommand("ai_translate_ui", { payload: { strings, language } }),
   listGenrePresets: () => invokeCommand("list_genre_presets"),
   saveGenrePreset: (payload) => invokeCommand("save_genre_preset", { payload }),
   deleteGenrePreset: (id) => invokeCommand("delete_genre_preset", { id }),

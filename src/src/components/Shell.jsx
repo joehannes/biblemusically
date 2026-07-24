@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
+import { UI_LANGUAGES, getUiLanguage, setUiLanguage, subscribeLanguage, initUiLanguage } from "../lib/uiTranslate";
 import { api } from "../lib/api";
 import { getVersion } from "@tauri-apps/api/app";
 // Fallback only, for the very first paint before getVersion() resolves — this file lives
@@ -41,6 +42,8 @@ import {
   X,
   Keyboard,
   Info,
+  Languages,
+  Loader2,
   Check,
   Menu,
   GitBranch,
@@ -340,6 +343,75 @@ function ShortcutHint({ collapsed }) {
   );
 }
 
+// Language picker. Switching translates the rendered interface with the configured free AI
+// provider (see lib/uiTranslate.js) — translations are cached per language, so a repeat switch is
+// instant and costs no AI call.
+function LanguageFab() {
+  const [open, setOpen] = useState(false);
+  const [lang, setLang] = useState(getUiLanguage());
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => subscribeLanguage(setLang), []);
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onClick); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  const pick = async (code) => {
+    setOpen(false);
+    if (code === lang) return;
+    setBusy(true);
+    try {
+      await setUiLanguage(code);
+      if (code !== "en") toast.success("Interface translated.");
+    } catch (e) {
+      toast.error(`Translation failed: ${e}`);
+    } finally { setBusy(false); }
+  };
+
+  const cur = UI_LANGUAGES.find((l) => l.code === lang) || UI_LANGUAGES[0];
+  return (
+    <div className="relative" ref={ref} data-no-i18n>
+      <button
+        data-testid="language-fab"
+        onClick={() => setOpen((o) => !o)}
+        className="p-1.5 rounded hover:bg-muted/30 shrink-0 flex items-center gap-1"
+        title={`Interface language — ${cur.native}`}
+        aria-label="Interface language"
+        disabled={busy}
+      >
+        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />}
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{cur.code}</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 z-40 w-52 max-h-80 overflow-y-auto scroll-thin rounded-lg border border-border bg-card shadow-xl p-1.5">
+          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1.5 pb-1 flex items-center gap-1.5">
+            <Languages className="w-3 h-3" /> Interface language
+          </div>
+          {UI_LANGUAGES.map((l) => (
+            <button
+              key={l.code}
+              onClick={() => pick(l.code)}
+              className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-muted/50 flex items-center justify-between gap-2 ${l.code === lang ? "text-primary font-medium" : ""}`}
+            >
+              <span>{l.native}</span>
+              {l.code === lang && <Check className="w-3.5 h-3.5" />}
+            </button>
+          ))}
+          <div className="text-[10px] text-muted-foreground px-1.5 pt-1.5 leading-snug border-t border-border/50 mt-1">
+            Translated on the fly by your AI provider. Your own content (lyrics, titles, text you typed) is left untouched.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Breadcrumb dropdown showing ALL nav options with group separators ──
 function BreadcrumbDropdown({ currentPath }) {
   const [open, setOpen] = useState(false);
@@ -419,6 +491,8 @@ function BreadcrumbDropdown({ currentPath }) {
 // ── Main Shell component ──
 export default function Shell({ children }) {
   const { theme, setTheme, activeProjectId, projects, jobs } = useStudio();
+  // Re-apply a previously chosen interface language (cached strings paint with no AI call).
+  useEffect(() => { initUiLanguage(); }, []);
   const project = projects.find((p) => p.id === activeProjectId);
   const running = jobs.filter(
     (j) => j.status === "running" || j.status === "queued",
@@ -924,7 +998,8 @@ export default function Shell({ children }) {
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Theme picker (moved here from the sidebar) */}
-            <ThemeFab theme={theme} setTheme={setTheme} />
+            <LanguageFab />
+              <ThemeFab theme={theme} setTheme={setTheme} />
 
             {/* Page-wide controls the active page published via usePageActions() — its final
                 Generate/Render/Publish button and the like, so it's reachable without scrolling

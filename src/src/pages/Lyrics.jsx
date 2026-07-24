@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
@@ -6,13 +6,43 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
-import { Upload, FileJson, CheckCheck, Trash2, Copy, Download, X, Mic2 } from "lucide-react";
+import { Upload, FileJson, CheckCheck, Trash2, Copy, Download, X, Mic2, PenLine } from "lucide-react";
 import { toast } from "sonner";
+import SectionAnnotator from "../components/SectionAnnotator";
 import { getStepForPath } from "../lib/pageSteps";
 
 export default function Lyrics() {
   const nav = useNavigate();
   const { activeProjectId, refreshSongs, songs } = useStudio();
+  // Section-annotation editor state (which song, and which engine's dialect to author for).
+  const [annotSongId, setAnnotSongId] = useState("");
+  const [annotEngine, setAnnotEngine] = useState("heartmula");
+  const [annotSaving, setAnnotSaving] = useState(false);
+  const annotSong = songs.find((s) => s.id === annotSongId) || null;
+
+  // Load the saved engine preference so the editor defaults to the engine actually in use.
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await api.getSettings();
+        if (s?.music_engine) setAnnotEngine(s.music_engine);
+      } catch { /* keep the default */ }
+    })();
+  }, []);
+
+  const saveAnnotations = async ({ lyrics, annotations }) => {
+    if (!annotSongId) return;
+    setAnnotSaving(true);
+    try {
+      await api.updateSong(annotSongId, { lyrics, annotations });
+      toast.success("Annotations saved.");
+      refreshSongs && refreshSongs();
+    } catch (e) {
+      toast.error(`Save failed: ${e}`);
+    } finally {
+      setAnnotSaving(false);
+    }
+  };
   const [items, setItems] = useState([]);
   const [raw, setRaw] = useState("");
   const fileRef = useRef();
@@ -173,6 +203,48 @@ export default function Lyrics() {
           </div>
         </Card>
       </div>
+
+      {/* ── Per-section annotation editor ─────────────────────────────
+          Authoring annotations by hand meant editing a JSON blob. This edits the same two fields
+          (lyrics + annotations) structurally, per section, with hints for the selected engine. */}
+      {songs.length > 0 && (
+        <Card className="mt-8 p-5">
+          <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <PenLine className="w-4 h-4 text-primary" />
+              <span className="font-semibold">Annotate sections</span>
+              <span className="text-xs text-muted-foreground">musical structure + per-section imagery</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={annotSongId}
+                onChange={(e) => setAnnotSongId(e.target.value)}
+                className="bg-background border border-border rounded px-2 py-1.5 text-sm max-w-[16rem]"
+                data-testid="annotator-song-select"
+              >
+                <option value="">Pick a song…</option>
+                {songs.map((s) => <option key={s.id} value={s.id}>{s.title || "(untitled)"}</option>)}
+              </select>
+              <select
+                value={annotEngine}
+                onChange={(e) => setAnnotEngine(e.target.value)}
+                className="bg-background border border-border rounded px-2 py-1.5 text-sm"
+                data-testid="annotator-engine-select"
+                title="Each engine reads section structure differently"
+              >
+                <option value="heartmula">HeartMuLa</option>
+                <option value="acestep">ACE-Step</option>
+                <option value="suno">Suno</option>
+              </select>
+            </div>
+          </div>
+          {annotSong ? (
+            <SectionAnnotator song={annotSong} engine={annotEngine} saving={annotSaving} onSave={saveAnnotations} />
+          ) : (
+            <div className="text-sm text-muted-foreground">Pick a song above to edit its sections, structure tags and per-section image ideas.</div>
+          )}
+        </Card>
+      )}
 
       {songs.length > 0 && (
         <Card className="mt-8 p-5">

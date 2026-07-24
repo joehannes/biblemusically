@@ -901,3 +901,59 @@ pub async fn compose_freeform(state: State<'_, AppState>, payload: FreeformCompo
         None => Ok(serde_json::json!({ "error": "Empty AI response", "items": [] })),
     }
 }
+
+// ────────────────────────────────────────────────────────────────
+// UI translation
+// ────────────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct TranslateUiRequest {
+    /// Distinct UI strings to translate (labels, buttons, hints).
+    pub strings: Vec<String>,
+    /// Target language name, e.g. "Spanish", "Deutsch".
+    pub language: String,
+}
+
+/// Translate a batch of interface strings, returning a `{ original: translated }` map.
+///
+/// Drives the runtime GUI translation: the frontend collects the visible interface text, sends the
+/// distinct strings here, and swaps them in place. Batches are cached client-side, so this is
+/// called once per language per unseen batch rather than on every render.
+///
+/// Returns the ORIGINAL string for anything the model omits or mangles, so a partial response
+/// degrades to untranslated text instead of blanking the interface.
+#[tauri::command]
+pub async fn ai_translate_ui(state: State<'_, AppState>, payload: TranslateUiRequest) -> Res<Value> {
+    let lang = payload.language.trim();
+    if lang.is_empty() { return Err("No target language given.".into()); }
+    let strings: Vec<String> = payload.strings.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if strings.is_empty() {
+        return Ok(serde_json::json!({ "translations": {} }));
+    }
+
+    let system = format!(
+        "You localise software interface text into {lang}.\n\
+         You receive a JSON array of UI strings. Return ONLY a JSON object mapping EACH original \
+         string EXACTLY as given to its {lang} translation — no extra keys, no commentary, no fences.\n\
+         Rules: keep it short enough for buttons and labels; preserve capitalisation style, \
+         surrounding punctuation and any leading/trailing spaces; do NOT translate proper nouns, \
+         brand or product names (Kaggle, YouTube, Suno, ComfyUI, HeartMuLa, ACE-Step, FLUX, \
+         Midjourney, OpenRouter, Gemini, Google, GPU, API, JSON, OAuth, URL), file names, code, \
+         numbers or units. If a string should stay as-is, map it to itself."
+    );
+    let user = serde_json::to_string(&strings).unwrap_or_else(|_| "[]".into());
+
+    let (content, model) = provider_text(&state, &system, &user, 0.1, true).await?;
+    let parsed = extract_json_value(&content).unwrap_or(Value::Null);
+
+    // Rebuild the map defensively: every requested string gets an entry, falling back to itself.
+    let mut out = serde_json::Map::new();
+    for s in &strings {
+        let t = parsed.get(s).and_then(|v| v.as_str()).unwrap_or(s.as_str());
+        out.insert(s.clone(), Value::String(t.to_string()));
+    }
+    Ok(serde_json::json!({ "translations": Value::Object(out), "model": model }))
+}
