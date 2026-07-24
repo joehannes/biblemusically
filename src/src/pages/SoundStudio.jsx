@@ -135,6 +135,40 @@ export default function SoundStudio() {
     toast.success(`Loaded "${p.name}" — edit or apply.`);
   };
 
+  // ── Multi-select presets + intelligent fusion ──────────────────────────
+  const [selPresets, setSelPresets] = useState({}); // preset id -> preset
+  const togglePreset = (p) =>
+    setSelPresets((prev) => {
+      const n = { ...prev };
+      if (n[p.id]) delete n[p.id]; else n[p.id] = p;
+      return n;
+    });
+  const selPresetList = () => Object.values(selPresets);
+
+  // Fuse several presets into one coherent style via the AI mixer (reconciles tempo,
+  // instrumentation and mood across, say, "Klezmer Celebration" + "Melodic Progressive House").
+  const mixSelectedPresets = async () => {
+    const list = selPresetList();
+    if (!list.length) return toast.error("Select one or more presets to fuse.");
+    const genres = [...new Set(list.flatMap((p) => p.genres || []))];
+    const seed = genres.length ? genres : list.map((p) => p.name);
+    setMixing(true);
+    try {
+      const r = await api.mixGenres({ genres: seed, mood, ai: true });
+      if (r.error) return toast.error(r.error);
+      setMixed(r.styles || "");
+      toast.success(`Fused ${list.length} preset(s) via ${r.model || "AI"}.`);
+    } catch (e) { console.error(e); toast.error("Fusion failed."); }
+    finally { setMixing(false); }
+  };
+  // Concatenate the selected presets' styles verbatim (no AI) — for when you want the exact tags.
+  const loadSelectedPresets = () => {
+    const list = selPresetList();
+    if (!list.length) return toast.error("Select preset(s) first.");
+    setMixed(list.map((p) => p.styles).filter(Boolean).join(", "));
+    toast.success(`Loaded ${list.length} preset(s) as-is — edit or apply.`);
+  };
+
   const removePreset = async (p) => {
     if (p.builtin || String(p.id).startsWith("builtin-")) return toast.error("Built-in presets can't be deleted.");
     try { await api.deleteGenrePreset(p.id); loadPresets(); } catch (e) { toast.error("Delete failed."); }
@@ -223,25 +257,41 @@ export default function SoundStudio() {
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-2"><Layers className="w-4 h-4 text-primary" /><span className="text-sm font-semibold">Genre presets</span></div>
-            <div className="space-y-3 max-h-[160px] overflow-auto pr-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2"><Layers className="w-4 h-4 text-primary" /><span className="text-sm font-semibold">Genre presets</span></div>
+              <Badge variant="secondary">{selPresetList().length} selected</Badge>
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-2">Click to select multiple, then fuse them into one coherent style — or double-click a single one to load it as-is.</p>
+            <div className="space-y-3 max-h-[200px] overflow-auto pr-1">
               {packs.map((pack) => (
                 <div key={pack}>
                   <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{pack}</div>
                   <div className="flex flex-wrap gap-1.5">
-                    {presets.filter((p) => (p.pack || "Custom") === pack).map((p) => (
-                      <span key={p.id} className="inline-flex items-center gap-1 text-xs rounded-md border border-border/60 pl-2 pr-1 py-1">
-                        <button onClick={() => loadPreset(p)} title={p.styles}>{p.name}</button>
-                        {!p.builtin && !String(p.id).startsWith("builtin-") && (
-                          <button onClick={() => removePreset(p)} className="text-muted-foreground hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
-                        )}
-                      </span>
-                    ))}
+                    {presets.filter((p) => (p.pack || "Custom") === pack).map((p) => {
+                      const on = !!selPresets[p.id];
+                      return (
+                        <span key={p.id} className={`inline-flex items-center gap-1 text-xs rounded-md border pl-2 pr-1 py-1 transition-colors ${on ? "bg-primary/15 border-primary" : "border-border/60"}`}>
+                          <button onClick={() => togglePreset(p)} onDoubleClick={() => loadPreset(p)} title={p.styles}>
+                            {on && <Check className="w-3 h-3 mr-1 inline" />}{p.name}
+                          </button>
+                          {!p.builtin && !String(p.id).startsWith("builtin-") && (
+                            <button onClick={() => removePreset(p)} className="text-muted-foreground hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+                          )}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
               {!presets.length && <p className="text-xs text-muted-foreground">No presets yet.</p>}
             </div>
+            {selPresetList().length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2.5">
+                <Button size="sm" onClick={mixSelectedPresets} disabled={mixing}><Wand2 className="w-3 h-3 mr-1.5" />{mixing ? "Fusing…" : `Fuse ${selPresetList().length} intelligently`}</Button>
+                <Button size="sm" variant="secondary" onClick={loadSelectedPresets}>Load as-is</Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelPresets({})}>Clear</Button>
+              </div>
+            )}
           </div>
 
           <div className="pt-3 border-t border-border/50">

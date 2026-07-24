@@ -97,6 +97,7 @@ export const api = {
   testComfy: () => invokeCommand("test_comfy"),
   openKaggleNotebook: (engine) => invokeCommand("open_kaggle_notebook", { engine }),
   openKaggleTokenPage: () => invokeCommand("open_kaggle_token_page"),
+  kaggleNotebookUrl: (engine) => invokeCommand("kaggle_notebook_url", { engine }),
   openKaggleLogin: () => invokeCommand("open_kaggle_login"),
   saveKaggleToken: (tokenJson) => invokeCommand("save_kaggle_token", { tokenJson }),
   pickDirectory: (title) => invokeCommand("pick_directory", { title }),
@@ -233,12 +234,12 @@ export const api = {
   injectChannelHandle: (handle) => invokeCommand("inject_channel_handle", { handle }),
 
   // ============ Channel Settings & AI Translation ============
-  getGlobalChannelSettings: (projectId) => invokeCommand("get_global_channel_settings", { project_id: projectId }),
-  saveGlobalChannelSettings: (projectId, settings) => invokeCommand("save_global_channel_settings", { project_id: projectId, settings }),
-  translateAndApplySettings: (projectId, channelIds) => invokeCommand("translate_and_apply_settings", { project_id: projectId, channel_ids: channelIds }),
-  getChannelSettings: (channelId) => invokeCommand("get_channel_settings", { channel_id: channelId }),
-  updateChannelOverrides: (channelId, overrides) => invokeCommand("update_channel_overrides", { channel_id: channelId, overrides }),
-  syncChannelToYouTube: (channelId) => invokeCommand("sync_channel_to_youtube", { channel_id: channelId }),
+  getGlobalChannelSettings: (projectId) => invokeCommand("get_global_channel_settings", { projectId }),
+  saveGlobalChannelSettings: (projectId, settings) => invokeCommand("save_global_channel_settings", { projectId, settings }),
+  translateAndApplySettings: (projectId, channelIds) => invokeCommand("translate_and_apply_settings", { projectId, channelIds }),
+  getChannelSettings: (channelId) => invokeCommand("get_channel_settings", { channelId }),
+  updateChannelOverrides: (channelId, overrides) => invokeCommand("update_channel_overrides", { channelId, overrides }),
+  syncChannelToYouTube: (channelId) => invokeCommand("sync_channel_to_youtube", { channelId }),
   // kind: "musical" | "visual" — culturally adapts a style descriptor for one channel's
   // language/region via the free AI. Preview-only: never writes anything itself.
   aiFlavorStyle: (channelId, kind, baseText) =>

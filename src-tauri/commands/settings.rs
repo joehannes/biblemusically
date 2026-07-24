@@ -719,6 +719,14 @@ pub async fn open_kaggle_notebook(engine: String) -> Res<Value> {
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
 
+/// Return an engine's Kaggle notebook URL WITHOUT opening it, so the UI can load it in the
+/// in-app browser instead of launching an external browser window.
+#[tauri::command]
+pub async fn kaggle_notebook_url(engine: String) -> Res<Value> {
+    let (slug, _) = kaggle_kernel_for(&engine).ok_or_else(|| format!("Unknown engine '{}'.", engine))?;
+    Ok(serde_json::json!({ "ok": true, "url": format!("https://www.kaggle.com/code/{}", slug) }))
+}
+
 #[tauri::command]
 pub async fn open_kaggle_token_page() -> Res<Value> {
     // The "Create New API Token" button lives on the account settings page.

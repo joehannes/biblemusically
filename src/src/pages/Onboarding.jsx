@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { api } from "../lib/api";
 import { autoStartKaggleServer } from "../lib/kaggleServerPipeline";
 import { Button } from "../components/ui/button";
@@ -8,7 +8,7 @@ import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 import {
   Sparkles, Bot, KeyRound, Cpu, FolderOpen, Youtube, CheckCircle2, ExternalLink,
-  ArrowRight, ArrowLeft, Rocket, Loader2, Music2, Image as Img,
+  ArrowRight, ArrowLeft, Rocket, Loader2, Music2, Image as Img, Upload,
 } from "lucide-react";
 
 // First-run guided setup. Walks a new user through the few things the app genuinely needs before
@@ -43,6 +43,23 @@ export default function Onboarding({ onDone }) {
   const [imageEngine, setImageEngine] = useState("comfyui");
   const [projectDir, setProjectDir] = useState("");
   const [autostart, setAutostart] = useState(true);
+  const tokenFileRef = useRef(null);
+
+  // Accept an uploaded kaggle.json file: read it, drop it into the textarea, and verify straight
+  // away so the user doesn't have to open + copy + paste the file's contents by hand.
+  const onTokenFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setTokenJson(text);
+      await verifyToken(text);
+    } catch (err) {
+      setKaggleState({ verifying: false, verified: false, username: "", error: `Couldn't read that file: ${err}` });
+    } finally {
+      e.target.value = ""; // allow re-selecting the same file
+    }
+  };
 
   const persist = async (patch) => {
     try { await api.saveSettings(patch); } catch (e) { console.warn("onboarding save failed", e); }
@@ -61,10 +78,11 @@ export default function Onboarding({ onDone }) {
     next();
   };
 
-  const verifyToken = async () => {
+  const verifyToken = async (tokenOverride) => {
+    const token = typeof tokenOverride === "string" ? tokenOverride : tokenJson;
     setKaggleState((k) => ({ ...k, verifying: true, error: "" }));
     try {
-      const r = await api.saveKaggleToken(tokenJson);
+      const r = await api.saveKaggleToken(token);
       setKaggleState({ verifying: false, verified: r.verified, username: r.username || "", error: r.verified ? "" : "Saved, but Kaggle didn't accept it — double-check you pasted the whole kaggle.json." });
       if (r.verified) toast.success(`Kaggle connected as ${r.username}`);
     } catch (e) {
@@ -213,11 +231,17 @@ export default function Onboarding({ onDone }) {
               <li className="flex gap-3 items-start">
                 <span className="text-primary font-mono">3</span>
                 <div className="flex-1 space-y-1.5">
-                  <div>Paste the <code>kaggle.json</code> contents here:</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span>Upload or paste your <code>kaggle.json</code>:</span>
+                    <input ref={tokenFileRef} type="file" accept=".json,application/json" onChange={onTokenFile} className="hidden" />
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => tokenFileRef.current?.click()}>
+                      <Upload className="w-3 h-3 mr-1.5" />Upload kaggle.json
+                    </Button>
+                  </div>
                   <Textarea value={tokenJson} onChange={(e) => setTokenJson(e.target.value)} rows={3}
                     placeholder='{"username":"…","key":"…"}' className="font-mono text-xs" />
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" className="h-7 text-xs" onClick={verifyToken} disabled={kaggleState.verifying || !tokenJson.trim()}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button size="sm" className="h-7 text-xs" onClick={() => verifyToken()} disabled={kaggleState.verifying || !tokenJson.trim()}>
                       {kaggleState.verifying ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save & verify"}
                     </Button>
                     {kaggleState.verified && <span className="text-xs text-emerald-500 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />Connected as {kaggleState.username}</span>}

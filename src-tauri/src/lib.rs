@@ -331,6 +331,7 @@ pub fn run() {
             commands::open_midjourney_login,
             commands::open_kaggle_notebook,
             commands::open_kaggle_token_page,
+            commands::kaggle_notebook_url,
             commands::open_kaggle_login,
             commands::save_kaggle_token,
             commands::pick_directory,

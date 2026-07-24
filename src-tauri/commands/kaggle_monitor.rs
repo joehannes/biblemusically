@@ -126,6 +126,16 @@ fn detect_error(line: &str) -> Option<(String, Option<String>)> {
     if l.contains("CUDA out of memory") || l.contains("OutOfMemoryError") {
         return Some(("The GPU ran out of memory while loading the model.".into(), Some("oom".into())));
     }
+    // Kaggle accepted the run but handed us a CPU-only container. The app ALWAYS pushes with
+    // enable_gpu=true, so this means Kaggle declined the GPU — almost always an exhausted weekly
+    // quota. Without this the notebook just skips serving and the run ends "successfully", which
+    // surfaced as the useless "the run ended before the server came up".
+    if l.contains("NO GPU ON THIS RUN") {
+        return Some((
+            "Kaggle gave this run no GPU, so the server was not started. Your weekly GPU quota is most likely exhausted.".into(),
+            Some("gpu_denied".into()),
+        ));
+    }
     if let Some(idx) = l.find("Error: ") {
         // A concrete exception line (e.g. "RuntimeError: ...."), not a pip warning.
         let rest = &l[idx..];

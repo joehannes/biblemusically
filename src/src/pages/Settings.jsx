@@ -358,8 +358,16 @@ const SettingsComponent = () => {
   // watching a run, clicking "Stop Session" on a stuck GPU slot, or adding a missing secret like
   // flux's HF_TOKEN — and the system browser, where Google sign-in already works normally, does
   // all of that without hitting the block.
+  // Open the engine's notebook in the IN-APP browser rather than launching an external window
+  // (the external opener was silently failing — the button just flashed). Falls back to the
+  // system browser only if we can't resolve the URL.
   const openKaggleNb = async (engine) => {
     try {
+      const r = await api.kaggleNotebookUrl(engine);
+      if (r?.url) {
+        navigate(`/browser?url=${encodeURIComponent(r.url)}&label=${encodeURIComponent(engine + " notebook")}`);
+        return;
+      }
       await api.openKaggleNotebook(engine);
     } catch (e) {
       toast.error(String(e));

@@ -239,8 +239,17 @@ export default function Browser() {
     if (!stageReady || bootedRef.current) return;
     bootedRef.current = true;
     const siteParam = params.get("site");
+    // `?url=` opens an arbitrary address in-app, so links elsewhere in the UI (e.g. "Open
+    // notebook") can stay inside the app instead of launching an external browser window.
+    const urlParam = params.get("url");
     if (params.get("auto") === "login") return; // the login flow opens its own pages
-    if (siteParam) openPreset(siteParam);
+    if (urlParam) {
+      const label = params.get("label") || (() => {
+        try { return new URL(urlParam).hostname.replace(/^www\./, ""); } catch { return "Page"; }
+      })();
+      addPage(urlParam, { label });
+    }
+    else if (siteParam) openPreset(siteParam);
     else if (pagesRef.current.length) showPage(pagesRef.current[0]);
     else openPreset("youtube");
     // eslint-disable-next-line react-hooks/exhaustive-deps

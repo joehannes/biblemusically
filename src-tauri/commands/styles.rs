@@ -206,19 +206,92 @@ fn builtin_genre_presets() -> Vec<Value> {
         json!({ "id":"builtin-cinematic-uplift", "name":"Cinematic Uplift", "pack":"Cinematic", "builtin":true,
             "genres":["cinematic","orchestral","epic"],
             "styles":"cinematic orchestral, soaring strings, epic brass, big percussion, triumphant build, emotional swell, 90 bpm" }),
+
+        // ── EDM mixes ─────────────────────────────────────────────────────
+        json!({ "id":"builtin-edm-melodic-progressive", "name":"Melodic Progressive House", "pack":"EDM", "builtin":true,
+            "genres":["progressive house","melodic techno","anjunadeep"],
+            "styles":"melodic progressive house, deep rolling bassline, lush pad chords, arpeggiated plucks, euphoric breakdown, warm analog synths, emotional drop, 124 bpm" }),
+        json!({ "id":"builtin-edm-future-bass-trap", "name":"Future Bass × Trap", "pack":"EDM", "builtin":true,
+            "genres":["future bass","trap","edm"],
+            "styles":"future bass, hybrid trap, detuned supersaw chords, pitched vocal chops, 808 sub, snappy hats, big festival drop, 150 bpm" }),
+        json!({ "id":"builtin-edm-techno-dnb", "name":"Techno × Drum'n'Bass", "pack":"EDM", "builtin":true,
+            "genres":["techno","liquid dnb","neurofunk"],
+            "styles":"driving techno intro morphing into liquid drum and bass, rolling reese bass, crisp breakbeats, hypnotic stabs, dark energy, 174 bpm" }),
+        json!({ "id":"builtin-edm-synthwave-house", "name":"Synthwave × House", "pack":"EDM", "builtin":true,
+            "genres":["synthwave","nu-disco","house"],
+            "styles":"synthwave meets nu-disco house, retro analog bass, gated reverb drums, neon arps, saxophone lead, 80s nostalgia, 118 bpm" }),
+
+        // ── Latino mixes ──────────────────────────────────────────────────
+        json!({ "id":"builtin-latino-reggaeton-pop", "name":"Reggaeton Pop", "pack":"Latino", "builtin":true,
+            "genres":["reggaeton","latin pop","dembow"],
+            "styles":"reggaeton, latin pop, dembow rhythm, warm dembow kick, catchy spanish hooks, bright synth plucks, party energy, 95 bpm" }),
+        json!({ "id":"builtin-latino-cumbia-electro", "name":"Electro Cumbia", "pack":"Latino", "builtin":true,
+            "genres":["cumbia","electronica","tropical"],
+            "styles":"electro cumbia, accordion melody, tropical percussion, güira, digital cumbia synths, danceable groove, festive, 100 bpm" }),
+        json!({ "id":"builtin-latino-salsa-jazz", "name":"Salsa × Latin Jazz", "pack":"Latino", "builtin":true,
+            "genres":["salsa","latin jazz","montuno"],
+            "styles":"salsa dura with latin jazz, montuno piano, tight brass section, congas and timbales, walking bass, joyful clave groove, 190 bpm" }),
+        json!({ "id":"builtin-latino-bachata-acoustic", "name":"Acoustic Bachata", "pack":"Latino", "builtin":true,
+            "genres":["bachata","acoustic","bolero"],
+            "styles":"modern bachata, requinto guitar lead, syncopated bongo, romantic bolero feel, tender spanish vocals, warm and intimate, 130 bpm" }),
+
+        // ── US American ───────────────────────────────────────────────────
+        json!({ "id":"builtin-us-country-pop", "name":"Country Pop", "pack":"US American", "builtin":true,
+            "genres":["country","pop","americana"],
+            "styles":"modern country pop, acoustic guitar, slide guitar licks, foot-stomp percussion, heartfelt storytelling vocals, anthemic chorus, 100 bpm" }),
+        json!({ "id":"builtin-us-gospel-soul", "name":"Gospel Soul", "pack":"US American", "builtin":true,
+            "genres":["gospel","soul","r&b"],
+            "styles":"gospel soul, hammond organ, powerful choir stacks, warm electric piano, hand claps, uplifting call-and-response, 76 bpm" }),
+        json!({ "id":"builtin-us-hiphop-boombap", "name":"Boom-Bap Hip-Hop", "pack":"US American", "builtin":true,
+            "genres":["hip-hop","boom bap","soul sample"],
+            "styles":"boom-bap hip-hop, dusty soul sample, punchy kick and snare, vinyl crackle, jazzy keys, head-nod groove, 90 bpm" }),
+
+        // ── European ──────────────────────────────────────────────────────
+        json!({ "id":"builtin-eu-celtic-folk", "name":"Celtic Folk", "pack":"European", "builtin":true,
+            "genres":["celtic","folk","irish"],
+            "styles":"celtic folk, tin whistle, fiddle, bodhrán drum, acoustic guitar, uilleann pipes, rousing jig energy, 110 bpm" }),
+        json!({ "id":"builtin-eu-italo-disco", "name":"Italo Disco", "pack":"European", "builtin":true,
+            "genres":["italo disco","synth-pop","hi-nrg"],
+            "styles":"italo disco, pulsing octave bass, glittering arpeggios, gated claps, dreamy 80s synth leads, romantic european flair, 122 bpm" }),
+        json!({ "id":"builtin-eu-balkan-brass", "name":"Balkan Brass Fusion", "pack":"European", "builtin":true,
+            "genres":["balkan brass","gypsy","electro"],
+            "styles":"balkan brass band fused with electro, frantic tuba bassline, blazing trumpets, odd-meter groove, hand percussion, wild celebration, 140 bpm" }),
+
+        // ── Jewish / Ancient Jewish ───────────────────────────────────────
+        json!({ "id":"builtin-jewish-klezmer", "name":"Klezmer Celebration", "pack":"Jewish", "builtin":true,
+            "genres":["klezmer","folk","freylekh"],
+            "styles":"klezmer, soaring clarinet, freylekh dance groove, violin, accordion, tsimbl hammered dulcimer, festive freylekhs, minor-key joy, 128 bpm" }),
+        json!({ "id":"builtin-jewish-ancient-temple", "name":"Ancient Temple Chant", "pack":"Ancient Jewish", "builtin":true,
+            "genres":["ancient","middle eastern","sacred"],
+            "styles":"ancient hebrew temple music, oud, ney flute, frame drum, kinnor lyre, shofar calls, modal middle-eastern melody, reverent and timeless, 70 bpm" }),
+        json!({ "id":"builtin-jewish-sephardic", "name":"Sephardic Ladino", "pack":"Ancient Jewish", "builtin":true,
+            "genres":["sephardic","ladino","mediterranean"],
+            "styles":"sephardic ladino song, spanish-arabic guitar, oud, hand percussion, mediterranean modal vocals, ornamented melody, warm and ancient, 96 bpm" }),
+
+        // ── Messianic Jewish ──────────────────────────────────────────────
+        json!({ "id":"builtin-messianic-worship", "name":"Messianic Worship", "pack":"Messianic Jewish", "builtin":true,
+            "genres":["messianic","worship","hebraic"],
+            "styles":"messianic worship, hebraic melody, acoustic guitar, violin, davidic dance groove, hebrew and english praise vocals, joyful and reverent, 100 bpm" }),
+        json!({ "id":"builtin-messianic-davidic-dance", "name":"Davidic Dance", "pack":"Messianic Jewish", "builtin":true,
+            "genres":["messianic","klezmer","dance"],
+            "styles":"messianic davidic dance, upbeat hebraic klezmer groove, clarinet and violin, hand claps, tambourine, celebratory circle-dance energy, accelerating tempo, 132 bpm" }),
+        json!({ "id":"builtin-messianic-ballad", "name":"Messianic Ballad", "pack":"Messianic Jewish", "builtin":true,
+            "genres":["messianic","worship ballad","cinematic"],
+            "styles":"messianic worship ballad, gentle piano, strings, hebraic modal melody, intimate prayer vocals, building cinematic swell, tender and holy, 68 bpm" }),
     ]
 }
 
 #[tauri::command]
 pub async fn list_genre_presets(state: State<'_, AppState>) -> Res<Value> {
     let coll = state.db.collection::<Document>("genre_presets");
-    if coll.count_documents(doc! {}).await.map_err(e)? == 0 {
-        for p in builtin_genre_presets() {
-            if let Ok(mut d) = bson::to_document(&p) {
-                let id = p["id"].as_str().unwrap_or("").to_string();
-                d.insert("_id", &id);
-                let _ = coll.insert_one(d).await;
-            }
+    // Upsert the builtins every load (not only when the collection is empty) so newly-added packs
+    // reach existing users too. Keyed by `_id`, so a user's own saved mixes are untouched and a
+    // builtin the user edited is refreshed to the current definition.
+    for p in builtin_genre_presets() {
+        if let Ok(mut d) = bson::to_document(&p) {
+            let id = p["id"].as_str().unwrap_or("").to_string();
+            d.insert("_id", &id);
+            let _ = coll.update_one(doc! { "_id": &id }, doc! { "$set": &d }).upsert(true).await;
         }
     }
     use futures_util::StreamExt;

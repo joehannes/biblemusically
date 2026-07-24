@@ -142,7 +142,7 @@ export default function Lyrics() {
             </div>
           </div>
           <Textarea data-testid="lyrics-json-textarea" rows={20} value={raw} onChange={e=>setRaw(e.target.value)} placeholder='[{"title":"...","language":"English","styles":"...","lyrics":"...","annotations":"...","image_styles":"..."}]' className="text-mono text-xs" />
-          <div className="flex gap-2 mt-3">
+          <div className="flex flex-wrap gap-2 mt-3">
             <Button data-testid="lyrics-parse-btn" onClick={()=>parse(raw)} variant="secondary"><FileJson className="w-4 h-4 mr-2" />Parse</Button>
             <Button data-testid="lyrics-import-btn" onClick={importAll} disabled={!items.length}><CheckCheck className="w-4 h-4 mr-2" />Import {items.length || ""}</Button>
             <Button data-testid="lyrics-sendmusicgen-btn" onClick={sendToMusicGen} disabled={!items.length} title="Import and go straight to the tiles in Music Generation">

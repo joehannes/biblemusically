@@ -32,6 +32,8 @@ const HINT_NEXT_STEP = {
   oom: "The GPU ran out of memory. Lower the model/resolution in the notebook, or retry — a fresh T4 sometimes has more free VRAM.",
   cli: "The kaggle CLI couldn't run. Install it (pipx install kaggle) and save your token at ~/.kaggle/kaggle.json.",
   tunnel_dead: "The notebook is running and printed a tunnel URL, but Cloudflare never routed it — usually a flaky quick tunnel. Press Start & connect again; the run itself is fine.",
+  gpu_denied:
+    "Kaggle ran the notebook on CPU instead of a GPU, so it could not serve. Your weekly Kaggle GPU quota (30 h) is most likely used up — it resets Saturdays UTC. Check kaggle.com/settings → Accelerator usage. Until it resets, either wait, or run the engine on another free GPU host (Colab / Lightning.ai) and paste its URL into this engine's server-URL field.",
 };
 
 let state = {}; // engine -> { status, phase, url, detail, next_step, hint, log: [], monitor }

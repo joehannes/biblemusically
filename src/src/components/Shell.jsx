@@ -40,6 +40,7 @@ import {
   Download,
   X,
   Keyboard,
+  Info,
   Check,
   Menu,
   GitBranch,
@@ -233,6 +234,107 @@ function ThemeBtn({ id, label, current, setTheme }) {
     >
       {label}
     </button>
+  );
+}
+
+const THEMES = [
+  { id: "obsidian", label: "Obsidian" },
+  { id: "aurora", label: "Aurora" },
+  { id: "vellum", label: "Vellum" },
+  { id: "dawn", label: "Dawn" },
+  { id: "daybreak", label: "Daybreak" },
+  { id: "twilight", label: "Twilight" },
+  { id: "midnight", label: "Midnight" },
+];
+
+// Theme picker as a menubar action button (moved out of the sidebar). A Palette button that opens
+// a small popover of the theme swatches; closes on outside click / Escape.
+function ThemeFab({ theme, setTheme }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onClick); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        data-testid="theme-fab"
+        onClick={() => setOpen((o) => !o)}
+        className="p-1.5 rounded hover:bg-muted/30 shrink-0"
+        title="Theme"
+        aria-label="Theme"
+      >
+        <Palette className="w-4 h-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 z-40 w-44 rounded-lg border border-border bg-card shadow-xl p-2">
+          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1 pb-1.5 flex items-center gap-1.5">
+            <Palette className="w-3 h-3" /> Theme
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {THEMES.map((t) => (
+              <ThemeBtn key={t.id} id={t.id} label={t.label} current={theme} setTheme={(id) => { setTheme(id); }} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Keyboard-shortcut hint behind an info icon in the sidebar header (previously a permanent block
+// taking up space at the bottom of the sidebar). Shows on hover OR click so it's discoverable
+// either way; click toggles so it stays open long enough to read on touch input.
+function ShortcutHint({ collapsed }) {
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!pinned) return;
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) { setPinned(false); setOpen(false); } };
+    const onKey = (e) => { if (e.key === "Escape") { setPinned(false); setOpen(false); } };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onClick); document.removeEventListener("keydown", onKey); };
+  }, [pinned]);
+
+  return (
+    <div className={`relative ${collapsed ? "" : "ml-auto"}`} ref={ref}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => { if (!pinned) setOpen(false); }}
+    >
+      <button
+        data-testid="shortcut-hint"
+        onClick={() => { setPinned((p) => !p); setOpen(true); }}
+        className="p-1 rounded hover:bg-muted/40 text-muted-foreground hover:text-foreground shrink-0"
+        title="Navigation shortcuts"
+        aria-label="Navigation shortcuts"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1.5 z-50 w-56 rounded-lg border border-border bg-card shadow-xl p-2.5">
+          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground pb-1.5 flex items-center gap-1.5">
+            <Keyboard className="w-3 h-3" /> Navigation shortcuts
+          </div>
+          <div className="space-y-1 text-[11px] text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <span>Previous / next page</span>
+              <kbd className="text-mono text-[10px] px-1.5 py-0.5 rounded bg-muted border border-border shrink-0">Ctrl ← →</kbd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span>First / last page</span>
+              <kbd className="text-mono text-[10px] px-1.5 py-0.5 rounded bg-muted border border-border shrink-0">Ctrl ↑ ↓</kbd>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -637,6 +739,9 @@ export default function Shell({ children }) {
               </div>
             </div>
           )}
+          {/* Keyboard-shortcut hint, tucked behind an info icon (was a permanent block at the
+              bottom of the sidebar). Opens on hover or click; click-again / Escape closes. */}
+          <ShortcutHint collapsed={collapsed} />
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3 scroll-thin">
@@ -670,68 +775,6 @@ export default function Shell({ children }) {
           })}
         </nav>
 
-        <div className="border-t border-border p-3 space-y-3">
-          {!collapsed && (
-            <div>
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                <Palette className="w-3 h-3" /> Theme
-              </div>
-              <div className="flex flex-wrap gap-2 mt-2">
-                <ThemeBtn
-                  id="obsidian"
-                  label="Obsidian"
-                  current={theme}
-                  setTheme={setTheme}
-                />
-                <ThemeBtn
-                  id="aurora"
-                  label="Aurora"
-                  current={theme}
-                  setTheme={setTheme}
-                />
-                <ThemeBtn
-                  id="vellum"
-                  label="Vellum"
-                  current={theme}
-                  setTheme={setTheme}
-                />
-                <ThemeBtn
-                  id="dawn"
-                  label="Dawn"
-                  current={theme}
-                  setTheme={setTheme}
-                />
-                <ThemeBtn
-                  id="daybreak"
-                  label="Daybreak"
-                  current={theme}
-                  setTheme={setTheme}
-                />
-                <ThemeBtn
-                  id="twilight"
-                  label="Twilight"
-                  current={theme}
-                  setTheme={setTheme}
-                />
-                <ThemeBtn
-                  id="midnight"
-                  label="Midnight"
-                  current={theme}
-                  setTheme={setTheme}
-                />
-              </div>
-            </div>
-          )}
-          {!collapsed && (
-            <div className="text-[9px] text-muted-foreground/50 space-y-0.5 pt-2 border-t border-border/50">
-              <div className="flex items-center gap-1">
-                <Keyboard className="w-2.5 h-2.5" /> Navigation shortcuts
-              </div>
-              <div>Ctrl+← → prev/next page</div>
-              <div>Ctrl+↑ ↓ first/last page</div>
-            </div>
-          )}
-        </div>
       </aside>
 
       {mobileOpen && (
@@ -878,6 +921,9 @@ export default function Shell({ children }) {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Theme picker (moved here from the sidebar) */}
+            <ThemeFab theme={theme} setTheme={setTheme} />
+
             {/* Page-wide controls the active page published via usePageActions() — its final
                 Generate/Render/Publish button and the like, so it's reachable without scrolling
                 the page body. */}
