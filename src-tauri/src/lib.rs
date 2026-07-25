@@ -16,6 +16,8 @@ pub mod project_sync;
 pub mod state;
 #[path = "../store.rs"]
 pub mod store;
+#[path = "../vault.rs"]
+pub mod vault;
 
 use std::sync::Arc;
 
@@ -304,6 +306,20 @@ pub fn run() {
             // project's folder carries its own history (see project_sync.rs).
             project_sync::spawn_sweeper(db_clone.clone(), 45);
 
+            // Auto-sync: push projects that opted in, every 15 minutes. Skips the network
+            // entirely when a project has nothing new (see remote_sync::do_auto_sync).
+            {
+                let sync_state = state_arc.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(900));
+                    tick.tick().await;
+                    loop {
+                        tick.tick().await;
+                        commands::remote_sync::auto_sync_sweep(&sync_state).await;
+                    }
+                });
+            }
+
             // Scheduler: every 5 minutes, check every project's `schedule_config` and run
             // chapter-generation for any that are due. See commands/scheduler.rs for the full
             // design (Bible-book chapter cursor → AI lyrics → draft song → auto-enqueue music;
@@ -373,6 +389,24 @@ pub fn run() {
             commands::commit_project_data,
             commands::commit_all_project_data,
             commands::reveal_in_file_manager,
+            // Encrypted credential vault
+            vault::vault_status,
+            vault::vault_list,
+            vault::vault_put,
+            vault::vault_delete,
+            vault::vault_unlock,
+            vault::vault_lock,
+            vault::vault_set_passphrase,
+            // Remote sync (free git hosts + asset platforms)
+            commands::list_sync_providers,
+            commands::get_sync_config,
+            commands::save_sync_config,
+            commands::save_asset_credentials,
+            commands::test_sync_connection,
+            commands::sync_project_now,
+            commands::pull_project_now,
+            commands::list_project_assets,
+            commands::restore_project_assets,
             commands::list_kaggle_accounts,
             commands::activate_kaggle_account,
             commands::remove_kaggle_account,

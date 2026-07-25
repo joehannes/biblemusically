@@ -98,6 +98,11 @@ const PROJECT_SCOPED: &[(&str, &str)] = &[
     ("sections", "song_id"),
     ("characters", "project_id"),
     ("uploads", "song_id"),
+    // Where each generated media file ended up once it was offloaded to an asset host — the
+    // manifest that lets a fresh clone of the repo find its audio/video/images again.
+    ("assets", "project_id"),
+    // Derived shorts/posts for other platforms, and their publish state per destination.
+    ("derivatives", "project_id"),
 ];
 
 fn owner_field(collection: &str) -> Option<&'static str> {

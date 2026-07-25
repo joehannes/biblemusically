@@ -18,6 +18,7 @@ pub mod kaggle_monitor;
 pub mod learnings;
 pub mod style_samples;
 pub mod data;
+pub mod remote_sync;
 
 pub use settings::*;
 pub use projects::*;
@@ -39,3 +40,4 @@ pub use kaggle_monitor::*;
 pub use learnings::*;
 pub use style_samples::*;
 pub use data::*;
+pub use remote_sync::*;
