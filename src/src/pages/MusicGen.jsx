@@ -5,6 +5,8 @@ import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
 import { usePageActions } from "../lib/pageActions";
 import { runPipeline, subscribePipeline, cancelPipeline, continuePipeline, suggestChannelForSong } from "../lib/genPipeline";
+import GuidedPanel from "../components/GuidedPanel";
+import { musicFlow } from "../lib/guidedFlows";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -55,6 +57,8 @@ export default function MusicGen() {
   const [convertingSongId, setConvertingSongId] = useState(null);
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // Which songs the guide's "Start" step should act on.
+  const [guidedScope, setGuidedScope] = useState("one");
 
   // ── AI generation pipeline (Suno) ──
   const [channels, setChannels] = useState([]);
@@ -395,6 +399,28 @@ export default function MusicGen() {
       <p className="text-muted-foreground mb-8 max-w-2xl">
         Generate premium song clips using Suno AI. Listen to studio previews, monitor real-time generation progress, and export files optimized directly for Spotify distribution.
       </p>
+
+      {/* Guided path: engine, scope and length as three questions, with the reasons for each. */}
+      <div className="mb-6">
+        <GuidedPanel
+          flow={musicFlow}
+          projectId={activeProjectId}
+          extraCtx={{ pendingCount: songs.filter((x) => !x.audio_url).length }}
+          actions={{
+            // Persisting the engine here is the point: every later step and every prompt the backend
+            // builds reads it from settings, not from this page's state.
+            setEngine: async (id) => {
+              setEngine(id);
+              try { await api.saveSettings({ music_engine: id }, activeProjectId); } catch { /* shown by the guide */ }
+            },
+            setScope: (scope) => setGuidedScope(scope),
+            setDuration: async (seconds) => {
+              try { await api.saveSettings({ music_duration_s: seconds }, activeProjectId); } catch { /* non-fatal */ }
+            },
+            run: () => (guidedScope === "one" && activeSongId ? trigger(activeSongId) : triggerAll()),
+          }}
+        />
+      </div>
 
       {/* Premium Fuzzy Search Bar */}
       <div className="relative mb-6 max-w-md">

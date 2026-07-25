@@ -159,6 +159,9 @@ const initialSettings = {
   google_client_id: "",
   google_client_secret: "",
   google_redirect_uri: "",
+  remote_render_provider: "local",
+  modal_endpoint: "",
+  render_worker_url: "",
   ffmpeg_path: "ffmpeg",
   ffprobe_path: "ffprobe",
   theme: "obsidian",
@@ -262,6 +265,11 @@ const SettingsComponent = () => {
     }, 900);
     return () => clearTimeout(timer);
   }, [s, activeProjectId, loaded]);
+
+  // The provider catalogue (labels, costs, prerequisites) comes from the backend so the facts live
+  // in one place next to the launchers that implement them.
+  const [renderProviders, setRenderProviders] = useState([]);
+  useEffect(() => { api.listRenderProviders().then((r) => setRenderProviders(r?.providers || [])).catch(() => {}); }, []);
 
   const save = async () => {
     try {
@@ -1049,6 +1057,61 @@ const SettingsComponent = () => {
         </div>
         <KaggleAutoStatus engine="comfyui" />
         <div className="mt-3 text-xs text-muted-foreground">Run the ComfyUI notebook (<code>scripts/kaggle_comfyui/</code>, pushed to Kaggle as <code>biblemusically-comfyui-server</code>). Character images automatically use the character's avatar as an IP-Adapter reference for consistency. Manage style presets &amp; per-channel sticky styles in <b>Style Studio</b>; mix music genres in <b>Sound Studio</b>.</div>
+      </Card>
+
+      {/* ── Remote rendering ─────────────────────────────────────────────────
+          Video assembly and the YouTube upload are the two steps that cost real CPU and real
+          bandwidth. At 50 channels they are ~750 videos a month, so they belong on somebody else's
+          computer — see docs/REMOTE_RENDER.md for where the numbers come from. */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Film className="w-4 h-4 text-primary" /><h2 className="font-semibold">Remote rendering (ffmpeg + upload off this machine)</h2></div>
+        <div className="text-sm text-muted-foreground mb-3">
+          The worker fetches this project's audio and images from its sync remote, encodes the video and uploads it
+          to YouTube itself — your connection only carries the job description. The project must be synced
+          (Data &amp; Sync) for any remote provider to reach the assets.
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
+          {(renderProviders || []).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => updateS("remote_render_provider", p.id)}
+              className={`text-left rounded-lg border p-2.5 transition-all hover:border-primary/60 ${s.remote_render_provider === p.id ? "border-primary/60 bg-primary/5" : "border-border"}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium">{p.label}</span>
+                <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{p.cost}</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{p.detail}</div>
+            </button>
+          ))}
+        </div>
+        {s.remote_render_provider === "modal" && (
+          <Field k="modal_endpoint" label="Modal web endpoint" placeholder="https://you--bm-render-submit.modal.run"
+            testid="settings-modal-endpoint" value={s.modal_endpoint} onValueChange={updateS} />
+        )}
+        {s.remote_render_provider === "http" && (
+          <Field k="render_worker_url" label="Worker URL" placeholder="https://render.example.com/jobs"
+            testid="settings-render-worker-url" value={s.render_worker_url} onValueChange={updateS} />
+        )}
+        {s.remote_render_provider === "actions" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" data-testid="settings-install-workflow"
+              onClick={async () => {
+                try {
+                  const r = await api.writeRenderWorkflow(activeProjectId);
+                  toast.success("Workflow installed into the project repo.", { description: r?.next_step, duration: 12000 });
+                } catch (err) { toast.error(String(err)); }
+              }}>
+              <Bot className="w-3 h-3 mr-2" />Install the workflow
+            </Button>
+            <span className="text-xs text-muted-foreground">Writes <code>.github/workflows/bm-render.yml</code> plus the worker, then sync to push it.</span>
+          </div>
+        )}
+        <div className="mt-3 text-xs text-muted-foreground">
+          Deploy Modal once with <code>modal deploy scripts/remote/modal_app.py</code>; run your own worker with
+          <code> python3 scripts/remote/render_worker.py job.json</code>. Kaggle needs nothing beyond the token the
+          music engines already use.
+        </div>
       </Card>
 
       <Card className="p-6 mb-5">

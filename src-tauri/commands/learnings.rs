@@ -164,6 +164,28 @@ pub async fn record_learning_signal(
     Ok(data)
 }
 
+/// The recorded signals of one kind, newest first, merged across the user and project stores.
+///
+/// Exposed for callers that need the raw history rather than the tally summary — the guided flow
+/// reads `guided_choice` this way to recommend what this user actually picked last time, which is a
+/// question about recency, not frequency.
+pub async fn recent_signals(state: &AppState, project_id: &str, kind: &str, limit: usize) -> Vec<Value> {
+    let mut all: Vec<Value> = Vec::new();
+    let user = global_path().ok().map(|p| read_data(&p)).unwrap_or_else(|| json!({}));
+    let proj = if project_id.trim().is_empty() { json!({}) } else {
+        match project_path(state, project_id).await { Ok(p) => read_data(&p), Err(_) => json!({}) }
+    };
+    for data in [&user, &proj] {
+        if let Some(arr) = data.pointer(&format!("/signals/{kind}")).and_then(|v| v.as_array()) {
+            all.extend(arr.iter().cloned());
+        }
+    }
+    // `at` is an RFC3339 timestamp, so a plain string sort is chronological.
+    all.sort_by(|a, b| b["at"].as_str().unwrap_or("").cmp(a["at"].as_str().unwrap_or("")));
+    all.truncate(limit);
+    all
+}
+
 /// A compact prompt-ready summary of the strongest learnings, for injection into generation
 /// prompts (e.g. "The user tends to prefer: warm lighting (7), acoustic (5), …"). Combines user +
 /// project tallies, taking the top few keys per kind. Empty string when there's nothing learned.

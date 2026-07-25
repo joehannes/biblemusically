@@ -94,16 +94,37 @@ Design points that make this work in practice:
 - **CPU-only.** Nothing here needs a GPU, which is what keeps the free tiers viable — and keeps
   Kaggle's GPU quota free for music and image generation.
 
-## 5. Status
+## 5. Status — implemented in v0.69.0
 
-This document is research and a design; the remote render worker is **not implemented yet**. The
-existing video/upload path still runs locally (`src-tauri/jobs.rs`). Implementation order when it is
-picked up:
+| Piece | Where | State |
+| --- | --- | --- |
+| Job spec builder | `src-tauri/commands/remote_render.rs` → `build_render_spec` | Done. Resolves every asset to a URL the worker can fetch, or refuses with the reason why. |
+| Worker (ffmpeg + resumable YouTube upload) | `scripts/remote/render_worker.py` | Done. Stdlib-only, idempotent per song, reports `BM_RESULT` + `result.json`. |
+| Kaggle launcher | `launch_kaggle` | Done. Pushes a private CPU kernel per job; no GPU quota used. |
+| GitHub Actions launcher | `launch_actions` + `scripts/remote/bm-render.yml` | Done. `write_render_workflow` installs the workflow into the project repo; the job travels as a dispatch input. |
+| Modal | `scripts/remote/modal_app.py` + `launch_http` | Done. `modal deploy` once, paste the endpoint into Settings. |
+| Your own worker (VPS) | `launch_http` | Done. Any HTTP endpoint that accepts the spec. |
+| Provider choice in the UI | Settings → Remote rendering; the Video Composer's guided flow | Done, saved as `remote_render_provider`. |
+| Job list / result ingest | `list_render_jobs`, `record_render_result` | Done — a finished upload writes `youtube_video_id` back onto the song. |
 
-1. `render_job` document + a `remote_render_provider` setting (`local` | `kaggle` | `actions` | `modal` | `vps`).
-2. Kaggle CPU render notebook, reusing the existing notebook push/monitor plumbing.
-3. Worker-side ffmpeg + resumable upload script, shared verbatim by every backend.
-4. Actions/Modal adapters (the same script, a different launcher).
+Still open:
+
+- **Kaggle result pickup is manual.** The kernel prints `BM_RESULT {…}` and writes
+  `/kaggle/working/result.json`, but the app does not yet poll `kaggle kernels output` to ingest it.
+  A Kaggle render therefore reports success on *submission*; the song's publish state is written when
+  `record_render_result` is called (the Actions and HTTP paths can call back on their own).
+- **No batch submit.** One song per submission; a "render everything that's ready" sweep is the
+  obvious next step now that the per-job path exists.
+- **Subtitles** are accepted by the worker but never populated by the spec builder.
+
+### Trying it without the app
+
+The worker is deliberately runnable by hand — that is also how it was tested:
+
+```bash
+python3 scripts/remote/render_worker.py job.json                     # render, and upload if the spec says so
+BM_KEEP_OUTPUT=1 python3 scripts/remote/render_worker.py job.json    # keep the .mp4 in the working directory
+```
 
 ## Sources
 

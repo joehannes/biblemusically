@@ -572,6 +572,14 @@ pub fn run() {
             commands::mix_genres,
             commands::ai_translate_ui,
             commands::take_ai_notices,
+            commands::guide_proposal,
+            // Remote rendering (ffmpeg + upload on somebody else's computer)
+            commands::list_render_providers,
+            commands::build_render_spec,
+            commands::submit_remote_render,
+            commands::list_render_jobs,
+            commands::record_render_result,
+            commands::write_render_workflow,
             commands::suggest_transitions,
             // Style presets + per-channel sticky styles
             commands::list_style_presets,

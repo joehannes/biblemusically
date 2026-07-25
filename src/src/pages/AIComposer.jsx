@@ -20,6 +20,8 @@ import { appendDailyFlavor } from "../lib/dailyFlavor";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useAutoSave, AutoSaveChip, useBackgroundSave, restore } from "../lib/hooks";
+import GuidedFlow from "../components/GuidedFlow";
+import { composerFlow } from "../lib/guidedFlows";
 
 const STYLE_PACKS = {
   "Biblical Concept": ["cinematic biblical concept art", "sacred celestial symbolism", "radiant divine light", "visionary spiritual realism", "majestic ancient atmosphere"],
@@ -247,6 +249,54 @@ export default function AIComposer() {
 
   // Master toggle: collapses/expands all config sections at once
   const [configExpanded, setConfigExpanded] = useState(true);
+
+  // ── Guided mode ────────────────────────────────────────────────────────────
+  // This page has nine config sections and almost no run needs all of them. In guided mode the
+  // sections stay closed and the guide opens exactly the one its current question is about; the user
+  // can still open any section by hand (that pins it open), and "All controls" returns the page to
+  // its full form permanently. The preference is remembered, so nobody is walked through a flow they
+  // have outgrown.
+  const [guided, setGuided] = useState(() => localStorage.getItem("studio:composer-guided") !== "off");
+  const [revealed, setRevealed] = useState(null);      // section id the guide is currently on
+  const [pinnedOpen, setPinnedOpen] = useState({});    // sections the user opened by hand
+  const [project, setProject] = useState(null);
+  const [channels, setChannels] = useState([]);
+  const [settings, setSettings] = useState({});
+
+  const setGuidedMode = (on) => {
+    setGuided(on);
+    localStorage.setItem("studio:composer-guided", on ? "on" : "off");
+    if (!on) setRevealed(null);
+  };
+
+  /**
+   * In guided mode a section is open when the guide is on it, or the user pinned it open. Returning
+   * `undefined` outside guided mode hands control back to the section's own state, so the full page
+   * behaves exactly as it did before.
+   */
+  const sectionOpen = (id) => {
+    if (!guided) return undefined;
+    if (id === "results" && items.length) return true;   // never hide a result the user is waiting for
+    return Boolean(revealed === id || pinnedOpen[id]);
+  };
+  const toggleSection = (id) => (v) => setPinnedOpen((p) => ({ ...p, [id]: v }));
+
+  // Context the flow needs: the project's brief and daily topic, the channels, and which engines are
+  // selected — that last one is what makes the offered options engine-appropriate.
+  useEffect(() => {
+    (async () => {
+      try {
+        const [projects, chans, s] = await Promise.all([
+          api.listProjects().catch(() => []),
+          api.listChannels?.().catch(() => []) ?? [],
+          api.getSettings().catch(() => ({})),
+        ]);
+        setProject((projects || []).find((p) => p.id === activeProjectId) || (projects || [])[0] || null);
+        setChannels(Array.isArray(chans) ? chans : chans?.channels || []);
+        setSettings(s || {});
+      } catch { /* the guide degrades to static defaults */ }
+    })();
+  }, [activeProjectId]);
 
   const [customThemePresets, setCustomThemePresets] = useState(() => {
     return JSON.parse(localStorage.getItem("studio:custom-theme-presets") || "{}");
@@ -941,6 +991,35 @@ export default function AIComposer() {
       </CollapsibleSection>
 
       {/* ── Master Toggle: Show/Hide all config sections ── */}
+      {/* The guide: one decision at a time, opening the section each question is about. */}
+      {guided && (
+        <GuidedFlow
+          flow={composerFlow}
+          ctx={{
+            projectId: activeProjectId,
+            project, channels, settings,
+            cfg, setCfg,
+            chapterRef, setChapterRef,
+            chapterText, setChapterText,
+            setChapterNum,
+            stylePacks: STYLE_PACKS,
+            generate,
+            showAll: () => setGuidedMode(false),
+          }}
+          onRevealSection={setRevealed}
+          onShowAll={() => setGuidedMode(false)}
+          onFinish={() => setRevealed("results")}
+        />
+      )}
+      {!guided && (
+        <button
+          onClick={() => setGuidedMode(true)}
+          className="text-[11px] text-muted-foreground hover:text-primary inline-flex items-center gap-1.5"
+        >
+          <Wand2 className="w-3.5 h-3.5" />Guide me through this instead
+        </button>
+      )}
+
       <Card className="overflow-hidden border-primary/30">
         <div
           className="flex items-center justify-between px-5 py-3.5 cursor-pointer select-none bg-primary/5 hover:bg-primary/10 transition-colors border-b border-primary/20"
@@ -967,7 +1046,7 @@ export default function AIComposer() {
         <div className={`transition-all duration-300 overflow-hidden ${configExpanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}>
           <div className="p-5 space-y-5">
 
-        <CollapsibleSection title="Composer Config Profiles" actions={
+        <CollapsibleSection open={sectionOpen("profiles")} onToggle={toggleSection("profiles")} title="Composer Config Profiles" actions={
           <input ref={importRef} type="file" accept=".json" className="hidden" onChange={importProfile} />
         }>
           <div className="flex gap-2 mb-2">
@@ -986,7 +1065,7 @@ export default function AIComposer() {
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Field Generation Toggles" badge="which fields to generate">
+        <CollapsibleSection open={sectionOpen("fields")} onToggle={toggleSection("fields")} title="Field Generation Toggles" badge="which fields to generate">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-xs">
             {Object.keys(cfg.generate).map(k => (
               <label key={k} className="flex items-center justify-between gap-2 bg-muted/30 p-1.5 rounded border border-border/20">
@@ -997,7 +1076,7 @@ export default function AIComposer() {
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Image & Lyrics Flavor Themes" badge="GUI Mode" titleIcon={Settings}>
+        <CollapsibleSection open={sectionOpen("themes")} onToggle={toggleSection("themes")} title="Image & Lyrics Flavor Themes" badge="GUI Mode" titleIcon={Settings}>
           {/* Prepackaged Theme Presets */}
           <div className="mb-4">
             <div className="text-[9px] text-mono uppercase tracking-widest text-muted-foreground mb-1.5">Prepackaged Theme Presets</div>
@@ -1102,7 +1181,7 @@ export default function AIComposer() {
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Image & Video Options" badge="v7 & v8.1 Ready" titleIcon={Film}>
+        <CollapsibleSection open={sectionOpen("images")} onToggle={toggleSection("images")} title="Image & Video Options" badge="v7 & v8.1 Ready" titleIcon={Film}>
           {/* Mode Toggle: Image vs Video */}
           <div className="flex items-center justify-between bg-muted/40 p-2.5 rounded-lg border border-border/40 mb-4">
             <div className="space-y-0.5">
@@ -1204,7 +1283,7 @@ export default function AIComposer() {
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Style Keywords & Packs" actions={
+        <CollapsibleSection open={sectionOpen("keywords")} onToggle={toggleSection("keywords")} title="Style Keywords & Packs" actions={
           <button onClick={clearKw} className="text-[9px] font-mono text-muted-foreground hover:text-destructive flex items-center gap-0.5"><X className="w-2.5 h-2.5" /> Clear All</button>
         }>
           <div className="flex gap-2 mb-3">
@@ -1240,7 +1319,7 @@ export default function AIComposer() {
       </Card>{/* end master toggle card */}
 
         {/* Bible chapter section */}
-        <CollapsibleSection title={`Bible chapter (${chapterRef || "no ref"})`} actions={
+        <CollapsibleSection open={sectionOpen("chapter")} onToggle={toggleSection("chapter")} title={`Bible chapter (${chapterRef || "no ref"})`} actions={
           <Button size="sm" variant="ghost" onClick={()=>nav("/bible")}>Pick from Bible Sources <ArrowRight className="w-3 h-3 ml-1" /></Button>
         }>
           <Textarea data-testid="composer-chapter-textarea" ref={taRef} rows={10} value={chapterText} onChange={e=>setChapterText(e.target.value)} onSelect={onTextSelect}
@@ -1252,7 +1331,7 @@ export default function AIComposer() {
         </CollapsibleSection>
 
         {/* Authored sections */}
-        <CollapsibleSection title={`Authored sections (${(cfg.sections||[]).length})`}>
+        <CollapsibleSection open={sectionOpen("sections")} onToggle={toggleSection("sections")} title={`Authored sections (${(cfg.sections||[]).length})`}>
           <div className="space-y-2 max-h-48 overflow-auto scroll-thin">
             {(cfg.sections||[]).map((s, i) => (
               <div key={i} data-testid={`composer-section-${i}`} className="flex items-start gap-2 text-sm border border-border rounded p-2">
@@ -1268,7 +1347,7 @@ export default function AIComposer() {
         </CollapsibleSection>
 
         {/* DYNAMIC TARGETS (LANGUAGE × SUNO AI STYLE) */}
-        <CollapsibleSection title="Targets (Channel × Language × Suno AI Styles)" badge={`${(cfg.targets||[]).length} channels`} titleIcon={Music} actions={
+        <CollapsibleSection open={sectionOpen("targets")} onToggle={toggleSection("targets")} title="Targets (Channel × Language × Suno AI Styles)" badge={`${(cfg.targets||[]).length} channels`} titleIcon={Music} actions={
           <div className="flex gap-2 overflow-x-auto max-w-[58vw] sm:max-w-none">
             <Button size="sm" variant="outline" onClick={syncTargetsFromChannels} className="shrink-0">Sync from Channels</Button>
             <Button size="sm" variant="secondary" data-testid="composer-add-target" onClick={addTarget} className="shrink-0"><Plus className="w-3 h-3 mr-1" />Add Channel</Button>
@@ -1371,7 +1450,7 @@ export default function AIComposer() {
         </CollapsibleSection>
 
         {/* GENERATED RESULTS WORKSPACE */}
-        <CollapsibleSection title={`Generated Results (${items.length})`} badge={restoredItems ? "Restored from previous session" : items.length > 0 ? "Ready to import" : undefined}>
+        <CollapsibleSection open={sectionOpen("results")} onToggle={toggleSection("results")} title={`Generated Results (${items.length})`} badge={restoredItems ? "Restored from previous session" : items.length > 0 ? "Ready to import" : undefined}>
           {items.length > 0 ? (
             <div className="space-y-4">
               <div className="space-y-2 max-h-80 overflow-y-auto scroll-thin">

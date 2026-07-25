@@ -133,6 +133,15 @@ export const api = {
   aiTranslateUi: (strings, language) => invokeCommand("ai_translate_ui", { payload: { strings, language } }),
   // Drains one-shot notices about automatic provider fallbacks (each is delivered once).
   takeAiNotices: () => invokeCommand("take_ai_notices"),
+  // Guided-flow proposals: per-step picks personalised from brief + learnings + engine caps.
+  guideProposal: (payload) => invokeCommand("guide_proposal", { payload }),
+  // ============ Remote rendering ============
+  listRenderProviders: () => invokeCommand("list_render_providers"),
+  buildRenderSpec: (songId, options) => invokeCommand("build_render_spec", { songId, options: options || null }),
+  submitRemoteRender: (songId, options) => invokeCommand("submit_remote_render", { songId, options: options || null }),
+  listRenderJobs: (limit) => invokeCommand("list_render_jobs", { limit: limit ?? null }),
+  recordRenderResult: (result) => invokeCommand("record_render_result", { result }),
+  writeRenderWorkflow: (projectId) => invokeCommand("write_render_workflow", { projectId }),
   listGenrePresets: () => invokeCommand("list_genre_presets"),
   saveGenrePreset: (payload) => invokeCommand("save_genre_preset", { payload }),
   deleteGenrePreset: (id) => invokeCommand("delete_genre_preset", { id }),

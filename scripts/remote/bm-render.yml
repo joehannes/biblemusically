@@ -1,0 +1,53 @@
+# Renders one song into a video and uploads it to YouTube, on GitHub's runners.
+#
+# Installed into a project repo by the app (Settings → Remote rendering → "Install the workflow"),
+# which then dispatches it per song. The job spec arrives base64-encoded as an input, so nothing
+# secret is ever committed: the OAuth refresh token lives only in the dispatch payload and the run's
+# memory. `ubuntu-latest` already has ffmpeg and python3, so there is nothing to install.
+#
+# Free on a public repository (unmetered standard-runner minutes); a private repository spends its
+# 2,000 min/month allowance — roughly 600 renders at 3 minutes each.
+name: bm-render
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Base64-encoded render job spec
+        required: true
+
+# One render at a time per repo keeps a backlog from spawning fifty concurrent runners, which is
+# what "fair use" on a public repo means in practice. Raise it if you have the allowance.
+concurrency:
+  group: bm-render
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show the tools
+        run: |
+          ffmpeg -version | head -1
+          python3 --version
+
+      - name: Render and upload
+        env:
+          BM_JOB_B64: ${{ inputs.job }}
+          BM_KEEP_OUTPUT: "1"
+        run: python3 .bm/render_worker.py
+
+      # Kept for inspection when a render looks wrong; artifacts expire on their own.
+      - name: Keep the video as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render
+          path: |
+            *.mp4
+            result.json
+          if-no-files-found: ignore
+          retention-days: 7

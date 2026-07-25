@@ -10,11 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Film, Wand } from "lucide-react";
 import { toast } from "sonner";
 import { getStepForPath } from "../lib/pageSteps";
+import GuidedPanel from "../components/GuidedPanel";
+import { videoFlow } from "../lib/guidedFlows";
 
 const FORMATS = ["youtube_16x9_1080p", "shorts_9x16_1080p", "tiktok_9x16_1080p"];
 
 export default function Composer() {
-  const { songs, activeSongId, selectSong } = useStudio();
+  const { songs, activeSongId, selectSong, activeProjectId } = useStudio();
+  // Answers from the guided flow: where the render runs, how the stills move, what happens after.
+  const [provider, setProvider] = useState("local");
+  const [transition, setTransition] = useState("fade");
+  const [publish, setPublish] = useState("hold");
+  const [submitting, setSubmitting] = useState(false);
   const [presets, setPresets] = useState([]);
   const [sections, setSections] = useState([]);
   const [formats, setFormats] = useState(["youtube_16x9_1080p"]);
@@ -32,14 +39,35 @@ export default function Composer() {
 
   const compose = async () => { if (!activeSongId) return; await api.compose(activeSongId); toast.success(`Composing for ${formats.length} format(s)`); };
 
+  /**
+   * Render where the guide was told to render. Remote submission returns as soon as the provider has
+   * accepted the job — the worker fetches the assets from the project's sync remote, encodes, and
+   * (when asked) uploads to YouTube itself, so nothing further happens on this machine.
+   */
+  const render = async () => {
+    if (!activeSongId) return toast.error("Pick a song first.");
+    if (provider === "local") return compose();
+    setSubmitting(true);
+    try {
+      const r = await api.submitRemoteRender(activeSongId, { provider, publish, transition });
+      toast.success(r?.detail || `Render submitted to ${provider}.`, {
+        description: r?.monitor || r?.endpoint || undefined,
+        duration: 12000,
+      });
+    } catch (err) {
+      // These errors are the actionable kind — an unsynced project, a missing token, no images yet.
+      toast.error(String(err), { duration: 15000 });
+    } finally { setSubmitting(false); }
+  };
+
   const readySongs = songs.filter(s => s.audio_url);
 
   usePageActions(useMemo(() => (
-    <Button size="sm" data-testid="composer-render-btn" onClick={compose} disabled={!activeSongId}>
-      <Film className="w-4 h-4 mr-2" />Render
+    <Button size="sm" data-testid="composer-render-btn" onClick={render} disabled={!activeSongId || submitting}>
+      <Film className="w-4 h-4 mr-2" />{provider === "local" ? "Render" : `Render on ${provider}`}
     </Button>
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [activeSongId]));
+  ), [activeSongId, provider, submitting]));
 
   return (
     <div className="p-8 max-w-7xl mx-auto fade-in">
@@ -48,6 +76,24 @@ export default function Composer() {
         <h1 className="text-4xl sm:text-5xl font-bold">Video Composer</h1>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">FFmpeg stitches images to audio, applying mood-matched effects &amp; transitions. Choose target formats.</p>
+
+      <div className="mb-6">
+        <GuidedPanel
+          flow={videoFlow}
+          projectId={activeProjectId}
+          extraCtx={{ hasOverlay: Boolean(songs.find((s) => s.id === activeSongId)?.overlay_url) }}
+          actions={{
+            setProvider: async (id) => {
+              setProvider(id);
+              // Saved, not just held: the scheduler and the Workflow page read the same setting.
+              try { await api.saveSettings({ remote_render_provider: id }, activeProjectId); } catch { /* non-fatal */ }
+            },
+            setTransition,
+            setPublish,
+            run: () => render(),
+          }}
+        />
+      </div>
 
       <Card className="p-5 mb-6 grid md:grid-cols-2 gap-4 items-center">
         <div className="flex flex-col gap-1.5">

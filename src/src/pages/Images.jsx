@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import GuidedPanel from "../components/GuidedPanel";
+import { imagesFlow } from "../lib/guidedFlows";
 import { useStudio } from "../lib/store";
 import GenerationProgress from "../components/GenerationProgress";
 import ImageLightbox from "../components/ImageLightbox";
@@ -33,6 +35,11 @@ export default function Images() {
   const [video, setVideo] = useState(false);
   const [variantIdx, setVariantIdx] = useState({});
   const [jobs, setJobs] = useState({});  // Track job status per section
+  // Guide answers: which sections to cover, which character to carry through, how fine to render.
+  const [characters, setCharacters] = useState([]);
+  const [coverage, setCoverage] = useState("per_section");
+  const [guideCharacter, setGuideCharacter] = useState(null);
+  useEffect(() => { api.listCharacters?.().then((r) => setCharacters(Array.isArray(r) ? r : r?.characters || [])).catch(() => {}); }, []);
   const jobPollRef = useRef(null);
 
   const load = async () => { 
@@ -92,6 +99,21 @@ export default function Images() {
     }
   };
   
+  /** Run the images the guide asked for: every section, the key ones, or a single still. */
+  const runGuided = async () => {
+    if (!activeSongId) return toast.error("Pick a song first.");
+    if (coverage === "per_section") return batch();
+    const pick = coverage === "single"
+      ? sections.slice(0, 1)
+      : sections.filter((s) => /chorus|bridge|hook/i.test(s.name || "")) ;
+    const targets = pick.length ? pick : sections.slice(0, 1);
+    let queued = 0;
+    for (const s of targets) {
+      try { await api.genImage(s.id); queued++; } catch (err) { console.warn(err); }
+    }
+    toast[queued ? "success" : "error"](queued ? `Queued ${queued} image${queued === 1 ? "" : "s"}` : "Could not queue any images");
+  };
+
   const batch = async () => { 
     if (!activeSongId) return; 
     try {
@@ -167,6 +189,23 @@ export default function Images() {
         <h1 className="text-4xl sm:text-5xl font-bold">Image Generation</h1>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Sent to Midjourney via proxy URL. Mix presets &amp; tweak params before generating. Check Settings to verify Midjourney connection.</p>
+
+      {/* Guided path: coverage, character consistency and quality — the rest stays below. */}
+      <div className="mb-6">
+        <GuidedPanel
+          flow={imagesFlow}
+          projectId={activeProjectId}
+          extraCtx={{ sectionCount: sections.length, characters }}
+          actions={{
+            setCoverage,
+            setCharacter: setGuideCharacter,
+            setSteps: async (n) => { try { await api.saveSettings({ flux_steps: n }, activeProjectId); } catch { /* non-fatal */ } },
+            // "single" and "key" are narrower passes over the same batch call, so the guide's answer
+            // decides how many sections it touches rather than which endpoint it uses.
+            run: () => runGuided(),
+          }}
+        />
+      </div>
 
       <Card className="p-5 mb-6 grid md:grid-cols-6 gap-4 items-center">
         <div className="md:col-span-2 flex flex-col gap-1.5">

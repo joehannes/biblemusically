@@ -1,0 +1,464 @@
+// The explicit .js extension keeps this importable by plain node (tests/guided-flows.test.mjs) as
+// well as by vite.
+import { musicEngine, imageEngine, supports, lyricTagHint, engineContext } from "./engineCapabilities.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Flow definitions: a page expressed as a short sequence of decisions.
+//
+// Each step is `{ id, title, question, help, reveals, when, options, primary }`. Options are built
+// from the live page context, so what is offered adapts to the project and — importantly — to the
+// selected engine: a step whose `when` fails, or an option whose `when` fails, is simply not shown.
+// That is how "Midjourney stylize" disappears when FLUX is the image engine, instead of being offered
+// and silently ignored.
+//
+// `apply(ctx)` writes into the page's own state through the setters the page passes in. No flow knows
+// how the page stores anything beyond those setters.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Shared AI context builder: what the proposal backend needs to personalise picks. */
+const baseAiContext = (ctx) => ({
+  project_id: ctx.projectId || "",
+  project_name: ctx.project?.name || "",
+  daily_topic: ctx.project?.daily_topic || "",
+  brief: ctx.project?.brief || {},
+  channels: (ctx.channels || []).map((c) => ({ name: c.name, language: c.language, region: c.region })),
+  engines: engineContext(ctx.settings),
+});
+
+// ── AI Composer ──────────────────────────────────────────────────────────────
+// The page the user described as bloated: nine sections at once, most of them irrelevant to any one
+// run. As a flow it is six decisions, and each one opens exactly the section it is about.
+
+export const composerFlow = {
+  id: "composer",
+  title: "Guided composing",
+  aiContext: (ctx) => ({
+    ...baseAiContext(ctx),
+    current: {
+      targets: (ctx.cfg?.targets || []).map((t) => `${t.language}: ${t.styles}`),
+      theme: ctx.cfg?.themes?.global || "",
+      style_keywords: ctx.cfg?.style_keywords || [],
+      chapter: ctx.chapterRef || "",
+      generate_fields: ctx.cfg?.generate || {},
+    },
+  }),
+  steps: [
+    {
+      id: "source",
+      title: "Source",
+      question: "What is today's song built on?",
+      help: "The composer can start from a Bible chapter, from material you paste in, or from the brief alone.",
+      reveals: "chapter",
+      options: (ctx) => [
+        {
+          id: "chapter",
+          label: ctx.chapterRef ? `Continue with ${ctx.chapterRef}` : "A Bible chapter",
+          hint: ctx.chapterRef ? "Already loaded and ready." : "Pick book and chapter below, then fetch it.",
+          recommended: true,
+          apply: () => {},
+        },
+        {
+          id: "next_chapter",
+          label: "The next chapter in the book",
+          hint: "Advances the chapter number so a series keeps moving.",
+          when: (c) => Boolean(c.chapterRef),
+          apply: (c) => c.setChapterNum?.((n) => Number(n || 0) + 1),
+        },
+        {
+          id: "pasted",
+          label: "Text I bring myself",
+          hint: "A devotional, a testimony, your own draft — anything in the chapter box.",
+          apply: (c) => c.setChapterText?.(c.chapterText || ""),
+        },
+        {
+          id: "brief_only",
+          label: "Just the brief and today's topic",
+          hint: "No source text; the lyrics come from the project's own voice.",
+          apply: (c) => { c.setChapterText?.(""); c.setChapterRef?.(""); },
+        },
+      ],
+    },
+    {
+      id: "reach",
+      title: "Reach",
+      question: "How many channels should this run feed?",
+      help: "Each target is one channel × language × style. More targets means more songs from one generation.",
+      reveals: "targets",
+      options: (ctx) => {
+        const langs = [...new Set((ctx.channels || []).map((c) => c.language).filter(Boolean))];
+        const cur = ctx.cfg?.targets?.length || 0;
+        return [
+          {
+            id: "keep",
+            label: `Keep my ${cur} target${cur === 1 ? "" : "s"}`,
+            hint: (ctx.cfg?.targets || []).map((t) => t.language).join(", ") || "None configured yet.",
+            recommended: cur > 0,
+            apply: () => {},
+          },
+          {
+            id: "one",
+            label: "Just one — my main language",
+            hint: "Fastest path to a finished video; least review.",
+            apply: (c) => c.setCfg?.((p) => ({ ...p, targets: (p.targets || []).slice(0, 1) })),
+          },
+          {
+            id: "all_channels",
+            label: `One per channel language (${langs.length})`,
+            hint: langs.join(", ") || "No channel languages found yet.",
+            when: () => langs.length > 1,
+            apply: (c) => c.setCfg?.((p) => ({
+              ...p,
+              targets: langs.map((language) => ({
+                language,
+                styles: p.targets?.find((t) => t.language === language)?.styles || p.targets?.[0]?.styles || "",
+              })),
+            })),
+          },
+        ];
+      },
+    },
+    {
+      id: "mood",
+      title: "Mood",
+      question: "What should today's song feel like?",
+      help: "This becomes the global theme every language and channel variation is built on.",
+      reveals: "themes",
+      options: (ctx) => {
+        const brief = ctx.project?.brief || {};
+        const opts = [];
+        if (brief.mood) {
+          opts.push({
+            id: "brief_mood",
+            label: `The project's own mood`,
+            hint: String(brief.mood).slice(0, 90),
+            recommended: true,
+            apply: (c) => c.setCfg?.((p) => ({ ...p, themes: { ...p.themes, global: String(brief.mood) } })),
+          });
+        }
+        if (ctx.project?.daily_topic) {
+          opts.push({
+            id: "daily_topic",
+            label: "Today's topic",
+            hint: String(ctx.project.daily_topic).slice(0, 90),
+            apply: (c) => c.setCfg?.((p) => ({
+              ...p,
+              themes: { ...p.themes, global: `${p.themes?.global || ""}, ${ctx.project.daily_topic}`.replace(/^,\s*/, "") },
+            })),
+          });
+        }
+        opts.push(
+          {
+            id: "comforting",
+            label: "Comforting and quiet",
+            hint: "sacred, gentle dawn, restful, soft chamber reverb",
+            apply: (c) => c.setCfg?.((p) => ({ ...p, themes: { ...p.themes, global: "sacred, gentle dawn, restful, soft chamber reverb" } })),
+          },
+          {
+            id: "triumphant",
+            label: "Triumphant and bright",
+            hint: "sovereign majesty, celebratory, radiant divine light",
+            apply: (c) => c.setCfg?.((p) => ({ ...p, themes: { ...p.themes, global: "sovereign majesty, celebratory, radiant divine light" } })),
+          },
+        );
+        return opts;
+      },
+    },
+    {
+      id: "style_depth",
+      title: "Sound",
+      question: (ctx) => `How much should the AI shape the ${musicEngine(ctx.settings?.music_engine).label} style?`,
+      help: (ctx) => lyricTagHint(ctx.settings?.music_engine),
+      reveals: "targets",
+      options: (ctx) => {
+        const eng = musicEngine(ctx.settings?.music_engine);
+        return [
+          {
+            id: "keep_styles",
+            label: "Keep the styles I already set",
+            hint: (ctx.cfg?.targets || []).map((t) => t.styles).filter(Boolean).join(" · ").slice(0, 90) || "Nothing set yet.",
+            recommended: true,
+            apply: (c) => c.setCfg?.((p) => ({ ...p, generate: { ...p.generate, styles: false } })),
+          },
+          {
+            id: "ai_styles",
+            label: "Let the AI write the style descriptor",
+            hint: supports(eng, "styleCsv")
+              ? `A comma-separated descriptor tuned for ${eng.label} (≤${eng.caps.styleCsvLimit} chars).`
+              : `Adapted to ${eng.label}.`,
+            apply: (c) => c.setCfg?.((p) => ({ ...p, generate: { ...p.generate, styles: true } })),
+          },
+          {
+            id: "regional_flavor",
+            label: "Style per channel region",
+            hint: "Each channel gets culturally-fitting instrumentation for its own audience.",
+            when: (c) => (c.channels || []).some((ch) => ch.region),
+            apply: (c) => c.setCfg?.((p) => ({ ...p, generate: { ...p.generate, styles: true, language: true } })),
+          },
+        ];
+      },
+    },
+    {
+      id: "visuals",
+      title: "Visuals",
+      question: "How should the images be prompted?",
+      help: (ctx) => {
+        const eng = imageEngine(ctx.settings?.image_engine);
+        return `${eng.label}: ${eng.strengths}`;
+      },
+      reveals: "images",
+      options: (ctx) => {
+        const eng = imageEngine(ctx.settings?.image_engine);
+        const packs = Object.keys(ctx.stylePacks || {});
+        return [
+          {
+            id: "keep_keywords",
+            label: "Keep my style keywords",
+            hint: (ctx.cfg?.style_keywords || []).slice(0, 3).join(", ") || "None yet.",
+            recommended: (ctx.cfg?.style_keywords || []).length > 0,
+            apply: () => {},
+          },
+          {
+            id: "pack",
+            label: "Use a style pack",
+            hint: packs.slice(0, 4).join(" · "),
+            when: () => packs.length > 0,
+            apply: (c) => {
+              const pack = packs[Math.floor(Math.random() * packs.length)];
+              c.setCfg?.((p) => ({ ...p, style_keywords: c.stylePacks[pack] }));
+            },
+          },
+          {
+            id: "cinematic_wide",
+            label: supports(eng, "flagSyntax") ? "Cinematic 16:9 with gentle stylisation" : "Cinematic 16:9",
+            hint: supports(eng, "flagSyntax") ? "Sets --ar 16:9 and a moderate --stylize." : "Widescreen framing for video.",
+            apply: (c) => c.setCfg?.((p) => ({
+              ...p,
+              mj_ar: "16:9",
+              ...(supports(eng, "stylize") ? { mj_stylize: 250 } : {}),
+            })),
+          },
+          {
+            id: "vertical",
+            label: "Vertical 9:16 for shorts",
+            hint: "Use when this run is aimed at Shorts rather than long-form.",
+            when: () => (eng.caps.aspectRatios || []).includes("9:16"),
+            apply: (c) => c.setCfg?.((p) => ({ ...p, mj_ar: "9:16" })),
+          },
+        ];
+      },
+    },
+    {
+      id: "run",
+      title: "Run",
+      question: "Ready to generate?",
+      help: "Everything below stays editable — this only fills in what you just decided.",
+      reveals: "results",
+      options: (ctx) => [
+        {
+          id: "generate",
+          label: "Generate now",
+          hint: `${(ctx.cfg?.targets || []).length} target(s) · ${ctx.chapterRef || "no chapter"}`,
+          recommended: true,
+          apply: (c) => c.generate?.(),
+        },
+        {
+          id: "review_first",
+          label: "Show me the full config first",
+          hint: "Opens every section so you can check the details before running.",
+          apply: (c) => c.showAll?.(),
+        },
+      ],
+    },
+  ],
+};
+
+// ── Music generation ─────────────────────────────────────────────────────────
+
+export const musicFlow = {
+  id: "music",
+  title: "Guided music generation",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), pending_songs: ctx.pendingCount || 0 }),
+  steps: [
+    {
+      id: "engine",
+      title: "Engine",
+      question: "Which engine should render the audio?",
+      help: (ctx) => `Currently ${musicEngine(ctx.settings?.music_engine).label}. ${musicEngine(ctx.settings?.music_engine).strengths}`,
+      options: (ctx) => Object.entries({ suno: 0, acestep: 0, heartmula: 0 }).map(([id]) => {
+        const eng = musicEngine(id);
+        return {
+          id,
+          label: eng.label,
+          hint: eng.strengths,
+          recommended: ctx.settings?.music_engine === id,
+          apply: (c) => c.setEngine?.(id),
+        };
+      }),
+    },
+    {
+      id: "scope",
+      title: "Scope",
+      question: "How many songs this run?",
+      options: (ctx) => [
+        { id: "one", label: "One song", hint: "Check the result before committing GPU time to the rest.", recommended: true, apply: (c) => c.setScope?.("one") },
+        { id: "all_ready", label: `All ready songs (${ctx.pendingCount || 0})`, hint: "Queue everything that has lyrics but no audio.", apply: (c) => c.setScope?.("all") },
+      ],
+    },
+    {
+      id: "length",
+      title: "Length",
+      question: "How long should the track be?",
+      when: (ctx) => supports(musicEngine(ctx.settings?.music_engine), "durationControl"),
+      options: () => [
+        { id: "short", label: "~2 minutes", hint: "Quick to render, good for testing a style.", apply: (c) => c.setDuration?.(120) },
+        { id: "standard", label: "~4 minutes", hint: "Normal song length.", recommended: true, apply: (c) => c.setDuration?.(240) },
+        { id: "long", label: "~6 minutes", hint: "More room for instrumental passages.", apply: (c) => c.setDuration?.(360) },
+      ],
+    },
+    {
+      id: "start",
+      title: "Start",
+      question: "Queue it?",
+      options: () => [
+        { id: "go", label: "Queue the generation", recommended: true, apply: (c) => c.run?.() },
+        { id: "later", label: "Not yet", hint: "Leaves your selection in place.", apply: () => {} },
+      ],
+    },
+  ],
+};
+
+// ── Images ───────────────────────────────────────────────────────────────────
+
+export const imagesFlow = {
+  id: "images",
+  title: "Guided image generation",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), sections: ctx.sectionCount || 0 }),
+  steps: [
+    {
+      id: "coverage",
+      title: "Coverage",
+      question: "How many images does this song need?",
+      options: (ctx) => [
+        { id: "per_section", label: `One per section (${ctx.sectionCount || 0})`, hint: "Every analysed section gets its own scene.", recommended: true, apply: (c) => c.setCoverage?.("per_section") },
+        { id: "key_moments", label: "Only the key moments", hint: "Chorus and bridge — cheaper, still carries the video.", apply: (c) => c.setCoverage?.("key") },
+        { id: "single", label: "One still for the whole song", hint: "Fastest; the overlay carries the motion.", apply: (c) => c.setCoverage?.("single") },
+      ],
+    },
+    {
+      id: "consistency",
+      title: "Consistency",
+      question: "Should a character carry through the images?",
+      when: (ctx) => (ctx.characters || []).length > 0,
+      options: (ctx) => [
+        { id: "none", label: "No recurring character", hint: "Scenes only.", apply: (c) => c.setCharacter?.(null) },
+        ...(ctx.characters || []).slice(0, 3).map((ch) => ({
+          id: `char:${ch.id}`,
+          label: ch.name,
+          hint: (ch.appearance || ch.prompt || "").slice(0, 80),
+          apply: (c) => c.setCharacter?.(ch.id),
+        })),
+      ],
+    },
+    {
+      id: "quality",
+      title: "Quality",
+      question: "Speed or fidelity?",
+      when: (ctx) => supports(imageEngine(ctx.settings?.image_engine), "steps"),
+      options: () => [
+        { id: "fast", label: "Fast", hint: "Few steps — good enough for a first pass.", recommended: true, apply: (c) => c.setSteps?.(4) },
+        { id: "fine", label: "Fine", hint: "More steps, slower, cleaner detail.", apply: (c) => c.setSteps?.(20) },
+      ],
+    },
+    {
+      id: "go",
+      title: "Run",
+      question: "Generate the images?",
+      options: () => [
+        { id: "run", label: "Generate", recommended: true, apply: (c) => c.run?.() },
+        { id: "wait", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
+
+// ── Video assembly + publishing ──────────────────────────────────────────────
+
+export const videoFlow = {
+  id: "video",
+  title: "Guided video assembly",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), has_overlay: Boolean(ctx.hasOverlay), remote_provider: ctx.settings?.remote_render_provider || "local" }),
+  steps: [
+    {
+      id: "where",
+      title: "Where",
+      question: "Where should the render run?",
+      help: "Rendering remotely keeps your machine and your connection free; see docs/REMOTE_RENDER.md for the cost of each option.",
+      options: (ctx) => [
+        {
+          id: "local",
+          label: "On this machine",
+          hint: "Uses your CPU and uploads over your connection.",
+          recommended: (ctx.settings?.remote_render_provider || "local") === "local",
+          apply: (c) => c.setProvider?.("local"),
+        },
+        {
+          id: "kaggle",
+          label: "On Kaggle (free)",
+          hint: "12 h CPU sessions, 5 at a time, and it uploads to YouTube itself.",
+          recommended: ctx.settings?.remote_render_provider === "kaggle",
+          apply: (c) => c.setProvider?.("kaggle"),
+        },
+        {
+          id: "actions",
+          label: "On GitHub Actions",
+          hint: "Free and unmetered on a public repo; 2,000 min/month on a private one.",
+          when: (c) => Boolean(c.settings?.git_remote_url || c.settings?.github_token),
+          apply: (c) => c.setProvider?.("actions"),
+        },
+        {
+          id: "modal",
+          label: "On Modal",
+          hint: "$30/month of free credits — this workload costs a few dollars.",
+          when: (c) => Boolean(c.settings?.modal_endpoint),
+          apply: (c) => c.setProvider?.("modal"),
+        },
+      ],
+    },
+    {
+      id: "motion",
+      title: "Motion",
+      question: "How should the stills move?",
+      options: (ctx) => [
+        { id: "crossfade", label: "Crossfade between sections", hint: "Calm, matches most worship material.", recommended: true, apply: (c) => c.setTransition?.("fade") },
+        { id: "kenburns", label: "Slow push in", hint: "Ken-Burns drift; adds life to a single still.", apply: (c) => c.setTransition?.("kenburns") },
+        { id: "overlay", label: "Audio-reactive overlay", hint: ctx.hasOverlay ? "Overlay already rendered for this song." : "Renders a visualiser layer over the stills.", apply: (c) => c.setTransition?.("overlay") },
+      ],
+    },
+    {
+      id: "publish",
+      title: "Publish",
+      question: "What happens when the render finishes?",
+      options: () => [
+        { id: "hold", label: "Hold it for review", hint: "Nothing reaches YouTube until you say so.", recommended: true, apply: (c) => c.setPublish?.("hold") },
+        { id: "private", label: "Upload as private", hint: "Lands on the channel, visible only to you.", apply: (c) => c.setPublish?.("private") },
+        { id: "public", label: "Upload and publish", hint: "Goes live on the channel immediately.", apply: (c) => c.setPublish?.("public") },
+      ],
+    },
+    {
+      id: "start",
+      title: "Start",
+      question: "Start the render?",
+      options: () => [
+        { id: "go", label: "Start", recommended: true, apply: (c) => c.run?.() },
+        { id: "no", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
+
+export const FLOWS = {
+  composer: composerFlow,
+  music: musicFlow,
+  images: imagesFlow,
+  video: videoFlow,
+};

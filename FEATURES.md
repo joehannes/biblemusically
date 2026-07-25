@@ -207,6 +207,31 @@ Legend: ✅ Real/working · 🟡 Real but rough edge (documented) · 🔴 Broken
 - **Characters in scenes** — attach a character to specific sections and push its appearance tags and
   prompt into them in one action.
 
+## Guided workflows (2026-07-25)
+
+- **Every production page can be a conversation** — the AI Composer, Music Studio, Image Generation and
+  Video Composer each offer a short guided path: a few questions, two to four concrete choices, and the
+  suggested one already marked with the reason it was suggested.
+- **The suggestion knows your project** — it comes from your Dashboard brief, today's topic, your
+  channels' languages and regions, what you chose here before, and what the selected engine can do.
+- **It only offers what your engine supports** — the track-length question doesn't exist for Suno,
+  Midjourney's stylise flag is never written into a FLUX prompt.
+- **It never traps you** — "All controls" returns the page to its full form, every visited step is
+  clickable, and any section can be opened by hand. The preference is remembered per page.
+- Design and how to add a flow: [docs/GUIDED_WORKFLOW.md](docs/GUIDED_WORKFLOW.md).
+
+## Remote rendering (2026-07-25)
+
+- **Render and upload on somebody else's computer** — Kaggle CPU sessions (free), GitHub Actions (free
+  on a public repo), Modal (inside its $30/month credits), or any worker you host. Chosen in Settings
+  or in the Video Composer's guided flow.
+- **Your connection stays free** — the worker fetches audio and images from the project's sync remote,
+  encodes there, and uploads to YouTube itself. Your machine sends a few kilobytes of job JSON.
+- **It refuses rather than guesses** — a song whose assets aren't reachable remotely says exactly which
+  asset and why, instead of rendering a video with no audio.
+- **Retry-safe** — a job that already published a song will not publish it twice.
+- Cost/limit research and the job contract: [docs/REMOTE_RENDER.md](docs/REMOTE_RENDER.md).
+
 ## Interface language (2026-07-25)
 
 - **Built-in languages** — German, Spanish, Portuguese and Russian ship as translation catalogs

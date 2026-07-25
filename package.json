@@ -1,7 +1,7 @@
 {
   "name": "biblemusically",
   "private": true,
-  "version": "0.68.0",
+  "version": "0.69.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,8 @@
     "i18n:extract": "node ./scripts/extract-ui-strings.mjs",
     "i18n:check": "node ./scripts/extract-ui-strings.mjs --check",
     "i18n:core": "python3 ./scripts/i18n-core-catalog.py",
-    "i18n:build": "node ./scripts/build-i18n-catalogs.mjs de es pt ru"
+    "i18n:build": "node ./scripts/build-i18n-catalogs.mjs de es pt ru",
+    "test:unit": "node --test tests/*.test.mjs"
   },
   "pretauri": "node ./scripts/pretauri.js",
   "dependencies": {
