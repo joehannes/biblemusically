@@ -11,6 +11,8 @@ import {
   Package,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "../lib/api";
+import { authorMacroForOpenPage } from "../lib/macroAuthor";
 import {
   loadMacros, saveMacro, deleteMacro, updateMacro, describeStep,
   getVirtualClipboard, setVirtualClipboard, CONNECTORS, MACRO_ACTIONS,
@@ -133,6 +135,32 @@ export default function MacroManager() {
   const [creatingMacro, setCreatingMacro] = useState(false);
   const [newMacroName, setNewMacroName] = useState("");
   const importFileRef = useRef(null);
+  // ── AI-authored macros ────────────────────────────────────────────────────
+  // Half the platforms worth posting to have no usable posting API. Recording that flow by hand is
+  // fine once and tedious at fifty channels — so the AI writes it from the page's own structure.
+  const [authorGoal, setAuthorGoal] = useState("");
+  const [authoring, setAuthoring] = useState(false);
+  const [authored, setAuthored] = useState([]);
+  useEffect(() => { api.listAuthoredMacros().then(setAuthored).catch(() => {}); }, []);
+
+  const authorFromOpenPage = async () => {
+    if (!authorGoal.trim()) return toast.error("Say what the macro should do.");
+    setAuthoring(true);
+    try {
+      const m = await authorMacroForOpenPage({ goal: authorGoal.trim() });
+      // Straight into the normal macro library, so it plays, edits and exports like a recorded one.
+      const saved = saveMacro({ name: m.name, steps: m.steps, startUrl: m.url });
+      setMacros(loadMacros());
+      setSelectedId(saved.id);
+      setAuthored(await api.listAuthoredMacros().catch(() => authored));
+      toast.success(`Wrote "${m.name}" — ${m.steps.length} steps.`, {
+        description: m.caution || (m.dropped_steps ? `${m.dropped_steps} unusable step(s) were dropped.` : undefined),
+        duration: 12000,
+      });
+    } catch (err) {
+      toast.error(String(err), { duration: 12000 });
+    } finally { setAuthoring(false); }
+  };
 
   const selected = useMemo(() => macros.find((m) => m.id === selectedId) || null, [macros, selectedId]);
 
@@ -311,6 +339,32 @@ export default function MacroManager() {
         <span className="text-xs text-muted-foreground">
           — recorded (or hand-built) browser macros, their sequences, and the app-wide connector actions they plug into.
         </span>
+      </div>
+
+      {/* ── Write one with the AI ─────────────────────────────────────────
+          Open the target page in the app's browser first: the macro is written against that page's
+          own elements, so it can only reference selectors that actually exist there. */}
+      <div className="border border-primary/30 rounded-lg p-3 space-y-2">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Write a macro with the AI</div>
+        <div className="flex gap-2 flex-wrap">
+          <Input value={authorGoal} onChange={(e) => setAuthorGoal(e.target.value)}
+            placeholder="e.g. post the text from the app clipboard to r/ChristianMusic with a title"
+            className="flex-1 min-w-[18rem]" />
+          <Button size="sm" onClick={authorFromOpenPage} disabled={authoring}>
+            {authoring ? "Reading the page…" : "Write it"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => navigate("/browser")}>Open the browser</Button>
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          Open the page you want driven in the app's browser, then describe the goal. The macro is
+          written from that page's real elements — anything the player could not execute is dropped
+          rather than saved, and fields meant to change per run become playback parameters.
+        </div>
+        {authored.length > 0 && (
+          <div className="text-[11px] text-muted-foreground">
+            Previously written: {authored.slice(0, 4).map((a) => a.name).join(" · ")}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 items-start">

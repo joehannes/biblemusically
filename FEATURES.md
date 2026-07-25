@@ -207,6 +207,21 @@ Legend: ✅ Real/working · 🟡 Real but rough edge (documented) · 🔴 Broken
 - **Characters in scenes** — attach a character to specific sections and push its appearance tags and
   prompt into them in one action.
 
+## AI-authored browser macros (2026-07-25)
+
+- **For every platform without a usable posting API** — open the page in the app's browser, say what
+  the macro should do, and it is written from that page's own elements.
+- **The AI never sees raw HTML** — a structural digest of the interactive elements (stable selector,
+  visible label, role, whether it takes text) is collected in the page itself, because one modern
+  page is hundreds of kilobytes of framework noise that buries the handful of elements that matter.
+- **Every step is validated against the player's real vocabulary** before it is saved: an unknown
+  step type, a target nothing can resolve, a `fill` with neither a value nor a playback parameter,
+  an unbounded wait — all dropped rather than saved. A macro that half-works on a live site is worse
+  than one that refuses to save.
+- **Fields that change per run become parameters**, so one macro serves every song rather than one.
+- Saved into the normal macro library, so it plays, edits, exports and slots into a workflow exactly
+  like a recorded one.
+
 ## Publicity (`/publicity`, 2026-07-25)
 
 - **The studio writes about the song** — once a song has lyrics, a style, analysed sections and

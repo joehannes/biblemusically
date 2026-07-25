@@ -591,6 +591,10 @@ pub fn run() {
             commands::list_publicity_pieces,
             commands::update_publicity_piece,
             commands::delete_publicity_piece,
+            // AI-authored browser macros for platforms with no usable posting API
+            commands::author_macro,
+            commands::list_authored_macros,
+            commands::delete_authored_macro,
             commands::setup_recommendation,
             // Remote rendering (ffmpeg + upload on somebody else's computer)
             commands::list_render_providers,

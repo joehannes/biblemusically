@@ -157,6 +157,10 @@ export const api = {
   listPublicityPieces: (songId, projectId) => invokeCommand("list_publicity_pieces", { songId: songId || null, projectId: projectId || null }),
   updatePublicityPiece: (id, patch) => invokeCommand("update_publicity_piece", { id, patch }),
   deletePublicityPiece: (id) => invokeCommand("delete_publicity_piece", { id }),
+  // ============ AI-authored macros ============
+  authorMacro: (payload) => invokeCommand("author_macro", { payload }),
+  listAuthoredMacros: () => invokeCommand("list_authored_macros"),
+  deleteAuthoredMacro: (id) => invokeCommand("delete_authored_macro", { id }),
   // ============ Remote rendering ============
   listRenderProviders: () => invokeCommand("list_render_providers"),
   buildRenderSpec: (songId, options) => invokeCommand("build_render_spec", { songId, options: options || null }),
