@@ -354,6 +354,22 @@ export const api = {
     }
   },
 
+  // ============ Social presence (accounts, profile, derivatives, publishing) ============
+  listSocialPlatforms: () => invokeCommand("list_social_platforms"),
+  connectSocialAccount: (platform, fields) => invokeCommand("connect_social_account", { platform, fields }),
+  listSocialAccounts: () => invokeCommand("list_social_accounts"),
+  disconnectSocialAccount: (platform) => invokeCommand("disconnect_social_account", { platform }),
+  verifySocialAccount: (platform) => invokeCommand("verify_social_account", { platform }),
+  ingestSocialActivity: (limit) => invokeCommand("ingest_social_activity", { limit: limit || 50 }),
+  refreshTasteProfile: () => invokeCommand("refresh_taste_profile"),
+  ideateNext: (projectId, question) => invokeCommand("ideate_next", { projectId: projectId || null, question: question || null }),
+  deriveSongVersions: (songId, platforms, kinds) => invokeCommand("derive_song_versions", { songId, platforms, kinds: kinds || null }),
+  listDerivatives: (songId) => invokeCommand("list_derivatives", { songId: songId || null }),
+  updateDerivative: (id, patch) => invokeCommand("update_derivative", { id, patch }),
+  deleteDerivative: (id) => invokeCommand("delete_derivative", { id }),
+  publishDerivative: (id) => invokeCommand("publish_derivative", { id }),
+  publishAllDerivatives: (songId) => invokeCommand("publish_all_derivatives", { songId }),
+
   // ============ Character → section linking ============
   applyCharacterToSections: (charId, sectionIds, mode) => invokeCommand("apply_character_to_sections", { charId, sectionIds, mode: mode || "prepend" }),
   detachCharacterFromSections: (charId, sectionIds) => invokeCommand("detach_character_from_sections", { charId, sectionIds }),

@@ -30,6 +30,7 @@ import {
   UploadCloud,
   Activity,
   Database,
+  Share2,
   Settings as Cog,
   Palette,
   ChevronLeft,
@@ -211,6 +212,13 @@ const NAV = [
     icon: Activity,
     testid: "nav-jobs",
     group: "system",
+  },
+  {
+    to: "/social",
+    label: "Social Presence",
+    icon: Share2,
+    testid: "nav-social",
+    group: "publish",
   },
   {
     to: "/data",

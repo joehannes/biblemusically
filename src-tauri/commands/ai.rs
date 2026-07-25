@@ -497,6 +497,14 @@ pub async fn compose_assist(state: State<'_, AppState>, payload: ComposerAssistR
         payload.system_prompt.trim()
     };
     let mut user = String::new();
+    // The creator profile leads, so every assist reply lands in their voice rather than a
+    // generic one (see commands/social.rs — derived from their own posts, empty until they
+    // connect an account and refresh it).
+    let profile_block = crate::commands::social::taste_profile_block().await;
+    if !profile_block.is_empty() {
+        user.push_str(&profile_block);
+        user.push('\n');
+    }
     if !payload.preset.trim().is_empty() {
         user.push_str(&format!("Preset: {}\n", payload.preset.trim()));
     }
@@ -609,9 +617,12 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     // The user's accumulated taste (from JSON learnings files), so output drifts toward what they
     // keep choosing over time.
     let learnings_block = crate::commands::learnings::learnings_prompt_block(state.inner(), &payload.project_id).await;
+    // Who the creator actually is, derived from their own social posts (see commands/social.rs).
+    // The project brief says what this project is about; this says whose voice it should be in.
+    let profile_block = crate::commands::social::taste_profile_block().await;
 
     let user_prompt = format!(
-        "{brief_block}{research_block}{learnings_block}\
+        "{profile_block}{brief_block}{research_block}{learnings_block}\
          Source chapter text:\n{}\n\n\
          User-authored section ideas (apply to bracket prompts when matching lines):\n{}\n\n\
          Global theme: {}\n\
