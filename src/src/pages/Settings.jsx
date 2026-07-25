@@ -11,6 +11,7 @@ import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
+import VoicePicker from "../components/VoicePicker";
 import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { autoStartKaggleServer, subscribeKaggle } from "../lib/kaggleServerPipeline";
@@ -1057,6 +1058,16 @@ const SettingsComponent = () => {
         </div>
         <KaggleAutoStatus engine="comfyui" />
         <div className="mt-3 text-xs text-muted-foreground">Run the ComfyUI notebook (<code>scripts/kaggle_comfyui/</code>, pushed to Kaggle as <code>biblemusically-comfyui-server</code>). Character images automatically use the character's avatar as an IP-Adapter reference for consistency. Manage style presets &amp; per-channel sticky styles in <b>Style Studio</b>; mix music genres in <b>Sound Studio</b>.</div>
+      </Card>
+
+      {/* ── Assistant voice ─────────────────────────────────────────────────── */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Sparkles className="w-4 h-4 text-primary" /><h2 className="font-semibold">Assistant voice</h2></div>
+        <div className="text-sm text-muted-foreground mb-3">
+          The guided flows can read their questions aloud and take spoken answers. Voices come from your
+          Gemini key and every line is cached, so a repeated question costs nothing.
+        </div>
+        <VoicePicker />
       </Card>
 
       {/* ── Remote rendering ─────────────────────────────────────────────────

@@ -140,6 +140,11 @@ export const api = {
   getWorkflowState: (projectId, view) => invokeCommand("get_workflow_state", { projectId, view }),
   saveWorkflowState: (projectId, view, patch) => invokeCommand("save_workflow_state", { projectId, view, patch }),
   resetWorkflowState: (projectId, view) => invokeCommand("reset_workflow_state", { projectId, view }),
+  // ============ Assistant voice ============
+  listAssistantVoices: () => invokeCommand("list_assistant_voices"),
+  ttsSpeak: (payload) => invokeCommand("tts_speak", { payload }),
+  sttTranscribe: (payload) => invokeCommand("stt_transcribe", { payload }),
+  guideInterpret: (payload) => invokeCommand("guide_interpret", { payload }),
   // ============ Remote rendering ============
   listRenderProviders: () => invokeCommand("list_render_providers"),
   buildRenderSpec: (songId, options) => invokeCommand("build_render_spec", { songId, options: options || null }),

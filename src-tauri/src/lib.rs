@@ -577,6 +577,11 @@ pub fn run() {
             commands::get_workflow_state,
             commands::save_workflow_state,
             commands::reset_workflow_state,
+            // Assistant voice (speech out, speech in)
+            commands::list_assistant_voices,
+            commands::tts_speak,
+            commands::stt_transcribe,
+            commands::guide_interpret,
             // Remote rendering (ffmpeg + upload on somebody else's computer)
             commands::list_render_providers,
             commands::build_render_spec,

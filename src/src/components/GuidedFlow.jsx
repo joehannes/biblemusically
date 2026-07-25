@@ -4,9 +4,10 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import {
   Sparkles, ArrowRight, ArrowLeft, Check, Wand2, Loader2, SlidersHorizontal,
-  ChevronRight, RotateCcw, Lightbulb,
+  ChevronRight, RotateCcw, Lightbulb, Mic, MicOff, Volume2, VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
+import { speak, stopSpeaking, listen, interpretAnswer, voicePrefs, setVoicePrefs, voiceInputAvailable } from "../lib/voice";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The guided layer.
@@ -158,8 +159,71 @@ export default function GuidedFlow({
 
   const skip = () => (i + 1 < steps.length ? setI(i + 1) : onFinish?.());
 
+  // ── voice ─────────────────────────────────────────────────────────────────
+  // The assistant reads each question and its choices, then waits. Speaking is opt-in and remembered;
+  // everything here fails quietly, so a missing microphone or key never blocks clicking.
+  const [prefs, setPrefs] = useState(() => voicePrefs());
+  const [listening, setListening] = useState(false);
+  const spokenFor = useRef(null);
+
+  const recommendedId = step ? recommendedFor(step, options) : null;
+
+  useEffect(() => {
+    if (!step || !prefs.speak) return;
+    // One reading per step, even as re-renders come and go.
+    const key = `${flow.id}:${step.id}:${i}`;
+    if (spokenFor.current === key) return;
+    spokenFor.current = key;
+    const question = resolve(step.question, ctx);
+    const spokenOptions = options.slice(0, 4).map((o, n) => `${n + 1}. ${o.label}`).join(". ");
+    const suggestion = options.find((o) => o.id === recommendedId);
+    const line = [question, spokenOptions, suggestion ? `I'd suggest ${suggestion.label}.` : ""]
+      .filter(Boolean).join(" ");
+    speak(line).catch(() => {});
+    return () => stopSpeaking();
+  }, [step, i, options, prefs.speak, flow.id, ctx, recommendedId]);
+
+  /** Take a spoken answer: transcribe, map it to a choice, and act on it. */
+  const answerByVoice = async () => {
+    if (listening) return;
+    stopSpeaking();
+    setListening(true);
+    try {
+      const heard = await listen({ language: prefs.language });
+      if (!heard) {
+        toast.message("I didn't catch that — try again, or just click.");
+        return;
+      }
+      const { option, confidence, reason } = await interpretAnswer(heard, options, {
+        recommended: recommendedId,
+        question: resolve(step?.question, ctx),
+      });
+      if (!option) {
+        if (reason === "declined") { skip(); return; }
+        toast.message(`Heard "${heard}" — but I'm not sure which option that is.`);
+        return;
+      }
+      const chosen = options.find((o) => o.id === option);
+      if (!chosen) return;
+      toast.success(`"${heard}" → ${chosen.label}`, {
+        description: confidence < 0.7 ? "Not certain — change it from the rail if that's wrong." : undefined,
+      });
+      choose(chosen);
+    } finally { setListening(false); }
+  };
+
+  const toggleSpeech = () => {
+    const next = setVoicePrefs({ speak: !prefs.speak });
+    setPrefs(next);
+    if (!next.speak) stopSpeaking();
+    else if (step) {
+      spokenFor.current = null;   // let the effect read the current question straight away
+      speak(resolve(step.question, ctx), { force: true }).catch(() => {});
+    }
+  };
+
   if (!steps.length) return null;
-  const recommended = step ? recommendedFor(step, options) : null;
+  const recommended = recommendedId;
 
   return (
     <Card className={`overflow-hidden border-primary/30 ${compact ? "p-3" : "p-4"} space-y-3`}>
@@ -176,6 +240,13 @@ export default function GuidedFlow({
             {!proposing && proposal?.model && <span className="ml-2 opacity-70">suggestions by {proposal.model}</span>}
           </div>
         </div>
+        <button
+          onClick={toggleSpeech}
+          title={prefs.speak ? "Stop reading the questions aloud" : "Read the questions aloud"}
+          className={`p-1.5 rounded shrink-0 hover:bg-muted/40 ${prefs.speak ? "text-primary" : "text-muted-foreground"}`}
+        >
+          {prefs.speak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+        </button>
         {onShowAll && (
           <Button size="sm" variant="ghost" onClick={onShowAll} className="shrink-0 text-xs">
             <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5" />{showAllLabel}
@@ -256,9 +327,21 @@ export default function GuidedFlow({
           )}
 
           <div className="flex items-center justify-between pt-0.5">
-            <Button size="sm" variant="ghost" onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i === 0}>
-              <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />Back
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i === 0}>
+                <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />Back
+              </Button>
+              {/* Answer by speaking. "Yes" takes the suggestion, "the second one" works, so does
+                  naming the option — and anything ambiguous is checked with the AI before acting. */}
+              {voiceInputAvailable() && (
+                <Button size="sm" variant={listening ? "default" : "ghost"} onClick={answerByVoice}
+                  title="Answer out loud">
+                  {listening
+                    ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Listening…</>
+                    : <><Mic className="w-3.5 h-3.5 mr-1.5" />Say it</>}
+                </Button>
+              )}
+            </div>
             <div className="flex items-center gap-1.5">
               <Button size="sm" variant="ghost" onClick={skip} className="text-xs text-muted-foreground">
                 Keep as is<ChevronRight className="w-3.5 h-3.5 ml-1" />
