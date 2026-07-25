@@ -340,11 +340,34 @@ fn page_id_or_default(page_id: Option<String>) -> String {
     }
 }
 
+/// Child-webview control, in one place because it exists only on desktop.
+///
+/// Tauri models an embedded page as a *child webview* of the window: `Window::add_child`, and
+/// `show`/`hide`/`close`/`set_position`/`set_size` on the resulting `Webview`. None of that exists
+/// in the mobile runtime — Android has a single system WebView with an entirely different embedding
+/// model — so on mobile these are no-ops and `build_page` refuses with an explanation. The commands
+/// stay registered either way, so the frontend gets a clear "not available here" instead of an
+/// unknown-command error, and every caller keeps one code path.
+#[cfg(desktop)]
+fn wv_show(wv: &Webview<Wry>) { let _ = wv.show(); }
+#[cfg(not(desktop))]
+fn wv_show(_wv: &Webview<Wry>) {}
+
+#[cfg(desktop)]
+fn wv_hide(wv: &Webview<Wry>) { let _ = wv.hide(); }
+#[cfg(not(desktop))]
+fn wv_hide(_wv: &Webview<Wry>) {}
+
+#[cfg(desktop)]
+fn wv_close(wv: Webview<Wry>) { let _ = wv.close(); }
+#[cfg(not(desktop))]
+fn wv_close(_wv: Webview<Wry>) {}
+
 /// Hide every page except `keep` (pass None to hide all).
 fn hide_others(pages: &HashMap<String, Webview<Wry>>, keep: Option<&str>) {
     for (id, wv) in pages.iter() {
         if Some(id.as_str()) != keep {
-            let _ = wv.hide();
+            wv_hide(wv);
         }
     }
 }
@@ -378,11 +401,17 @@ fn place(app: &AppHandle, wv: &Webview<Wry>, rect: &Rect) {
     {
         linux_layout::place(app, wv.label().to_string(), *rect);
     }
-    #[cfg(not(target_os = "linux"))]
+    // macOS/Windows: Tauri's own bounds setters work (it is specifically Linux where they are
+    // dropped, which is what linux_layout exists for).
+    #[cfg(all(desktop, not(target_os = "linux")))]
     {
         let _ = app;
         let _ = wv.set_position(rect.position());
         let _ = wv.set_size(rect.size());
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, wv, rect);
     }
 }
 
@@ -531,6 +560,26 @@ fn install_download_hook(
 }
 
 /// Create a page's child webview at `url`, sized onto `rect`. Caller holds no locks.
+/// Mobile: there is no child-webview API to build a page into (see `wv_show`). The command stays
+/// registered so the frontend gets this explanation instead of an unknown-command error.
+#[cfg(not(desktop))]
+fn build_page(
+    _app: &AppHandle,
+    _id: &str,
+    _url: url::Url,
+    _rect: &Rect,
+    _scrape: Arc<Mutex<HashMap<String, Value>>>,
+    _macros: Arc<MacroState>,
+    _pending_download: Arc<Mutex<Option<PendingDownload>>>,
+    _download_hooked: Arc<AtomicBool>,
+) -> Result<Webview<Wry>, String> {
+    Err("The embedded browser isn't available on mobile — Android has a single system WebView, with \
+         no child-webview API to place pages into. Use the desktop app for Suno/Midjourney sign-in \
+         and macro recording."
+        .to_string())
+}
+
+#[cfg(desktop)]
 fn build_page(
     app: &AppHandle,
     id: &str,
@@ -736,7 +785,7 @@ pub async fn webview_open(
         if let Some(wv) = pages.get(&id) {
             place(&app, wv, &rect);
             let _ = wv.navigate(target);
-            let _ = wv.show();
+            wv_show(wv);
             hide_others(&pages, Some(&id));
             *mgr.active.lock().map_err(lock_err)? = Some(id);
             return Ok(());
@@ -748,7 +797,7 @@ pub async fn webview_open(
 
     let mut pages = mgr.pages.lock().map_err(lock_err)?;
     hide_others(&pages, None);
-    let _ = webview.show();
+    wv_show(&webview);
     pages.insert(id.clone(), webview);
     *mgr.active.lock().map_err(lock_err)? = Some(id);
     Ok(())
@@ -774,7 +823,7 @@ pub async fn webview_show_page(
         let pages = mgr.pages.lock().map_err(lock_err)?;
         if let Some(wv) = pages.get(&page_id) {
             place(&app, wv, &rect);
-            let _ = wv.show();
+            wv_show(wv);
             hide_others(&pages, Some(&page_id));
             *mgr.active.lock().map_err(lock_err)? = Some(page_id);
             return Ok(());
@@ -790,7 +839,7 @@ pub async fn webview_show_page(
 
     let mut pages = mgr.pages.lock().map_err(lock_err)?;
     hide_others(&pages, None);
-    let _ = webview.show();
+    wv_show(&webview);
     pages.insert(page_id.clone(), webview);
     *mgr.active.lock().map_err(lock_err)? = Some(page_id);
     Ok(())
@@ -807,7 +856,7 @@ pub async fn webview_close_page(
         pages.remove(&page_id)
     };
     if let Some(wv) = removed {
-        let _ = wv.close();
+        wv_close(wv);
     }
     let mut active = mgr.active.lock().map_err(lock_err)?;
     if active.as_deref() == Some(page_id.as_str()) {

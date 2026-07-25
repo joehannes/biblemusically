@@ -268,16 +268,8 @@ pub async fn download_all_songs(
     app_handle: tauri::AppHandle,
     songs: Vec<SongDownloadInfo>,
 ) -> Result<u32, String> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let dir_path_opt = app_handle.dialog()
-        .file()
-        .blocking_pick_folder();
-
-    let dir_path = match dir_path_opt {
-        Some(path) => path.into_path().map_err(|err| format!("{:?}", err))?,
-        None => return Err("Folder picker cancelled".to_string()),
-    };
+    let dir_path = crate::helpers::pick_folder_blocking(&app_handle)
+        .map_err(|err| if err == "Cancelled" { "Folder picker cancelled".to_string() } else { err })?;
 
     let settings_doc = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(|err| format!("DB lookup failed: {}", err))?

@@ -369,3 +369,30 @@ pub fn mask_secret(mut doc: serde_json::Value) -> serde_json::Value {
     }
     doc
 }
+
+// ────────────────────────────────────────────────────────────────
+// Folder picking
+// ────────────────────────────────────────────────────────────────
+
+/// Ask the user to choose a destination folder.
+///
+/// `tauri-plugin-dialog` has no `blocking_pick_folder` on mobile — Android exposes documents through
+/// the Storage Access Framework, not a filesystem path a picker could return — so mobile callers
+/// get a clear error instead of the crate failing to compile. Desktop behaviour is unchanged.
+#[cfg(desktop)]
+pub fn pick_folder_blocking(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog()
+        .file()
+        .blocking_pick_folder()
+        .ok_or_else(|| "Cancelled".to_string())?
+        .into_path()
+        .map_err(|err| err.to_string())
+}
+
+#[cfg(not(desktop))]
+pub fn pick_folder_blocking(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Err("Choosing a folder isn't available on mobile — files are written to the app's own storage \
+         directory instead."
+        .to_string())
+}

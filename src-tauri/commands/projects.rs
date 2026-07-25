@@ -347,10 +347,8 @@ pub async fn export_project(
         }
     }
 
-    use tauri_plugin_dialog::DialogExt;
-    let dir_path_opt = app_handle.dialog().file().blocking_pick_folder();
-    let dir_path = dir_path_opt.ok_or_else(|| "Export cancelled".to_string())?
-        .into_path().map_err(|err| e(err))?;
+    let dir_path = crate::helpers::pick_folder_blocking(&app_handle)
+        .map_err(|err| if err == "Cancelled" { "Export cancelled".to_string() } else { err })?;
 
     let media_dir = dir_path.join("media");
     std::fs::create_dir_all(&media_dir).map_err(e)?;
