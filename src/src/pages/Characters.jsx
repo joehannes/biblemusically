@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useStudio } from "../lib/store";
+import CharacterSections from "../components/CharacterSections";
 import { api } from "../lib/api";
 import ImageLightbox from "../components/ImageLightbox";
 import { Card } from "../components/ui/card";
@@ -596,6 +597,13 @@ export default function Characters() {
                       </Button>
                     )}
                   </div>
+
+                  {/* Which sections this character appears in — and one-click prompt injection. */}
+                  <CharacterSections
+                    character={char}
+                    songId={activeSongId}
+                    onApplied={() => { /* sections are re-read by the Section Editor on focus */ }}
+                  />
 
                   {/* Variant thumbnails */}
                   {variants.length > 1 && (

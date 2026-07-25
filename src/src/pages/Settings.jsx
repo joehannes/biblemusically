@@ -111,6 +111,7 @@ AuthField.displayName = 'AuthField';
 
 const initialSettings = {
   music_engine: "suno",
+  music_engine_fallback: "none",
   acestep_api_url: "",
   acestep_api_key: "",
   acestep_duration: 240,
@@ -752,6 +753,19 @@ const SettingsComponent = () => {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground mt-1">ACE-Step is a free MIT-licensed alternative that runs on your own GPU (locally or a free Kaggle/Colab notebook) and generates up to 10-minute songs with vocals. Configure whichever engine you select below.</p>
+        </div>
+        <div className="space-y-1 max-w-sm mt-4">
+          <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">If it fails, retry with</Label>
+          <Select value={s.music_engine_fallback || "none"} onValueChange={(val) => updateS({ music_engine_fallback: val })}>
+            <SelectTrigger className="w-full" data-testid="settings-music-engine-fallback"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nothing — fail and tell me</SelectItem>
+              <SelectItem value="suno">Suno</SelectItem>
+              <SelectItem value="acestep">ACE-Step 1.5</SelectItem>
+              <SelectItem value="heartmula">HeartMuLa</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">A Suno cookie that expires overnight, or a Kaggle notebook that times out, otherwise fails every song queued behind it. With a fallback set, the job retries once on the other engine before giving up — the job log records which engine actually produced the audio.</p>
         </div>
       </Card>
 

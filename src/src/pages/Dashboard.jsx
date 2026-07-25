@@ -20,7 +20,6 @@ export default function Dashboard() {
   const { projects, refreshProjects, activeProjectId, selectProject, refreshSongs } = useStudio();
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
-  const [schedule, setSchedule] = useState("");
   const [template, setTemplate] = useState("default");
   // Christian projects get the Bible Sources tab and the Jewish/Messianic musical layers; a
   // non-christian project hides both and works purely from freeform material.
@@ -200,7 +199,6 @@ export default function Dashboard() {
     if (t) {
       if (t.defaultName) setName(t.defaultName);
       if (t.defaultTopic) setTopic(t.defaultTopic);
-      if (t.defaultSchedule) setSchedule(t.defaultSchedule);
     }
   }, [template]);
 
@@ -221,7 +219,7 @@ export default function Dashboard() {
     if (!name.trim()) return toast.error("Project name required");
     // Build project payload from selected template
     const t = localPresets.find(p => p.id === template) || {};
-    const payload = { name, topic, schedule: schedule || null, is_christian: isChristian, ...(t.projectOverrides || {}) };
+    const payload = { name, topic, is_christian: isChristian, ...(t.projectOverrides || {}) };
     const created = await api.createProject(payload);
 
     // If template requests reset of global settings or channels, perform actions
@@ -252,7 +250,7 @@ export default function Dashboard() {
       console.warn("Post-create template actions failed", err);
     }
 
-    setName(""); setTopic(""); setSchedule("");
+    setName(""); setTopic("");
     await refreshProjects();
     toast.success("Project created");
   };
@@ -332,7 +330,9 @@ export default function Dashboard() {
           </div>
           <Input data-testid="project-name-input" placeholder="Project name (e.g. John 1 Multilingual)" value={name} onChange={e=>setName(e.target.value)} className="md:col-span-3 h-10" />
           <Input data-testid="project-topic-input" placeholder="Topic / theme" value={topic} onChange={e=>setTopic(e.target.value)} className="md:col-span-3 h-10" />
-          <Input data-testid="project-schedule-input" placeholder="Schedule (e.g. weekly Sunday 9am)" value={schedule} onChange={e=>setSchedule(e.target.value)} className="md:col-span-2 h-10" />
+          <div className="md:col-span-2 h-10 flex items-center text-xs text-muted-foreground px-2 rounded border border-dashed border-border" title="A project's schedule is set in its Daily Content panel, below — the text on the card is generated from it so the two can never disagree.">
+            <Calendar className="w-3 h-3 mr-1.5 shrink-0" /> Schedule: set it per project below
+          </div>
           <label className="md:col-span-2 flex items-center gap-2 text-sm cursor-pointer select-none" title="Christian projects get Bible Sources and the Jewish/Messianic musical layers; non-christian projects hide both and work from freeform material.">
             <input type="checkbox" className="accent-primary" checked={isChristian} onChange={(e)=>setIsChristian(e.target.checked)} data-testid="project-christian-toggle" />
             <span>Christian / Bible project</span>
@@ -385,7 +385,7 @@ export default function Dashboard() {
                 <button data-testid={`project-delete-${p.id}`} onClick={e=>{e.stopPropagation();del(p.id);}} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-4 h-4" /></button>
               </div>
               <div className="mt-4 space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground"><Calendar className="w-3 h-3" /> {p.schedule || "No schedule"}</div>
+                <div className="flex items-center gap-2 text-muted-foreground"><Calendar className="w-3 h-3" /> {p.schedule || "No automation scheduled"}</div>
                 <div className="flex items-center gap-2 text-muted-foreground"><Languages className="w-3 h-3" /> {(p.languages||[]).join(", ") || "—"}</div>
                 <div className="flex items-center gap-2 text-muted-foreground"><Palette className="w-3 h-3" /> {(p.styles||[]).length} styles</div>
                 {p.local_path && (

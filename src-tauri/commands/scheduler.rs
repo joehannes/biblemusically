@@ -202,7 +202,16 @@ pub async fn run_scheduled_generation(state: &Arc<AppState>, project_id: &str) -
              Output the JSON object now."
         );
 
-        match crate::commands::ai::call_openrouter(db, system, &user, 0.85, true).await {
+        // Gate the AI call through the same semaphore that bounds jobs (TODOS.md #18). A tick with
+        // several due projects used to fire every project's OpenRouter request concurrently — the
+        // job queue only ever throttled what came *after* the lyrics existed. Free-tier models
+        // rate-limit hard, so those bursts failed in batches. The permit is released as soon as the
+        // request returns, before the music job is enqueued, so this never deadlocks against the
+        // job that the same iteration is about to queue.
+        let ai_permit = state.job_semaphore.clone().acquire_owned().await.ok();
+        let ai_result = crate::commands::ai::call_openrouter(db, system, &user, 0.85, true).await;
+        drop(ai_permit);
+        match ai_result {
             Ok(resp) => {
                 let text = resp["text"].as_str().unwrap_or("");
                 match crate::commands::ai::extract_json_value(text) {
@@ -249,7 +258,15 @@ pub async fn run_scheduled_generation(state: &Arc<AppState>, project_id: &str) -
         obj.insert("last_run_at".into(), Value::String(ts.clone()));
     }
     db.collection::<Document>("projects")
-        .update_one(doc! { "id": project_id }, doc! { "$set": { "schedule_config": bson::to_bson(&new_cfg).map_err(e)? } })
+        .update_one(
+            doc! { "id": project_id },
+            doc! { "$set": {
+                "schedule_config": bson::to_bson(&new_cfg).map_err(e)?,
+                // Advancing the chapter cursor changes what the schedule will do next, so the
+                // human-readable summary the dashboard shows has to move with it.
+                "schedule": crate::commands::projects::describe_schedule(&new_cfg),
+            }},
+        )
         .await.map_err(e)?;
 
     let summary = serde_json::json!({

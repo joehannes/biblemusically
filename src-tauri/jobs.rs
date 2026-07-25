@@ -2283,22 +2283,51 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
             "music" => {
                 let song = fetch_doc(db, "songs", "id", tgt).await;
                 let engine = settings_doc.get("music_engine").and_then(|v| v.as_str()).unwrap_or("suno");
-                let clips = if engine == "acestep" {
-                    real_acestep(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await
-                        .ok_or_else(|| anyhow::anyhow!(
-                            "ACE-Step music generation failed. Check: (1) acestep_api_url is set and reachable, (2) the Kaggle/Colab notebook is still running (share URLs expire), (3) API key if the server requires one. See job logs for details."
-                        ))?
-                } else if engine == "heartmula" {
-                    real_heartmula(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await
-                        .ok_or_else(|| anyhow::anyhow!(
-                            "HeartMuLa music generation failed. Check: (1) heartmula_api_url is set and reachable, (2) the Kaggle/Colab notebook is still running, (3) API key if required. See job logs for details."
-                        ))?
-                } else {
-                    real_suno(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await
-                        .ok_or_else(|| anyhow::anyhow!(
-                            "Suno music generation failed. Check: (1) Cookie validity, (2) Network connectivity, (3) Suno service status. See job logs for details."
-                        ))?
-                };
+
+                // Try the chosen engine, then the configured fallback. The whole pipeline rides on
+                // an unofficial Suno session cookie; when it expires overnight every queued song
+                // fails, even though a free self-hosted engine may be sitting there ready. With
+                // `music_engine_fallback` set, one engine's outage costs a retry instead of the
+                // night's output. `none` (the default) keeps the old fail-loudly behaviour.
+                let fallback = settings_doc
+                    .get("music_engine_fallback")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty() && *s != "none" && *s != engine);
+
+                let mut attempts: Vec<&str> = vec![engine];
+                attempts.extend(fallback);
+
+                let mut clips: Option<Vec<Value>> = None;
+                let mut used_engine = engine.to_string();
+                let mut failures: Vec<String> = Vec::new();
+                for candidate in attempts {
+                    if !failures.is_empty() {
+                        db_log(db, job_id, &format!("Falling back to {candidate} after {engine} failed")).await;
+                    }
+                    let produced = match candidate {
+                        "acestep" => real_acestep(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                        "heartmula" => real_heartmula(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                        _ => real_suno(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                    };
+                    match produced {
+                        Some(c) => {
+                            used_engine = candidate.to_string();
+                            clips = Some(c);
+                            break;
+                        }
+                        None => failures.push(match candidate {
+                            "acestep" => "ACE-Step failed — check acestep_api_url is reachable, the Kaggle/Colab notebook is still running (share URLs expire), and the API key if one is required.".to_string(),
+                            "heartmula" => "HeartMuLa failed — check heartmula_api_url is reachable, the notebook is still running, and the API key if required.".to_string(),
+                            _ => "Suno failed — check the session cookie's validity, network connectivity and Suno's service status.".to_string(),
+                        }),
+                    }
+                }
+
+                let clips = clips.ok_or_else(|| {
+                    anyhow::anyhow!("Music generation failed. {} See job logs for details.", failures.join(" "))
+                })?;
+                let engine = used_engine.as_str();
 
                 let primary = &clips[0];
                 let primary_url = primary["audio_url"].as_str().unwrap_or("").to_string();

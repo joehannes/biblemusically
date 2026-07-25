@@ -4,6 +4,7 @@ import { useStudio } from "../lib/store";
 import { UI_LANGUAGES, getUiLanguage, setUiLanguage, subscribeLanguage, initUiLanguage } from "../lib/uiTranslate";
 import { useRequireGuideStep } from "./GuideStepDialog";
 import ToursFab from "./Tours";
+import HealthBanner from "./HealthBanner";
 import { api } from "../lib/api";
 import { getVersion } from "@tauri-apps/api/app";
 // Fallback only, for the very first paint before getVersion() resolves — this file lives
@@ -1194,6 +1195,9 @@ export default function Shell({ children }) {
             actions provider so any page below can publish controls into the header above via
             usePageActions() — e.g. a page-wide "Generate" button next to the running-jobs
             indicator instead of buried in the page body. */}
+        {/* Engine health: only speaks up when the engines this setup actually uses are failing. */}
+        <HealthBanner />
+
         <PageActionsContext.Provider value={setPageActions}>
           {/* pb-16 on mobile clears the fixed bottom nav so the last of a page's content isn't
               hidden behind it; safe-area inset keeps it above a phone's home indicator. */}

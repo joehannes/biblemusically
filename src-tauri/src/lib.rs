@@ -16,6 +16,8 @@ pub mod project_sync;
 pub mod state;
 #[path = "../store.rs"]
 pub mod store;
+#[path = "../tests_logic.rs"]
+mod tests_logic;
 #[path = "../vault.rs"]
 pub mod vault;
 
@@ -383,6 +385,7 @@ pub fn run() {
             commands::record_learning_signal,
             commands::learnings_locations,
             // Data / storage transparency + legacy import
+            commands::service_health,
             commands::store_info,
             commands::run_legacy_migration,
             commands::purge_legacy_data,
@@ -501,6 +504,9 @@ pub fn run() {
             commands::discard_character_variant,
             commands::discard_all_character_variants,
             commands::propose_characters,
+            commands::apply_character_to_sections,
+            commands::detach_character_from_sections,
+            commands::character_section_links,
             // OAuth commands
             commands::list_oauth_clients,
             commands::create_oauth_client,

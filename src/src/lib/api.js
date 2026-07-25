@@ -354,6 +354,14 @@ export const api = {
     }
   },
 
+  // ============ Character → section linking ============
+  applyCharacterToSections: (charId, sectionIds, mode) => invokeCommand("apply_character_to_sections", { charId, sectionIds, mode: mode || "prepend" }),
+  detachCharacterFromSections: (charId, sectionIds) => invokeCommand("detach_character_from_sections", { charId, sectionIds }),
+  characterSectionLinks: (songId) => invokeCommand("character_section_links", { songId }),
+
+  // ============ Service health ============
+  serviceHealth: () => invokeCommand("service_health"),
+
   // ============ Data & storage (JSON store, legacy import, per-project git) ============
   storeInfo: () => invokeCommand("store_info"),
   runLegacyMigration: (force = false) => invokeCommand("run_legacy_migration", { force }),

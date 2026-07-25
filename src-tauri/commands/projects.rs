@@ -229,12 +229,66 @@ pub async fn get_project(state: State<'_, AppState>, pid: String) -> Res<Value> 
     Ok(bson_to_value(doc))
 }
 
+/// One-line English rendering of a `schedule_config`, e.g.
+/// "Daily at 06:00 — Psalms, English (Cinematic), next chapter 12".
+///
+/// The project used to carry two schedules: this structured config (which drives the actual
+/// automation) and a free-text `schedule` string shown on the dashboard card, which nothing read
+/// and which drifted until the card claimed "weekly Sunday 9am" while the scheduler ran daily at
+/// 06:00 (TODOS.md #17). Rather than keep two sources of truth, `schedule` is now *derived* here on
+/// every save, so the card can only ever say what the automation will actually do.
+pub fn describe_schedule(cfg: &Value) -> String {
+    if !cfg.is_object() {
+        return String::new();
+    }
+    if cfg["enabled"].as_bool() != Some(true) {
+        return "Automation off".to_string();
+    }
+    let time = cfg["time"].as_str().filter(|s| !s.is_empty()).unwrap_or("06:00");
+    let cadence = match cfg["frequency"].as_str().unwrap_or("daily") {
+        "weekly" => {
+            const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            let day = cfg["day_of_week"].as_i64().unwrap_or(0).rem_euclid(7) as usize;
+            format!("Weekly on {} at {time}", DAYS[day])
+        }
+        _ => format!("Daily at {time}"),
+    };
+
+    let mut parts = vec![cadence];
+    if let Some(book) = cfg["book"].as_str().filter(|s| !s.is_empty()) {
+        let mut chars = book.chars();
+        let pretty = match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => book.to_string(),
+        };
+        parts.push(pretty);
+    }
+    let list = |key: &str| -> Option<String> {
+        let items: Vec<&str> = cfg[key].as_array()?.iter().filter_map(|v| v.as_str()).collect();
+        if items.is_empty() { None } else { Some(items.join(", ")) }
+    };
+    if let Some(langs) = list("languages") {
+        parts.push(langs);
+    }
+    if let Some(styles) = list("styles") {
+        parts.push(format!("({styles})"));
+    }
+    if let Some(next) = cfg["next_chapter"].as_i64() {
+        parts.push(format!("next chapter {next}"));
+    }
+    parts.join(" — ")
+}
+
 #[tauri::command]
 pub async fn update_project(state: State<'_, AppState>, pid: String, body: Value) -> Res<Value> {
     let mut body = body;
     if let Some(obj) = body.as_object_mut() {
         obj.remove("id");
         obj.remove("_id");
+        // Keep the displayed schedule text in lockstep with the automation that actually runs.
+        if let Some(cfg) = obj.get("schedule_config").cloned() {
+            obj.insert("schedule".to_string(), Value::String(describe_schedule(&cfg)));
+        }
     }
     let bson = bson::to_bson(&body).map_err(e)?;
     state.db.collection::<Document>("projects")

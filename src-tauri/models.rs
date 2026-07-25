@@ -20,6 +20,11 @@ pub struct Settings {
     /// Which backend generates songs: "suno" (default) or "acestep".
     #[serde(default = "default_music_engine")]
     pub music_engine: String,
+    /// Engine to retry with when `music_engine` fails — "none" (default), "suno", "acestep" or
+    /// "heartmula". The music integrations ride on unofficial sessions and free notebook servers
+    /// that go away without warning; a fallback turns a whole failed batch into one extra attempt.
+    #[serde(default = "default_none")]
+    pub music_engine_fallback: String,
     /// Base URL of a running ACE-Step REST server (e.g. a Kaggle/Colab `acestep-api --share`
     /// public URL, or http://localhost:8001). Used only when `music_engine == "acestep"`.
     #[serde(default)]
@@ -163,6 +168,7 @@ pub struct Settings {
 }
 
 fn default_music_engine() -> String { "suno".into() }
+fn default_none() -> String { "none".into() }
 fn default_acestep_duration() -> f64 { 240.0 }
 fn default_ffmpeg() -> String  { "ffmpeg".into() }
 fn default_ffprobe() -> String { "ffprobe".into() }

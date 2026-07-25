@@ -369,3 +369,175 @@ pub async fn propose_characters(
         "count": created.len(),
     }))
 }
+// ────────────────────────────────────────────────────────────────────────────
+// Character → section linking
+// ────────────────────────────────────────────────────────────────────────────
+
+/// The stable visual identity of a character, as prompt text: appearance tags first (they are the
+/// descriptors meant to survive every regeneration), then the free-form prompt/description.
+///
+/// This is the same order `jobs.rs` uses when it renders a character portrait, so a section
+/// generated from this text and the character's own portrait describe the same person — which is
+/// the entire point of the feature.
+fn character_prompt_fragment(character: &Value) -> String {
+    let tags: Vec<String> = character["appearance_tags"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|t| t.as_str()).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
+        .unwrap_or_default();
+    let body = character["image_prompt"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| character["description"].as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let name = character["name"].as_str().unwrap_or("").trim().to_string();
+
+    let mut parts: Vec<String> = Vec::new();
+    if !name.is_empty() { parts.push(name); }
+    if !tags.is_empty() { parts.push(tags.join(", ")); }
+    if !body.is_empty() { parts.push(body); }
+    parts.join(", ")
+}
+
+/// Attach a character to specific sections and push its visual identity into their image prompts.
+///
+/// Before this, "consistent characters" stopped at the character portrait: to actually get the same
+/// face into a song's scenes you had to copy the character's prompt into each section's
+/// `image_prompt` by hand, for every section, every time you tweaked the character. Now the link is
+/// recorded on the section (`character_ids`) and the prompt text is merged in one action.
+///
+/// `mode`:
+/// * `prepend` (default) — the character leads the prompt, the scene follows. Best for
+///   image models that weight the start of a prompt more heavily.
+/// * `append` — scene first, character after.
+/// * `replace` — the section's prompt becomes the character alone (for portrait-style sections).
+///
+/// Re-applying is safe: a fragment already present in the prompt is not added twice, so pressing
+/// the button again after editing a section doesn't accumulate duplicates.
+#[tauri::command]
+pub async fn apply_character_to_sections(
+    state: State<'_, AppState>,
+    char_id: String,
+    section_ids: Vec<String>,
+    mode: Option<String>,
+) -> Res<Value> {
+    let character = state.db.collection::<Document>("characters")
+        .find_one(doc! { "id": &char_id }).await.map_err(e)?
+        .map(bson_to_value)
+        .ok_or_else(|| "Character not found".to_string())?;
+
+    let fragment = character_prompt_fragment(&character);
+    if fragment.is_empty() {
+        return Err("This character has no name, appearance tags, prompt or description to apply.".into());
+    }
+    if section_ids.is_empty() {
+        return Err("Select at least one section.".into());
+    }
+
+    let mode = mode.unwrap_or_else(|| "prepend".into());
+    let sections = state.db.collection::<Document>("sections");
+    let mut updated = 0u64;
+    let mut skipped = 0u64;
+
+    for id in &section_ids {
+        let Some(doc_found) = sections.find_one(doc! { "id": id }).await.map_err(e)? else { continue };
+        let section = bson_to_value(doc_found);
+        let existing = section["image_prompt"].as_str().unwrap_or("").trim().to_string();
+
+        let next = match mode.as_str() {
+            "replace" => fragment.clone(),
+            _ if existing.is_empty() => fragment.clone(),
+            _ if existing.contains(&fragment) => { skipped += 1; existing.clone() }
+            "append" => format!("{existing}, {fragment}"),
+            _ => format!("{fragment}, {existing}"),
+        };
+
+        // Keep the link itself, so the UI can show which sections a character appears in and a
+        // later edit of the character can offer to refresh them.
+        let mut links: Vec<String> = section["character_ids"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
+            .unwrap_or_default();
+        if !links.contains(&char_id) { links.push(char_id.clone()); }
+
+        let r = sections.update_one(
+            doc! { "id": id },
+            doc! { "$set": { "image_prompt": &next, "character_ids": &links } },
+        ).await.map_err(e)?;
+        updated += r.modified_count;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "updated": updated,
+        "already_applied": skipped,
+        "fragment": fragment,
+    }))
+}
+
+/// Remove a character from sections: drop the link and strip its fragment back out of the prompt.
+#[tauri::command]
+pub async fn detach_character_from_sections(
+    state: State<'_, AppState>,
+    char_id: String,
+    section_ids: Vec<String>,
+) -> Res<Value> {
+    let character = state.db.collection::<Document>("characters")
+        .find_one(doc! { "id": &char_id }).await.map_err(e)?
+        .map(bson_to_value)
+        .ok_or_else(|| "Character not found".to_string())?;
+    let fragment = character_prompt_fragment(&character);
+    let sections = state.db.collection::<Document>("sections");
+    let mut updated = 0u64;
+
+    for id in &section_ids {
+        let Some(doc_found) = sections.find_one(doc! { "id": id }).await.map_err(e)? else { continue };
+        let section = bson_to_value(doc_found);
+        let existing = section["image_prompt"].as_str().unwrap_or("").to_string();
+        // Strip the fragment and tidy up the separator it left behind.
+        let cleaned = existing
+            .replace(&format!("{fragment}, "), "")
+            .replace(&format!(", {fragment}"), "")
+            .replace(&fragment, "")
+            .trim()
+            .trim_matches(',')
+            .trim()
+            .to_string();
+        let links: Vec<String> = section["character_ids"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str()).filter(|s| *s != char_id).map(|s| s.to_string()).collect())
+            .unwrap_or_default();
+        let r = sections.update_one(
+            doc! { "id": id },
+            doc! { "$set": { "image_prompt": &cleaned, "character_ids": &links } },
+        ).await.map_err(e)?;
+        updated += r.modified_count;
+    }
+    Ok(serde_json::json!({ "ok": true, "updated": updated }))
+}
+
+/// Which sections of a song each character is currently attached to — so the UI can show
+/// "appears in 4 sections" and pre-tick the right boxes.
+#[tauri::command]
+pub async fn character_section_links(state: State<'_, AppState>, song_id: String) -> Res<Value> {
+    use futures_util::StreamExt;
+    let mut cursor = state.db.collection::<Document>("sections")
+        .find(doc! { "song_id": &song_id }).sort(doc! { "index": 1 })
+        .await.map_err(e)?;
+    let mut by_character: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+    let mut sections_out = Vec::new();
+    while let Some(Ok(d)) = cursor.next().await {
+        let section = bson_to_value(d);
+        let id = section["id"].as_str().unwrap_or("").to_string();
+        let index = section["index"].clone();
+        for cid in section["character_ids"].as_array().cloned().unwrap_or_default() {
+            if let Some(cid) = cid.as_str() {
+                by_character.entry(cid.to_string()).or_default()
+                    .push(serde_json::json!({ "id": id, "index": index }));
+            }
+        }
+        sections_out.push(section);
+    }
+    Ok(serde_json::json!({ "ok": true, "by_character": by_character, "sections": sections_out }))
+}
