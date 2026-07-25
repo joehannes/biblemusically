@@ -42,6 +42,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { getStepForPath } from "../lib/pageSteps";
+import GuidedPanel from "../components/GuidedPanel";
+import { charactersFlow } from "../lib/guidedFlows";
 
 // Parses a comma-separated tag string into a clean array (used for appearance_tags input).
 const parseTags = (s) => (s || "").split(",").map((t) => t.trim()).filter(Boolean);
@@ -324,7 +326,16 @@ export default function Characters() {
         storytelling.
       </p>
 
-      {/* Song selector */}
+      {/* Song selector */}      <div className="mb-6">
+        <GuidedPanel
+          flow={charactersFlow}
+          projectId={activeProjectId}
+          extraCtx={{ characters, channels }}
+          actions={{ propose: () => handlePropose(), adaptAll: () => {} }}
+        />
+      </div>
+
+
       <Card className="p-5 mb-6">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex-1 min-w-[200px]">

@@ -7,7 +7,10 @@ import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Waves, BrainCircuit } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import GuidedPanel from "../components/GuidedPanel";
+import { analysisFlow } from "../lib/guidedFlows";
 
 const MOOD_COLOR = {
   ethereal: "bg-indigo-500", radiant: "bg-amber-500", warm: "bg-orange-500", dramatic: "bg-rose-600",
@@ -15,7 +18,8 @@ const MOOD_COLOR = {
 };
 
 export default function Analysis() {
-  const { songs, activeSongId, selectSong } = useStudio();
+  const { songs, activeSongId, activeProjectId, selectSong } = useStudio();
+  const nav = useNavigate();
   const [sections, setSections] = useState([]);
   const song = songs.find(s => s.id === activeSongId);
 
@@ -36,6 +40,15 @@ export default function Analysis() {
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/analysis")}</div>
       <h1 className="text-4xl sm:text-5xl font-bold mb-2">Audio Analysis</h1>
       <p className="text-muted-foreground mb-6 max-w-2xl">FFmpeg + audio analysis CLI tools parse mood &amp; timing per section, feeding the Qwen prompter for FFmpeg effect suggestions.</p>
+      <div className="mb-6">
+        <GuidedPanel
+          flow={analysisFlow}
+          projectId={activeProjectId}
+          extraCtx={{ sectionCount: sections.length }}
+          actions={{ analyze: () => analyze(), goManual: () => nav("/sections") }}
+        />
+      </div>
+
 
       <Card className="p-5 mb-6 flex flex-wrap items-center gap-3">
         <Select value={activeSongId || ""} onValueChange={selectSong}>

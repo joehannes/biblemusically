@@ -5,7 +5,7 @@
 // Run with: node --test tests/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { composerFlow, musicFlow, imagesFlow, videoFlow } from "../src/src/lib/guidedFlows.js";
+import { composerFlow, musicFlow, imagesFlow, videoFlow, FLOWS } from "../src/src/lib/guidedFlows.js";
 import { musicEngine, imageEngine, supports, lyricTagHint } from "../src/src/lib/engineCapabilities.js";
 
 /** Steps a flow would actually show for this context — mirrors GuidedFlow's own filtering. */
@@ -25,8 +25,18 @@ const baseCtx = (over = {}) => ({
   ...over,
 });
 
+const ALL_FLOWS = Object.values(FLOWS);
+
+test("every registered flow is exercised by these invariants", () => {
+  assert.ok(ALL_FLOWS.length >= 10, `expected the full registry, got ${ALL_FLOWS.length}`);
+  for (const [key, flow] of Object.entries(FLOWS)) {
+    assert.equal(flow.id, key, "a flow's id must match its registry key — state is stored under it");
+    assert.ok(flow.title, `${key}: no title`);
+  }
+});
+
 test("every flow step has an id, a question and at least one option", () => {
-  for (const flow of [composerFlow, musicFlow, imagesFlow, videoFlow]) {
+  for (const flow of ALL_FLOWS) {
     const ctx = baseCtx();
     for (const s of steps(flow, ctx)) {
       assert.ok(s.id, `${flow.id}: step without id`);
@@ -37,7 +47,7 @@ test("every flow step has an id, a question and at least one option", () => {
 });
 
 test("option ids are unique within a step — the backend picks by id", () => {
-  for (const flow of [composerFlow, musicFlow, imagesFlow, videoFlow]) {
+  for (const flow of ALL_FLOWS) {
     const ctx = baseCtx();
     for (const s of steps(flow, ctx)) {
       const ids = optionIds(s, ctx);
@@ -130,4 +140,27 @@ test("lyric tag hints match the engine's dialect", () => {
   assert.match(lyricTagHint("suno"), /performance hints/i);
   assert.match(lyricTagHint("acestep"), /lowercase/i);
   assert.match(lyricTagHint("heartmula"), /section header/i);
+});
+
+test("every option applies without throwing, even with nothing wired up", () => {
+  // A page that forgets to pass a setter must degrade to a no-op, not crash mid-flow. Options use
+  // optional calls (`c.setThing?.()`) precisely so this holds.
+  for (const flow of ALL_FLOWS) {
+    const ctx = baseCtx({ characters: [{ id: "c1", name: "X" }], accounts: [{ platform: "x" }], channels: [{ id: "ch", name: "C", language: "English", region: "US" }] });
+    for (const step of steps(flow, ctx)) {
+      const raw = typeof step.options === "function" ? step.options(ctx) : step.options || [];
+      for (const o of raw.filter((x) => (typeof x.when === "function" ? x.when(ctx) : true))) {
+        assert.doesNotThrow(() => o.apply?.(ctx), `${flow.id}/${step.id}/${o.id}`);
+      }
+    }
+  }
+});
+
+test("step titles are short enough for the progress rail", () => {
+  for (const flow of ALL_FLOWS) {
+    for (const step of steps(flow, baseCtx())) {
+      if (!step.title) continue;
+      assert.ok(step.title.length <= 14, `${flow.id}/${step.id}: "${step.title}" is too long for the rail`);
+    }
+  }
 });

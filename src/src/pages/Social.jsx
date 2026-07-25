@@ -10,6 +10,8 @@ import {
   Share2, UserCheck, Sparkles, Scissors, Send, RefreshCw, Trash2, Plug, Loader2,
   AlertTriangle, Check, Lightbulb, ExternalLink,
 } from "lucide-react";
+import GuidedPanel from "../components/GuidedPanel";
+import { socialFlow } from "../lib/guidedFlows";
 
 // Colour-codes what a platform can actually do for free, so nobody wires up TikTok expecting
 // public posts on day one.
@@ -110,6 +112,10 @@ function PlatformCard({ platform, account, onConnect, onDisconnect, onVerify, bu
 export default function Social() {
   const { activeProjectId, activeSongId, songs } = useStudio();
   const [platforms, setPlatforms] = useState([]);
+  // The guided answers: what these posts are for, where they go, and whether to draft now.
+  const [guidedKind, setGuidedKind] = useState("announce");
+  const [guidedPlatforms, setGuidedPlatforms] = useState([]);
+  const [guidedDrafting, setGuidedDrafting] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [profile, setProfile] = useState(null);
   const [ideas, setIdeas] = useState(null);
@@ -173,6 +179,18 @@ export default function Social() {
           platform-sized versions, and publish them. Nothing is posted without you pressing publish.
         </p>
       </div>
+
+      <GuidedPanel
+        flow={socialFlow}
+        projectId={activeProjectId}
+        extraCtx={{ accounts }}
+        actions={{
+          setKind: (k) => setGuidedKind(k),
+          setPlatforms: (list) => setGuidedPlatforms(list),
+          openConnect: () => {},
+          draft: () => setGuidedDrafting(true),
+        }}
+      />
 
       {/* A. Accounts */}
       <Section

@@ -13,6 +13,8 @@ import {
   UploadCloud, Play, Loader2, CheckCircle2, XCircle, CircleDashed, RotateCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import GuidedPanel from "../components/GuidedPanel";
+import { workflowFlow } from "../lib/guidedFlows";
 
 // One row per pipeline stage, in the order they actually have to run. `pending(songs)` — when
 // present — returns the subset of songs this stage still needs to touch, which both drives the
@@ -122,6 +124,8 @@ const STATUS_COLOR = { idle: "text-muted-foreground/50", running: "text-primary 
 
 export default function Workflow() {
   const { activeProjectId, activeProject, songs, refreshSongs, jobs } = useStudio();
+  // How far the guided run should go — read by the pipeline runner below.
+  const [guidedStopAfter, setGuidedStopAfter] = useState("video");
   const navigate = useNavigate();
   const [includeUpload, setIncludeUpload] = useState(false);
   const [stopOnError, setStopOnError] = useState(true);
@@ -207,7 +211,15 @@ export default function Workflow() {
     setRunningAll(true);
     pushLog("── Running full pipeline ──");
     try {
+      // The guided run's "how far" answer is a hard stop: everything after the chosen stage is
+      // skipped, so "lyrics and music" cannot quietly continue into publishing.
+      const order = stages.map((s) => s.id);
+      const stopIdx = order.indexOf(guidedStopAfter);
       for (const stage of stages) {
+        if (stopIdx >= 0 && order.indexOf(stage.id) > stopIdx) {
+          pushLog(`${stage.label}: skipped (this run stops after ${guidedStopAfter}).`);
+          continue;
+        }
         if (stage.id === "upload" && !includeUpload) {
           pushLog(`${stage.label}: skipped (upload not included in this run).`);
           continue;
@@ -275,6 +287,21 @@ export default function Workflow() {
         </p>
       )}
 
+
+      <div className="mb-6">
+        <GuidedPanel
+          flow={workflowFlow}
+          projectId={activeProjectId}
+          extraCtx={{ stages: [] }}
+          actions={{
+            // The guide's answers steer the same runner the buttons use; "how far" is honoured by
+            // the pipeline's own stage list, so nothing here bypasses the review stops.
+            setStopAfter: (stage) => setGuidedStopAfter(stage),
+            setProvider: async (id) => { try { await api.saveSettings({ remote_render_provider: id }, activeProjectId); } catch { /* non-fatal */ } },
+            run: () => runFullPipeline(),
+          }}
+        />
+      </div>
       <Card className="p-4 mb-4 flex flex-wrap items-center gap-4">
         <Button size="lg" disabled={runningAll || !!runningStageId} onClick={runFullPipeline} className="shrink-0">
           {runningAll ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}

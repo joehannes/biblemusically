@@ -12,8 +12,12 @@ import { toast } from "sonner";
 import { getStepForPath } from "../lib/pageSteps";
 import { useNavigate } from "react-router-dom";
 import { useAutoSave, AutoSaveChip } from "../lib/hooks";
+import GuidedPanel from "../components/GuidedPanel";
+import { bibleFlow } from "../lib/guidedFlows";
+import { useStudio } from "../lib/store";
 
 export default function BibleSources() {
+  const { activeProjectId } = useStudio();
   const nav = useNavigate();
   const [tab, setTab] = useState("remote");
   const [translations, setTranslations] = useState({});
@@ -132,6 +136,21 @@ export default function BibleSources() {
         <AutoSaveChip status={tab==="remote" ? asStatus : asPasteStatus} lastSaved={tab==="remote"?lastSaved:lpStored} />
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Hybrid sources for monetization-safe lyrics: <span className="text-foreground">bible-api.com</span> (public-domain English including YLT/Darby/OEB) + <span className="text-foreground">helloao.org</span> (50+ languages + Greek/Hebrew/literal English). Or paste your own.</p>
+
+      <div className="mb-6">
+        <GuidedPanel
+          flow={bibleFlow}
+          projectId={activeProjectId}
+          extraCtx={{ book, chapter, translation }}
+          actions={{
+            setChapter: (n) => setChapter(n),
+            setTranslation: (t) => setTranslation(t),
+            setTranslationForLanguage: () => {},
+            setMode: () => setTab("paste"),
+            fetch: () => fetchChapter(),
+          }}
+        />
+      </div>
 
       <Tabs value={tab} onValueChange={setTab} className="mb-6">
         <TabsList>

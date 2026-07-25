@@ -74,6 +74,33 @@ Persist anything the flow decides that other parts of the app read (engine choic
 through `api.saveSettings` — not only in page state. The backend prompts and the scheduler read
 settings, not React.
 
+## How a session runs
+
+1. **A template.** `guide_templates` reads the brief, the channels' styles and regions, the declared
+   goal, today's topic, recent social posts and the user's own history, and proposes 3–4 aggregate
+   preset packs — one recognisable direction each, filling as many controls as that direction implies.
+   Each names the questions it could *not* settle; only those get asked.
+2. **The open questions**, in the template's own order of importance.
+3. **Manifestation.** A section appears when the guide settles it. Once a third appears, everything but
+   the previous one collapses — still there, still openable, out of the way. Each carries a traffic
+   light: rough (red) · sensible (amber) · chosen (green) · fine-tuned (blue). Status never downgrades,
+   so a re-run template cannot overwrite an answer and a hand edit outranks both.
+4. **Leaving is normal.** Template, answers, per-section status and the pause position persist per
+   project and view. Returning shows the state it was left in, with Resume and "Show all controls" at
+   the top and the bottom of the page.
+
+The rules live in `lib/guidedView.js` (pure, tested in `tests/guided-view.test.mjs`); persistence is
+`get/save/reset_workflow_state`; the control catalogues a template may write are `lib/controlCatalogs.js`,
+validated server-side before anything is applied.
+
+## Voice
+
+`lib/voice.js` reads each question aloud and can take a spoken answer. Speaking cascades from the
+backend's Gemini voices (cached on disk per phrase) to the webview's `speechSynthesis` to silence;
+listening cascades from `SpeechRecognition` to `MediaRecorder` plus backend transcription to nothing.
+`lib/voiceMatch.js` maps the answer locally — "yes" takes the suggestion, "the second one" and naming
+an option both work — and only escalates to `guide_interpret` when that is genuinely ambiguous.
+
 ## Current flows
 
 | Flow | Page | Steps |
@@ -82,3 +109,13 @@ settings, not React.
 | `music` | Music Studio | engine · scope · length (engine-dependent) · start |
 | `images` | Image Generation | coverage · consistency (if characters exist) · quality (engine-dependent) · run |
 | `video` | Video Composer | where to render · motion · publish · start |
+| `bible` | Bible Sources | source · translation · fetch |
+| `analysis` | Audio Analysis | how to cut sections · review |
+| `characters` | Characters | recurring faces · per-channel variants (when both exist) |
+| `upload` | Publishing | channel · who writes the metadata · visibility · queue |
+| `social` | Social Presence | purpose · platforms · draft |
+| `workflow` | Workflow | how far the run goes · where the heavy steps run · start |
+
+Adding a flow to the registry is enough for the structural tests to cover it: every step needs an id, a
+question and at least one option; option ids must be unique; every option must apply without throwing
+on a bare context; and step titles must fit the progress rail.

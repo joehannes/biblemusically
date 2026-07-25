@@ -14,6 +14,8 @@ import { UploadCloud, Send, Plus, Lock, Globe, Sparkles, Zap, Wand2, ShieldCheck
 import { toast } from "sonner";
 import { useRequireGuideStep } from "../components/GuideStepDialog";
 import { getStepForPath } from "../lib/pageSteps";
+import GuidedPanel from "../components/GuidedPanel";
+import { uploadFlow } from "../lib/guidedFlows";
 
 const ALL_FORMATS = [
   { id: "youtube", label: "YouTube 16:9" },
@@ -175,6 +177,21 @@ export default function Upload() {
         <h1 className="text-4xl sm:text-5xl font-bold">Upload</h1>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Smart Bulk creates one upload per video × matching channel × format, AI-enriches title/description/tags via Qwen, walks through every needed OAuth one popup at a time, then publishes everything. No babysitting.</p>
+      <div className="mb-6">
+        <GuidedPanel
+          flow={uploadFlow}
+          projectId={activeProjectId}
+          extraCtx={{ channels, pendingCount: uploads.filter((u) => u.status !== "published").length }}
+          actions={{
+            setChannel: (id) => setChId(id === "auto" ? "" : id),
+            setPrivacy: (p) => setPrivacy(p),
+            generateMetadata: () => {},
+            create: () => create(),
+            publishAll: () => publishAll(),
+          }}
+        />
+      </div>
+
 
       <Card className="p-5 mb-5">
         <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2"><Sparkles className="w-3 h-3" />Global description (used by AI enrich)</div>

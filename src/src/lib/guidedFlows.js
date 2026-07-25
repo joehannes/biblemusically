@@ -456,9 +456,319 @@ export const videoFlow = {
   ],
 };
 
+// ── Bible Sources ────────────────────────────────────────────────────────────
+
+export const bibleFlow = {
+  id: "bible",
+  title: "Guided source picking",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), current_book: ctx.book || "", current_chapter: ctx.chapter || 0 }),
+  steps: [
+    {
+      id: "kind",
+      title: "Source",
+      question: "What should today's song come from?",
+      reveals: "source",
+      options: (ctx) => [
+        {
+          id: "continue",
+          label: ctx.book ? `Continue ${ctx.book} ${Number(ctx.chapter || 0) + 1}` : "Continue where I left off",
+          hint: "Keeps a series moving through a book, chapter by chapter.",
+          recommended: Boolean(ctx.book),
+          when: (c) => Boolean(c.book),
+          apply: (c) => c.setChapter?.(Number(c.chapter || 0) + 1),
+        },
+        { id: "pick", label: "A specific chapter", hint: "Choose the book and chapter yourself.", recommended: !ctx.book, apply: () => {} },
+        { id: "paste", label: "Text I bring myself", hint: "A devotional, testimony or your own draft.", apply: (c) => c.setMode?.("paste") },
+      ],
+    },
+    {
+      id: "translation",
+      title: "Translation",
+      question: "Which translation?",
+      help: "Public-domain translations only — anything else could not be published safely.",
+      reveals: "translation",
+      options: (ctx) => {
+        const langs = [...new Set((ctx.channels || []).map((c) => c.language).filter(Boolean))];
+        return [
+          { id: "keep", label: "Keep the current one", hint: ctx.translation || "none chosen yet", recommended: Boolean(ctx.translation), apply: () => {} },
+          {
+            id: "match_channel",
+            label: "Match my channel's language",
+            hint: langs.slice(0, 3).join(", ") || "no channel languages found",
+            when: () => langs.length > 0,
+            apply: (c) => c.setTranslationForLanguage?.(langs[0]),
+          },
+          { id: "english", label: "English (KJV/WEB)", hint: "Safest default; the AI translates the lyrics per channel anyway.", apply: (c) => c.setTranslation?.("kjv") },
+        ];
+      },
+    },
+    {
+      id: "fetch",
+      title: "Fetch",
+      question: "Load it?",
+      reveals: "text",
+      options: () => [
+        { id: "fetch", label: "Load this chapter", recommended: true, apply: (c) => c.fetch?.() },
+        { id: "later", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
+
+// ── Audio analysis ───────────────────────────────────────────────────────────
+
+export const analysisFlow = {
+  id: "analysis",
+  title: "Guided analysis",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), sections: ctx.sectionCount || 0 }),
+  steps: [
+    {
+      id: "when",
+      title: "Sections",
+      question: "How should this track be cut into scenes?",
+      help: "Sections drive one image each, so this decides how the video is paced.",
+      reveals: "sections",
+      options: (ctx) => [
+        {
+          id: "annotations",
+          label: "From the lyric structure",
+          hint: "Uses the [Verse]/[Chorus] tags already in the lyrics — fastest and usually right.",
+          recommended: true,
+          apply: (c) => c.analyze?.(),
+        },
+        {
+          id: "reanalyse",
+          label: "Re-cut it",
+          hint: ctx.sectionCount ? `Replaces the ${ctx.sectionCount} sections that exist.` : "Nothing to replace yet.",
+          when: (c) => Boolean(c.sectionCount),
+          apply: (c) => c.analyze?.(),
+        },
+        { id: "manual", label: "I'll cut it myself", hint: "Opens the Section Editor instead.", apply: (c) => c.goManual?.() },
+      ],
+    },
+    {
+      id: "review",
+      title: "Review",
+      question: "Anything to fix before images?",
+      reveals: "review",
+      options: (ctx) => [
+        { id: "ok", label: `Looks right (${ctx.sectionCount || 0} sections)`, recommended: true, apply: () => {} },
+        { id: "edit", label: "Let me adjust the timings", apply: (c) => c.goManual?.() },
+      ],
+    },
+  ],
+};
+
+// ── Characters ───────────────────────────────────────────────────────────────
+
+export const charactersFlow = {
+  id: "characters",
+  title: "Guided characters",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), characters: (ctx.characters || []).map((c) => c.name) }),
+  steps: [
+    {
+      id: "need",
+      title: "Faces",
+      question: "Should this project have recurring characters?",
+      help: "A character carries appearance tags into every image prompt, so the same figure keeps showing up.",
+      reveals: "list",
+      options: (ctx) => [
+        {
+          id: "propose",
+          label: "Suggest them from the lyrics",
+          hint: "Reads the song and proposes the figures it actually mentions.",
+          recommended: (ctx.characters || []).length === 0,
+          apply: (c) => c.propose?.(),
+        },
+        {
+          id: "keep",
+          label: `Use the ${(ctx.characters || []).length} I have`,
+          hint: (ctx.characters || []).map((c) => c.name).slice(0, 3).join(", "),
+          when: (c) => (c.characters || []).length > 0,
+          recommended: (ctx.characters || []).length > 0,
+          apply: () => {},
+        },
+        { id: "none", label: "No characters — scenes only", hint: "Landscapes and symbolism instead of people.", apply: () => {} },
+      ],
+    },
+    {
+      id: "reach",
+      title: "Per channel",
+      question: "Should characters adapt per channel?",
+      help: "A regional variant keeps the same person recognisable while fitting each audience.",
+      reveals: "variants",
+      when: (ctx) => (ctx.characters || []).length > 0 && (ctx.channels || []).length > 1,
+      options: () => [
+        { id: "global", label: "One look everywhere", hint: "Simplest, and consistent across channels.", recommended: true, apply: () => {} },
+        { id: "per_channel", label: "A variant per channel", hint: "Costs one image generation per character per channel.", apply: (c) => c.adaptAll?.() },
+      ],
+    },
+  ],
+};
+
+// ── Publishing ───────────────────────────────────────────────────────────────
+
+export const uploadFlow = {
+  id: "upload",
+  title: "Guided publishing",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), pending: ctx.pendingCount || 0 }),
+  steps: [
+    {
+      id: "target",
+      title: "Channel",
+      question: "Where is this going?",
+      reveals: "target",
+      options: (ctx) => {
+        const chans = (ctx.channels || []).filter((c) => c.refresh_token || c.youtube_channel_id);
+        return [
+          {
+            id: "auto",
+            label: "Match the song's language",
+            hint: "Picks the channel whose language the song was written for.",
+            recommended: chans.length > 1,
+            apply: (c) => c.setChannel?.("auto"),
+          },
+          ...chans.slice(0, 3).map((ch) => ({
+            id: `chan:${ch.id}`,
+            label: ch.name || ch.youtube_channel_id,
+            hint: [ch.language, ch.region].filter(Boolean).join(" · "),
+            apply: (c) => c.setChannel?.(ch.id),
+          })),
+        ];
+      },
+    },
+    {
+      id: "metadata",
+      title: "Title & text",
+      question: "Who writes the title and description?",
+      reveals: "metadata",
+      options: () => [
+        { id: "ai", label: "Let the AI write them", hint: "From the song, the brief and the channel's language.", recommended: true, apply: (c) => c.generateMetadata?.() },
+        { id: "mine", label: "I'll write them", hint: "The fields below stay as they are.", apply: () => {} },
+      ],
+    },
+    {
+      id: "visibility",
+      title: "Visibility",
+      question: "How should it go up?",
+      help: "Nothing is published without this answer — 'private' is a safe first run on a new channel.",
+      reveals: "visibility",
+      options: () => [
+        { id: "private", label: "Private", hint: "On the channel, visible only to you.", recommended: true, apply: (c) => c.setPrivacy?.("private") },
+        { id: "unlisted", label: "Unlisted", hint: "Anyone with the link can watch.", apply: (c) => c.setPrivacy?.("unlisted") },
+        { id: "public", label: "Public", hint: "Live immediately.", apply: (c) => c.setPrivacy?.("public") },
+      ],
+    },
+    {
+      id: "go",
+      title: "Publish",
+      question: "Queue the upload?",
+      reveals: "queue",
+      options: (ctx) => [
+        { id: "one", label: "Queue this one", recommended: true, apply: (c) => c.create?.() },
+        { id: "all", label: `Queue everything ready (${ctx.pendingCount || 0})`, when: (c) => (c.pendingCount || 0) > 1, apply: (c) => c.publishAll?.() },
+        { id: "hold", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
+
+// ── Social presence ──────────────────────────────────────────────────────────
+
+export const socialFlow = {
+  id: "social",
+  title: "Guided social posts",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), platforms: (ctx.accounts || []).map((a) => a.platform) }),
+  steps: [
+    {
+      id: "purpose",
+      title: "Purpose",
+      question: "What are these posts for?",
+      reveals: "purpose",
+      options: () => [
+        { id: "announce", label: "Announce the new video", hint: "A short post per platform pointing at the upload.", recommended: true, apply: (c) => c.setKind?.("announce") },
+        { id: "clip", label: "Share a clip", hint: "A vertical cut from the song as its own post.", apply: (c) => c.setKind?.("clip") },
+        { id: "verse", label: "Post the verse alone", hint: "Scripture card, no link — reach without promotion.", apply: (c) => c.setKind?.("verse") },
+      ],
+    },
+    {
+      id: "where",
+      title: "Platforms",
+      question: "Which platforms?",
+      reveals: "platforms",
+      options: (ctx) => {
+        const linked = (ctx.accounts || []).map((a) => a.platform).filter(Boolean);
+        return [
+          { id: "all_linked", label: `All connected (${linked.length})`, hint: linked.join(", ") || "none connected yet", recommended: linked.length > 0, when: () => linked.length > 0, apply: (c) => c.setPlatforms?.(linked) },
+          ...linked.slice(0, 3).map((p) => ({ id: `p:${p}`, label: p, apply: (c) => c.setPlatforms?.([p]) })),
+          { id: "connect", label: "Connect an account first", when: () => linked.length === 0, apply: (c) => c.openConnect?.() },
+        ];
+      },
+    },
+    {
+      id: "write",
+      title: "Write",
+      question: "Draft them now?",
+      reveals: "drafts",
+      options: () => [
+        { id: "draft", label: "Draft the posts", hint: "You review every one before anything is sent.", recommended: true, apply: (c) => c.draft?.() },
+        { id: "later", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
+
+// ── Whole-pipeline run ───────────────────────────────────────────────────────
+
+export const workflowFlow = {
+  id: "workflow",
+  title: "Guided run",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), stages: ctx.stages || [] }),
+  steps: [
+    {
+      id: "scope",
+      title: "How far",
+      question: "How far should this run go?",
+      help: "Nothing reaches YouTube unless the last option is chosen explicitly.",
+      reveals: "scope",
+      options: () => [
+        { id: "to_music", label: "Lyrics and music", hint: "Stop once there is audio to listen to.", apply: (c) => c.setStopAfter?.("music") },
+        { id: "to_video", label: "All the way to a video file", hint: "Lyrics, music, analysis, images, video — held for review.", recommended: true, apply: (c) => c.setStopAfter?.("video") },
+        { id: "to_publish", label: "Including publishing", hint: "Uploads to the matching channel when the video is done.", apply: (c) => c.setStopAfter?.("upload") },
+      ],
+    },
+    {
+      id: "where",
+      title: "Where",
+      question: "Where should the heavy steps run?",
+      reveals: "where",
+      options: (ctx) => [
+        { id: "local", label: "On this machine", hint: "Uses your CPU and your connection.", recommended: (ctx.settings?.remote_render_provider || "local") === "local", apply: (c) => c.setProvider?.("local") },
+        { id: "kaggle", label: "On Kaggle (free)", hint: "Renders and uploads without touching your bandwidth.", recommended: ctx.settings?.remote_render_provider === "kaggle", apply: (c) => c.setProvider?.("kaggle") },
+      ],
+    },
+    {
+      id: "start",
+      title: "Start",
+      question: "Start the run?",
+      reveals: "run",
+      options: () => [
+        { id: "go", label: "Run it", recommended: true, apply: (c) => c.run?.() },
+        { id: "no", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
+
 export const FLOWS = {
   composer: composerFlow,
   music: musicFlow,
   images: imagesFlow,
   video: videoFlow,
+  bible: bibleFlow,
+  analysis: analysisFlow,
+  characters: charactersFlow,
+  upload: uploadFlow,
+  social: socialFlow,
+  workflow: workflowFlow,
 };
