@@ -207,6 +207,20 @@ Legend: ✅ Real/working · 🟡 Real but rough edge (documented) · 🔴 Broken
 - **Characters in scenes** — attach a character to specific sections and push its appearance tags and
   prompt into them in one action.
 
+## AI providers — free and paid (2026-07-25)
+
+- **Four providers**: OpenRouter and Google Gemini (free tiers), Claude/Anthropic and ChatGPT/OpenAI
+  (paid per token, no subscription — an OpenAI API key is separate from ChatGPT Plus).
+- **The model list is live** — "List models" asks the provider what your key can actually reach, so a
+  model that shipped last week is selectable and a retired one never is. Non-chat models (embeddings,
+  speech, image, moderation) are filtered out.
+- **Overload still falls back** — whichever provider is selected, a rate limit or overload retries once
+  on the free Nemotron model and tells you it did.
+- **Setup comes early** — the first-run guide asks for the AI key right after language and voice,
+  because the steps after it (the setup plan, the guided flows, translation) all use it.
+- **Key pages open inside the app** by default, next to the field you paste into. Sites that refuse
+  embedded sign-in (anything behind a Google account) open in your normal browser and say why.
+
 ## Guided workflows (2026-07-25)
 
 - **Every production page can be a conversation** — the AI Composer, Music Studio, Image Generation and

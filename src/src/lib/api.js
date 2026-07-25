@@ -133,6 +133,9 @@ export const api = {
   aiTranslateUi: (strings, language) => invokeCommand("ai_translate_ui", { payload: { strings, language } }),
   // Drains one-shot notices about automatic provider fallbacks (each is delivered once).
   takeAiNotices: () => invokeCommand("take_ai_notices"),
+  // AI providers (free + paid) and the live model list a given key can actually reach.
+  listAiProviders: () => invokeCommand("list_ai_providers"),
+  listAiModels: (provider) => invokeCommand("list_ai_models", { provider }),
   // Guided-flow proposals: per-step picks personalised from brief + learnings + engine caps.
   guideProposal: (payload) => invokeCommand("guide_proposal", { payload }),
   // Live-aggregated starter templates for a view, validated against its control catalogue.

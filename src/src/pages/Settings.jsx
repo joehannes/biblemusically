@@ -12,7 +12,7 @@ import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import VoicePicker from "../components/VoicePicker";
-import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge } from "lucide-react";
+import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { autoStartKaggleServer, subscribeKaggle } from "../lib/kaggleServerPipeline";
 import { markStopped } from "../lib/serverLifecycle";
@@ -119,6 +119,10 @@ const initialSettings = {
   heartmula_api_url: "",
   heartmula_api_key: "",
   ai_provider: "openrouter",
+  anthropic_api_key: "",
+  anthropic_model: "claude-opus-5",
+  openai_api_key: "",
+  openai_model: "gpt-5.1",
   // Opt-in engine tuning: blank/0 keeps the built-in per-task behaviour.
   ai_temperature: "",
   ai_max_tokens: "",
@@ -270,6 +274,9 @@ const SettingsComponent = () => {
   // The provider catalogue (labels, costs, prerequisites) comes from the backend so the facts live
   // in one place next to the launchers that implement them.
   const [renderProviders, setRenderProviders] = useState([]);
+  // Live model list for the selected paid provider (empty until "List models" is pressed).
+  const [paidModels, setPaidModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   useEffect(() => { api.listRenderProviders().then((r) => setRenderProviders(r?.providers || [])).catch(() => {}); }, []);
 
   const save = async () => {
@@ -858,11 +865,16 @@ const SettingsComponent = () => {
           <Select value={s.ai_provider || "openrouter"} onValueChange={(val) => updateS({ ai_provider: val })}>
             <SelectTrigger className="w-full" data-testid="settings-ai-provider"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="openrouter">OpenRouter (free Qwen &amp; others)</SelectItem>
-              <SelectItem value="gemini">Google Gemini (free tier)</SelectItem>
+              <SelectItem value="openrouter">OpenRouter — free models</SelectItem>
+              <SelectItem value="gemini">Google Gemini — free tier or billed key</SelectItem>
+              <SelectItem value="anthropic">Claude (Anthropic) — paid per token</SelectItem>
+              <SelectItem value="openai">ChatGPT (OpenAI) — paid per token</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground mt-1">Both are free. Configure whichever you select; the other can stay filled in and unused.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Only the selected provider is used; the others can stay configured and idle. Whichever you pick,
+            an overload or rate-limit falls back to a free model for that one request and tells you it did.
+          </p>
         </div>
 
         {/* Tunables applied to whichever provider is active. Each is opt-in — leave blank/0 to keep
@@ -882,6 +894,62 @@ const SettingsComponent = () => {
             conservatively than style variations). Raise <b>Max output tokens</b> if long lyrics get truncated.
           </p>
         </div>
+
+        {(s.ai_provider === "anthropic" || s.ai_provider === "openai") && (
+          <div className="mb-6 rounded-md border border-border p-4">
+            <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+              {s.ai_provider === "anthropic" ? "Claude (Anthropic)" : "ChatGPT (OpenAI)"}
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              {s.ai_provider === "anthropic" ? (
+                <Field k="anthropic_api_key" label="Anthropic API key" placeholder="sk-ant-..." type="password"
+                  testid="settings-anthropic-key" value={s.anthropic_api_key} onValueChange={updateS} />
+              ) : (
+                <Field k="openai_api_key" label="OpenAI API key" placeholder="sk-..." type="password"
+                  testid="settings-openai-key" value={s.openai_api_key} onValueChange={updateS} />
+              )}
+              <div className="space-y-1">
+                <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Model</Label>
+                <div className="flex gap-2">
+                  {paidModels.length > 0 ? (
+                    <select
+                      value={s.ai_provider === "anthropic" ? (s.anthropic_model || "") : (s.openai_model || "")}
+                      onChange={(e) => updateS(s.ai_provider === "anthropic"
+                        ? { anthropic_model: e.target.value } : { openai_model: e.target.value })}
+                      className="flex-1 bg-background border border-border rounded px-2 py-1.5 text-sm">
+                      {paidModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    </select>
+                  ) : (
+                    <Input
+                      value={s.ai_provider === "anthropic" ? (s.anthropic_model || "") : (s.openai_model || "")}
+                      onChange={(e) => updateS(s.ai_provider === "anthropic"
+                        ? { anthropic_model: e.target.value } : { openai_model: e.target.value })}
+                      placeholder={s.ai_provider === "anthropic" ? "claude-opus-5" : "gpt-5.1"} />
+                  )}
+                  {/* Asks the provider what this key can actually reach — model names move faster
+                      than any list baked into the app, and a stale id is an unexplainable 404. */}
+                  <Button size="sm" variant="secondary" disabled={loadingModels} onClick={async () => {
+                    setLoadingModels(true);
+                    try {
+                      const r = await api.listAiModels(s.ai_provider);
+                      setPaidModels(r?.models || []);
+                      toast[(r?.models || []).length ? "success" : "error"]((r?.models || []).length
+                        ? `${r.models.length} models available on this key.`
+                        : "That key returned no models.");
+                    } catch (err) { toast.error(String(err)); }
+                    finally { setLoadingModels(false); }
+                  }}>
+                    {loadingModels ? <Loader2 className="w-3 h-3 animate-spin" /> : "List models"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              Save the key first, then "List models" — the check runs server-side with the stored key.
+              {s.ai_provider === "openai" && " An OpenAI API key is separate from a ChatGPT subscription; a Plus plan does not include API access."}
+            </div>
+          </div>
+        )}
 
         {s.ai_provider === "gemini" && (
           <div className="mb-6 rounded-md border border-border p-4">

@@ -78,6 +78,151 @@ fn note_fallback(from: &str, to: &str, reason: &str) {
     if len > 8 { notices.drain(..len - 8); }
 }
 
+// ────────────────────────────────────────────────────────────────
+// Provider catalogue + live model discovery
+//
+// Model names move faster than any list baked into an app, so the UI asks the provider itself what
+// the user's key can reach. The catalogue below is only what a *person* needs to choose a provider —
+// what it costs, whether it is free, and where its key comes from.
+// ────────────────────────────────────────────────────────────────
+
+/// The text providers this app can use, with the facts a user picks between.
+#[tauri::command]
+pub async fn list_ai_providers() -> Res<Value> {
+    Ok(serde_json::json!({ "providers": [
+        {
+            "id": "openrouter", "label": "OpenRouter", "tier": "free",
+            "detail": "Free access to capable open models. The free tier allows 50 requests a day for the whole account; adding $10 of credit raises it to 1,000.",
+            "key_url": "https://openrouter.ai/keys",
+            "key_field": "openrouter_api_key", "model_field": "openrouter_model",
+            "login": "internal",
+        },
+        {
+            "id": "gemini", "label": "Google Gemini", "tier": "free",
+            "detail": "Free tier with per-minute limits; often busy at peak. A billed key removes both. Also powers the assistant's voice.",
+            "key_url": "https://aistudio.google.com/apikey",
+            "key_field": "gemini_api_key", "model_field": "gemini_model",
+            // Google blocks sign-in inside embedded webviews, so this one has to leave the app.
+            "login": "external",
+            "login_note": "Google refuses to sign in inside an embedded browser, so this page opens in your normal browser.",
+        },
+        {
+            "id": "anthropic", "label": "Claude (Anthropic)", "tier": "paid",
+            "detail": "Strongest writing and instruction-following of the three paid options. Pay per token, no subscription.",
+            "key_url": "https://console.anthropic.com/settings/keys",
+            "key_field": "anthropic_api_key", "model_field": "anthropic_model",
+            "login": "internal",
+        },
+        {
+            "id": "openai", "label": "ChatGPT (OpenAI)", "tier": "paid",
+            "detail": "Pay per token via the API — separate from a ChatGPT Plus subscription, which does not include API access.",
+            "key_url": "https://platform.openai.com/api-keys",
+            "key_field": "openai_api_key", "model_field": "openai_model",
+            "login": "internal",
+        },
+    ]}))
+}
+
+/// Ask a provider which models this key can actually use.
+///
+/// Live, because a hardcoded model list goes stale the moment a provider ships something new — and a
+/// stale id is a 404 the user cannot diagnose. Returns `[]` (never an error) when the key is missing,
+/// so the picker can just fall back to a text field.
+#[tauri::command]
+pub async fn list_ai_models(state: State<'_, AppState>, provider: String) -> Res<Value> {
+    let settings = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).with_options(proj0()).await.map_err(e)?
+        .map(bson_to_value).unwrap_or_default();
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().map_err(e)?;
+    let key_of = |field: &str| settings[field].as_str().unwrap_or("").trim().to_string();
+
+    let (url, req) = match provider.as_str() {
+        "anthropic" => {
+            let key = key_of("anthropic_api_key");
+            if key.is_empty() { return Ok(serde_json::json!({ "models": [] })); }
+            ("https://api.anthropic.com/v1/models?limit=100",
+             http.get("https://api.anthropic.com/v1/models?limit=100")
+                 .header("x-api-key", key).header("anthropic-version", "2023-06-01"))
+        }
+        "openai" => {
+            let key = key_of("openai_api_key");
+            if key.is_empty() { return Ok(serde_json::json!({ "models": [] })); }
+            ("https://api.openai.com/v1/models",
+             http.get("https://api.openai.com/v1/models").header("Authorization", format!("Bearer {key}")))
+        }
+        "gemini" => {
+            let key = key_of("gemini_api_key");
+            if key.is_empty() { return Ok(serde_json::json!({ "models": [] })); }
+            ("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+             http.get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200")
+                 .header("x-goog-api-key", key))
+        }
+        "openrouter" => ("https://openrouter.ai/api/v1/models",
+                         http.get("https://openrouter.ai/api/v1/models")),
+        other => return Err(format!("Unknown AI provider '{other}'.")),
+    };
+
+    let r = req.send().await.map_err(|err| format!("Could not reach {provider} ({url}): {err}"))?;
+    if !r.status().is_success() {
+        let status = r.status();
+        let txt = r.text().await.unwrap_or_default();
+        return Err(format!("{provider} rejected the model list (HTTP {status}): {}",
+            txt.chars().take(200).collect::<String>()));
+    }
+    let res: Value = r.json().await.map_err(e)?;
+
+    let models = normalise_models(&provider, &res);
+    Ok(serde_json::json!({ "models": models, "provider": provider }))
+}
+
+
+/// Normalise a provider's model list into `{ id, label, free }`, newest-friendly order.
+///
+/// Each provider answers in its own shape, and each mixes in models that cannot chat at all —
+/// embeddings, text-to-speech, image and moderation endpoints. Filtering them here is what keeps the
+/// picker from offering a model that 400s on the first prompt. Free models sort first.
+fn normalise_models(provider: &str, res: &Value) -> Vec<Value> {
+    let mut models: Vec<Value> = match provider {
+        "anthropic" => res["data"].as_array().map(|a| a.iter().map(|m| serde_json::json!({
+            "id": m["id"],
+            "label": m["display_name"].as_str().unwrap_or(m["id"].as_str().unwrap_or("")),
+            "free": false,
+        })).collect()).unwrap_or_default(),
+        "openai" => res["data"].as_array().map(|a| a.iter()
+            .filter(|m| {
+                let id = m["id"].as_str().unwrap_or("");
+                (id.starts_with("gpt") || id.starts_with('o'))
+                    && !["embedding", "tts", "whisper", "audio", "image", "dall-e", "moderation", "realtime", "transcribe"]
+                        .iter().any(|bad| id.contains(bad))
+            })
+            .map(|m| serde_json::json!({ "id": m["id"], "label": m["id"], "free": false }))
+            .collect()).unwrap_or_default(),
+        "gemini" => res["models"].as_array().map(|a| a.iter()
+            .filter(|m| m["supportedGenerationMethods"].as_array()
+                .map(|ms| ms.iter().any(|x| x == "generateContent")).unwrap_or(false))
+            .filter(|m| {
+                let n = m["name"].as_str().unwrap_or("");
+                !n.contains("tts") && !n.contains("image") && !n.contains("embedding")
+            })
+            .map(|m| {
+                let id = m["name"].as_str().unwrap_or("").rsplit('/').next().unwrap_or("").to_string();
+                let label = m["displayName"].as_str().unwrap_or(&id).to_string();
+                serde_json::json!({ "id": id, "label": label, "free": true })
+            }).collect()).unwrap_or_default(),
+        // OpenRouter and anything else that answers in its shape.
+        _ => res["data"].as_array().map(|a| a.iter().map(|m| {
+            let id = m["id"].as_str().unwrap_or("").to_string();
+            let label = m["name"].as_str().unwrap_or(&id).to_string();
+            serde_json::json!({ "id": id.clone(), "label": label, "free": id.ends_with(":free") })
+        }).collect()).unwrap_or_default(),
+    };
+    models.sort_by(|a, b| {
+        b["free"].as_bool().unwrap_or(false).cmp(&a["free"].as_bool().unwrap_or(false))
+            .then_with(|| a["id"].as_str().unwrap_or("").cmp(b["id"].as_str().unwrap_or("")))
+    });
+    models
+}
+
 /// Drain pending AI notices. Polled by the UI alongside the job list; each notice is delivered once.
 #[tauri::command]
 pub async fn take_ai_notices() -> Res<Value> {
@@ -501,6 +646,102 @@ async fn provider_chat_once(
             return Err(format!("Gemini returned no text (finishReason: {reason})"));
         }
         return Ok((content, format!("gemini:{model}")));
+    }
+
+    // ── Anthropic (paid) ─────────────────────────────────────────────
+    //
+    // The Messages API differs from the OpenAI shape in three ways that matter here: `max_tokens` is
+    // required, the system prompt is its own top-level field rather than a message, and sampling
+    // parameters (`temperature`, `top_p`, `top_k`) are REJECTED with a 400 on the current models —
+    // so temperature is deliberately not sent. JSON mode is asked for in the prompt; the caller
+    // already extracts JSON defensively.
+    if provider == "anthropic" {
+        let key = settings_doc["anthropic_api_key"].as_str().unwrap_or("").trim().to_string();
+        if key.is_empty() {
+            return Err("Configure anthropic_api_key in Settings (console.anthropic.com/settings/keys).".to_string());
+        }
+        let model = settings_doc["anthropic_model"].as_str()
+            .filter(|s| !s.trim().is_empty()).unwrap_or("claude-opus-5").to_string();
+
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout_s)).build().map_err(e)?;
+        let system_text = if json_mode {
+            format!("{system}\n\nReturn ONLY valid JSON — no prose, no markdown fences.")
+        } else { system.to_string() };
+        let body = serde_json::json!({
+            "model": model,
+            "max_tokens": max_tokens.unwrap_or(8192),
+            "system": system_text,
+            "messages": [ { "role": "user", "content": user } ],
+        });
+        let r = http.post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&body).send().await.map_err(e)?;
+        if !r.status().is_success() {
+            let status = r.status();
+            let txt = r.text().await.unwrap_or_default();
+            return Err(format!("Anthropic HTTP {status}: {}", txt.chars().take(400).collect::<String>()));
+        }
+        let res: Value = r.json().await.map_err(e)?;
+        // A safety classifier can decline: HTTP 200, stop_reason "refusal", empty content.
+        if res["stop_reason"].as_str() == Some("refusal") {
+            let why = res["stop_details"]["category"].as_str().unwrap_or("policy");
+            return Err(format!("Anthropic declined this request ({why}). Try another provider for it."));
+        }
+        let content = res["content"].as_array()
+            .map(|blocks| blocks.iter()
+                .filter(|b| b["type"] == "text")
+                .filter_map(|b| b["text"].as_str())
+                .collect::<Vec<_>>().join(""))
+            .unwrap_or_default().trim().to_string();
+        if content.is_empty() {
+            return Err(format!("Anthropic returned no text (stop_reason: {})",
+                res["stop_reason"].as_str().unwrap_or("unknown")));
+        }
+        return Ok((content, format!("anthropic:{model}")));
+    }
+
+    // ── OpenAI (paid) ────────────────────────────────────────────────
+    if provider == "openai" {
+        let key = settings_doc["openai_api_key"].as_str().unwrap_or("").trim().to_string();
+        if key.is_empty() {
+            return Err("Configure openai_api_key in Settings (platform.openai.com/api-keys).".to_string());
+        }
+        let model = settings_doc["openai_model"].as_str()
+            .filter(|s| !s.trim().is_empty()).unwrap_or("gpt-5.1").to_string();
+
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout_s)).build().map_err(e)?;
+        let mut body = serde_json::json!({
+            "model": model,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user },
+            ],
+        });
+        // Reasoning models reject a non-default temperature, so it is only sent to models that take it.
+        let takes_temperature = !(model.starts_with('o') || model.starts_with("gpt-5"));
+        if takes_temperature { body["temperature"] = serde_json::json!(temperature.clamp(0.0, 2.0)); }
+        if json_mode { body["response_format"] = serde_json::json!({ "type": "json_object" }); }
+        if let Some(mt) = max_tokens { body["max_completion_tokens"] = serde_json::json!(mt); }
+
+        let r = http.post("https://api.openai.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {key}"))
+            .json(&body).send().await.map_err(e)?;
+        if !r.status().is_success() {
+            let status = r.status();
+            let txt = r.text().await.unwrap_or_default();
+            return Err(format!("OpenAI HTTP {status}: {}", txt.chars().take(400).collect::<String>()));
+        }
+        let res: Value = r.json().await.map_err(e)?;
+        let content = res["choices"][0]["message"]["content"].as_str().unwrap_or("").trim().to_string();
+        if content.is_empty() {
+            let reason = res["choices"][0]["finish_reason"].as_str().unwrap_or("unknown");
+            return Err(format!("OpenAI returned no text (finish_reason: {reason})"));
+        }
+        return Ok((content, format!("openai:{model}")));
     }
 
     // ── OpenRouter (default) ─────────────────────────────────────────
@@ -1321,4 +1562,88 @@ pub async fn research_project_channels(state: State<'_, AppState>, project_id: S
         }
     }
     Ok(serde_json::json!({ "researched": researched, "total": channels.len(), "grounded": grounded_any }))
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+
+    #[test]
+    fn openrouter_models_are_normalised_with_free_first() {
+        // Shape verified against the live endpoint: { data: [{ id, name, … }] }.
+        let res = serde_json::json!({ "data": [
+            { "id": "anthropic/claude-opus-5", "name": "Claude Opus 5" },
+            { "id": "nvidia/nemotron-3-ultra-550b-a55b:free", "name": "Nemotron 3 Ultra 550B (free)" },
+        ]});
+        let models = normalise_models("openrouter", &res);
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0]["id"], "nvidia/nemotron-3-ultra-550b-a55b:free", "free models sort first");
+        assert_eq!(models[0]["free"], true);
+        assert_eq!(models[1]["free"], false);
+    }
+
+    #[test]
+    fn anthropic_models_use_their_display_name() {
+        let res = serde_json::json!({ "data": [
+            { "id": "claude-opus-5", "display_name": "Claude Opus 5" },
+            { "id": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5" },
+        ]});
+        let models = normalise_models("anthropic", &res);
+        assert_eq!(models[0]["id"], "claude-haiku-4-5");   // alphabetical, none free
+        assert_eq!(models[0]["label"], "Claude Haiku 4.5");
+        assert!(models.iter().all(|m| m["free"] == false));
+    }
+
+    #[test]
+    fn openai_non_chat_models_are_filtered_out() {
+        // The list mixes in embeddings, speech and image endpoints — offering one would 400 on the
+        // first prompt with an error the user cannot act on.
+        let res = serde_json::json!({ "data": [
+            { "id": "gpt-5.1" },
+            { "id": "text-embedding-3-large" },
+            { "id": "gpt-4o-realtime-preview" },
+            { "id": "dall-e-3" },
+            { "id": "whisper-1" },
+            { "id": "o3-mini" },
+        ]});
+        let ids: Vec<String> = normalise_models("openai", &res).iter()
+            .map(|m| m["id"].as_str().unwrap_or("").to_string()).collect();
+        assert_eq!(ids, vec!["gpt-5.1".to_string(), "o3-mini".to_string()]);
+    }
+
+    #[test]
+    fn gemini_keeps_only_models_that_generate_content() {
+        let res = serde_json::json!({ "models": [
+            { "name": "models/gemini-3.5-flash", "displayName": "Gemini 3.5 Flash",
+              "supportedGenerationMethods": ["generateContent"] },
+            { "name": "models/gemini-2.5-flash-preview-tts", "displayName": "TTS",
+              "supportedGenerationMethods": ["generateContent"] },
+            { "name": "models/text-embedding-004", "displayName": "Embeddings",
+              "supportedGenerationMethods": ["embedContent"] },
+        ]});
+        let models = normalise_models("gemini", &res);
+        assert_eq!(models.len(), 1, "tts and embedding models are dropped");
+        assert_eq!(models[0]["id"], "gemini-3.5-flash", "the models/ prefix is stripped");
+    }
+
+    #[test]
+    fn a_shape_we_do_not_recognise_yields_an_empty_list_not_a_panic() {
+        assert!(normalise_models("openai", &serde_json::json!({ "unexpected": true })).is_empty());
+        assert!(normalise_models("gemini", &Value::Null).is_empty());
+    }
+
+    #[test]
+    fn overload_detection_covers_the_failures_that_actually_happen() {
+        // Regression net for the fallback trigger: these are real error strings seen from the
+        // providers; the 4xx ones must NOT trigger a retry that would fail identically.
+        for msg in ["OpenRouter HTTP 429: rate limit", "Gemini HTTP 503: model overloaded",
+                    "Anthropic HTTP 529: overloaded_error", "operation timed out",
+                    "OpenAI HTTP 500: server error"] {
+            assert!(is_overload_error(msg), "{msg} should fall back");
+        }
+        for msg in ["Gemini HTTP 400: invalid argument", "OpenAI HTTP 401: invalid api key",
+                    "Anthropic HTTP 403: permission denied"] {
+            assert!(!is_overload_error(msg), "{msg} must not fall back");
+        }
+    }
 }

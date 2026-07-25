@@ -58,9 +58,20 @@ pub struct Settings {
     pub theme: String,
     #[serde(default)]
     pub qwen_endpoint: String,
-    /// Which LLM backend generates lyrics/assist text: "openrouter" (default) or "gemini".
+    /// Which LLM backend generates lyrics/assist text. Free: "openrouter" (default), "gemini".
+    /// Paid: "anthropic" (Claude), "openai" (ChatGPT), or a billed Gemini key on "gemini".
     #[serde(default = "default_ai_provider")]
     pub ai_provider: String,
+    /// Claude, paid per token (console.anthropic.com/settings/keys).
+    #[serde(default)]
+    pub anthropic_api_key: String,
+    #[serde(default = "default_anthropic_model")]
+    pub anthropic_model: String,
+    /// ChatGPT via the OpenAI API — separate from a ChatGPT subscription (platform.openai.com/api-keys).
+    #[serde(default)]
+    pub openai_api_key: String,
+    #[serde(default = "default_openai_model")]
+    pub openai_model: String,
     #[serde(default)]
     pub openrouter_api_key: String,
     #[serde(default)]
@@ -175,6 +186,10 @@ fn default_ffprobe() -> String { "ffprobe".into() }
 fn default_theme() -> String   { "obsidian".into() }
 fn default_model() -> String   { "qwen/qwen3-next-80b-a3b-instruct:free".into() }
 fn default_ai_provider() -> String { "openrouter".into() }
+// Paid-provider defaults. Both pickers list what the key can actually reach (`list_ai_models`), so
+// these are only the starting point for a key that has just been pasted in.
+fn default_anthropic_model() -> String { "claude-opus-5".into() }
+fn default_openai_model() -> String { "gpt-5.1".into() }
 fn default_gemini_model() -> String { "gemini-3.5-flash".into() }
 fn default_image_engine() -> String { "midjourney".into() }
 fn default_comfy_ckpt() -> String { "sd_xl_base_1.0.safetensors".into() }

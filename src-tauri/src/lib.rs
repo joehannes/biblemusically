@@ -572,6 +572,8 @@ pub fn run() {
             commands::mix_genres,
             commands::ai_translate_ui,
             commands::take_ai_notices,
+            commands::list_ai_providers,
+            commands::list_ai_models,
             commands::guide_proposal,
             commands::guide_templates,
             commands::get_workflow_state,

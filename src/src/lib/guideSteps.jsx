@@ -13,6 +13,8 @@ import {
 import YouTubeStepBody from "./guideYouTube";
 import VoicePicker from "../components/VoicePicker";
 import { UI_LANGUAGES, setUiLanguage, getUiLanguage, isBundledLanguage } from "./uiTranslate";
+import { openLoginUrl } from "./openLogin";
+import { useNavigate } from "react-router-dom";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Guided setup steps, defined ONCE and reusable in two places:
@@ -42,55 +44,141 @@ const persist = async (patch) => {
 };
 
 // ── Step: AI provider ────────────────────────────────────────────────────────
+// Comes early — almost everything after it (the setup plan, the guided flows, translation, lyrics)
+// asks the AI something, so a key here makes the rest of setup smarter.
+//
+// Free and paid are shown side by side rather than hiding the paid options behind a toggle: a
+// creator publishing daily has a real reason to pay, and finding that out three screens later is
+// worse than seeing it now. The model list is fetched from the provider using the key that was just
+// pasted, so it is never a stale hardcoded list.
 function AiStepBody({ settings, onDone }) {
+  const nav = useNavigate();
+  const [providers, setProviders] = useState([]);
   const [provider, setProvider] = useState(settings?.ai_provider || "openrouter");
-  const [orKey, setOrKey] = useState(settings?.openrouter_api_key || "");
-  const [gemKey, setGemKey] = useState(settings?.gemini_api_key || "");
+  const [keys, setKeys] = useState({
+    openrouter_api_key: settings?.openrouter_api_key || "",
+    gemini_api_key: settings?.gemini_api_key || "",
+    anthropic_api_key: settings?.anthropic_api_key || "",
+    openai_api_key: settings?.openai_api_key || "",
+  });
+  const [models, setModels] = useState({ list: [], loading: false, error: "" });
+  const [model, setModel] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => { api.listAiProviders().then((r) => setProviders(r?.providers || [])).catch(() => {}); }, []);
+
+  const current = providers.find((p) => p.id === provider);
+  const keyField = current?.key_field || `${provider}_api_key`;
+  const modelField = current?.model_field || `${provider}_model`;
+
+  useEffect(() => { setModel(settings?.[modelField] || ""); }, [modelField, settings]);
+
+  /** Ask the provider what this key can reach. Saves the key first — the backend reads it from settings. */
+  const loadModels = async () => {
+    setModels({ list: [], loading: true, error: "" });
+    try {
+      await persist({ [keyField]: (keys[keyField] || "").trim() });
+      const r = await api.listAiModels(provider);
+      const list = r?.models || [];
+      setModels({ list, loading: false, error: list.length ? "" : "No models came back — check the key." });
+      if (list.length && !list.some((m) => m.id === model)) setModel(list[0].id);
+    } catch (err) {
+      setModels({ list: [], loading: false, error: String(err) });
+    }
+  };
+
+  const openKeyPage = () => {
+    if (!current?.key_url) return;
+    const where = openLoginUrl(current.key_url, {
+      navigate: nav,
+      label: `${current.label} API key`,
+      recommended: current.login,
+    });
+    toast.message(where === "internal"
+      ? "Opened inside the app — copy the key and come back to this tab."
+      : "Opened in your normal browser (this site refuses embedded sign-in).");
+  };
 
   const save = async () => {
     setSaving(true);
     await persist({
       ai_provider: provider,
-      ...(provider === "openrouter" ? { openrouter_api_key: orKey.trim() } : { gemini_api_key: gemKey.trim() }),
+      [keyField]: (keys[keyField] || "").trim(),
+      ...(model ? { [modelField]: model } : {}),
     });
     setSaving(false);
-    toast.success("AI provider saved.");
+    toast.success(`${current?.label || provider} saved.`);
     onDone?.();
   };
 
-  return (
-    <div className="space-y-5">
-      <p className="text-muted-foreground">
-        The app writes lyrics, adapts musical styles, and plans imagery with a large language model.
-        Pick a provider and paste a key — <b className="text-foreground">OpenRouter has capable free models</b>, so you can start at zero cost.
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        {["openrouter", "gemini"].map((p) => (
-          <button key={p} onClick={() => setProvider(p)}
-            className={`text-left rounded-lg border p-3 transition-colors ${provider === p ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"}`}>
-            <div className="font-medium">{p === "openrouter" ? "OpenRouter" : "Google Gemini"}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{p === "openrouter" ? "Free models available" : "Fast, free tier"}</div>
-          </button>
-        ))}
+  const free = providers.filter((p) => p.tier === "free");
+  const paid = providers.filter((p) => p.tier === "paid");
+
+  const ProviderCard = ({ p }) => (
+    <button onClick={() => setProvider(p.id)}
+      className={`text-left rounded-lg border p-3 transition-colors ${provider === p.id ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"}`}>
+      <div className="font-medium flex items-center gap-1.5">
+        {p.label}
+        {settings?.[p.key_field] ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : null}
       </div>
-      {provider === "openrouter" ? (
-        <div className="space-y-1.5">
-          <Label className="text-xs">OpenRouter API key</Label>
-          <Input type="password" value={orKey} onChange={(e) => setOrKey(e.target.value)} placeholder="sk-or-…" />
-          <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">
-            Get a free key <ExternalLink className="w-3 h-3" />
-          </a>
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          <Label className="text-xs">Gemini API key</Label>
-          <Input type="password" value={gemKey} onChange={(e) => setGemKey(e.target.value)} placeholder="AIza…" />
-          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-xs text-primary inline-flex items-center gap-1">
-            Get a free key <ExternalLink className="w-3 h-3" />
-          </a>
+      <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{p.detail}</div>
+    </button>
+  );
+
+  return (
+    <div className="space-y-4">
+      <p className="text-muted-foreground text-sm">
+        The app writes lyrics, adapts styles, plans imagery, translates the interface and drives the
+        guides with a language model. You can run the whole thing on a free key — or pay per token for
+        stronger results. This is changeable at any time, and an overloaded provider automatically
+        falls back to a free one.
+      </p>
+
+      <div className="space-y-1.5">
+        <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Free</Label>
+        <div className="grid sm:grid-cols-2 gap-2">{free.map((p) => <ProviderCard key={p.id} p={p} />)}</div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Paid — per token, no subscription</Label>
+        <div className="grid sm:grid-cols-2 gap-2">{paid.map((p) => <ProviderCard key={p.id} p={p} />)}</div>
+      </div>
+
+      {current && (
+        <div className="rounded-lg border border-border p-3 space-y-2.5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <Label className="text-xs">{current.label} API key</Label>
+            <Button size="sm" variant="ghost" onClick={openKeyPage} className="h-6 text-[11px]">
+              <ExternalLink className="w-3 h-3 mr-1" />Get a key
+            </Button>
+          </div>
+          <Input type="password" value={keys[keyField] || ""}
+            onChange={(e) => setKeys({ ...keys, [keyField]: e.target.value })}
+            placeholder={provider === "anthropic" ? "sk-ant-…" : provider === "openai" ? "sk-…" : provider === "gemini" ? "AIza…" : "sk-or-…"} />
+          {current.login_note && <div className="text-[11px] text-amber-400">{current.login_note}</div>}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant="secondary" onClick={loadModels} disabled={models.loading || !(keys[keyField] || "").trim()}>
+              {models.loading ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : null}
+              Check the key and list models
+            </Button>
+            {models.list.length > 0 && (
+              <select value={model} onChange={(e) => setModel(e.target.value)}
+                className="flex-1 min-w-[14rem] bg-background border border-border rounded px-2 py-1.5 text-xs">
+                {models.list.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}{m.free ? " — free" : ""}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {models.error && <div className="text-[11px] text-amber-400">{models.error}</div>}
+          {models.list.length > 0 && (
+            <div className="text-[11px] text-emerald-500">
+              Key works — {models.list.length} model{models.list.length === 1 ? "" : "s"} available.
+            </div>
+          )}
         </div>
       )}
+
       <Button onClick={save} disabled={saving} data-testid="guide-ai-save">
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
       </Button>
@@ -502,20 +590,22 @@ export const GUIDE_STEPS = [
     Body: LanguageStepBody,
   },
   {
-    id: "goal",
-    title: "What you're here to do",
-    icon: Target,
-    blurb: "So setup only asks for what your goal actually needs.",
-    isDone: (s) => !!s?.user_goal,
-    Body: GoalStepBody,
-  },
-  {
     id: "voice",
     title: "The assistant's voice",
     icon: Volume2,
     blurb: "Have the guides speak, and answer them out loud.",
     isDone: (s) => !!s?.voice_engine,
     Body: VoiceStepBody,
+  },
+  {
+    id: "ai",
+    title: "The AI brain",
+    icon: Bot,
+    blurb: "A provider key — free or paid — for lyrics, styles, translation and the guides.",
+    // Any of the four counts: whichever provider is configured is the one that gets used.
+    isDone: (s) => !!(s?.openrouter_api_key?.trim() || s?.gemini_api_key?.trim()
+      || s?.anthropic_api_key?.trim() || s?.openai_api_key?.trim()),
+    Body: AiStepBody,
   },
   {
     id: "permissions",
@@ -526,12 +616,12 @@ export const GUIDE_STEPS = [
     Body: PermissionsStepBody,
   },
   {
-    id: "ai",
-    title: "The AI brain",
-    icon: Bot,
-    blurb: "An AI provider key for lyrics, styles and imagery planning.",
-    isDone: (s) => !!(s?.openrouter_api_key?.trim() || s?.gemini_api_key?.trim()),
-    Body: AiStepBody,
+    id: "goal",
+    title: "What you're here to do",
+    icon: Target,
+    blurb: "So setup only asks for what your goal actually needs.",
+    isDone: (s) => !!s?.user_goal,
+    Body: GoalStepBody,
   },
   {
     id: "kaggle",
