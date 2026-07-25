@@ -284,7 +284,11 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
 }
 
 // ────────────────────────────────────────────────────────────────
-// Internal: single Qwen call via OpenRouter
+// Internal: single AI text call for upload metadata
+//
+// Routed through the shared `provider_chat` so it honours the configured provider, the timeout and
+// token knobs, and the automatic fallback when the primary is overloaded. Metadata polish is
+// best-effort — an empty string means "keep what the caller already had".
 // ────────────────────────────────────────────────────────────────
 
 async fn qwen_text(db: &crate::store::Db, system: &str, user: &str) -> String {
@@ -300,31 +304,8 @@ async fn qwen_text(db: &crate::store::Db, system: &str, user: &str) -> String {
         })
         .unwrap_or_default();
 
-    let key = s["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
-    if key.is_empty() { return String::new(); }
-    let model = s["openrouter_model"].as_str().unwrap_or("qwen/qwen-2.5-72b-instruct:free").to_string();
-
-    let client = reqwest::Client::new();
-    let res = client
-        .post("https://openrouter.ai/api/v1/chat/completions")
-        .bearer_auth(&key)
-        .header("HTTP-Referer", "https://lightkid.studio")
-        .header("X-Title", "Lightkid AI Studio")
-        .json(&serde_json::json!({
-            "model": model,
-            "temperature": 0.7,
-            "messages": [
-                { "role": "system", "content": system },
-                { "role": "user",   "content": user   },
-            ]
-        }))
-        .send().await;
-    match res {
-        Ok(r) if r.status().is_success() => {
-            r.json::<Value>().await.ok()
-                .and_then(|v| v["choices"][0]["message"]["content"].as_str().map(|s| s.trim().to_string()))
-                .unwrap_or_default()
-        }
-        _ => String::new(),
+    match crate::commands::ai::provider_chat(&s, system, user, 0.7, false).await {
+        Ok((text, _model)) => text.trim().to_string(),
+        Err(err) => { eprintln!("[uploads] metadata AI call failed: {err}"); String::new() }
     }
 }

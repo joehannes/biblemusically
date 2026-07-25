@@ -4,7 +4,8 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
-import { CheckCircle2, ExternalLink, Loader2, Youtube, Plus, ShieldCheck } from "lucide-react";
+import { CheckCircle2, ExternalLink, Loader2, Youtube, Plus, ShieldCheck, Copy, ShieldAlert } from "lucide-react";
+import { DEFAULT_OAUTH_REDIRECT, isLoopbackRedirect } from "./oauthRedirect";
 
 // Guided YouTube publishing setup, reusable both in the first-run wizard and on demand (e.g. the
 // upload step checks this prerequisite and re-opens just this panel when it isn't satisfied).
@@ -16,15 +17,16 @@ import { CheckCircle2, ExternalLink, Loader2, Youtube, Plus, ShieldCheck } from 
 //      channels. Because this is real OAuth, accounts with 2FA work normally and the app never
 //      sees the password — only a refresh token.
 
-const DEFAULT_REDIRECT = "http://127.0.0.1:8765/";
-
 export default function YouTubeStepBody({ onDone }) {
   const [clients, setClients] = useState([]);
   const [selected, setSelected] = useState("");
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState("");
-  const [form, setForm] = useState({ label: "YouTube uploads", client_id: "", client_secret: "", redirect_uri: DEFAULT_REDIRECT });
+  const [form, setForm] = useState({ label: "YouTube uploads", client_id: "", client_secret: "", redirect_uri: DEFAULT_OAUTH_REDIRECT });
   const [channels, setChannels] = useState([]);
+  // Google's own verdict on the saved client, so a misregistered redirect URI is caught here rather
+  // than on the "Access blocked" page after the browser has already opened.
+  const [check, setCheck] = useState(null);
 
   const loadClients = useCallback(async () => {
     try {
@@ -38,9 +40,26 @@ export default function YouTubeStepBody({ onDone }) {
 
   useEffect(() => { loadClients(); }, [loadClients]);
 
+  /** Ask the backend (which asks Google) whether this client will actually work. */
+  const verify = useCallback(async (id) => {
+    if (!id) return null;
+    setBusy("verify");
+    try {
+      const r = await api.validateOauthClient(id);
+      setCheck(r);
+      if (r?.google_ok === false) toast.error("Google rejected this OAuth client — see the details below.");
+      else if (r?.ok) toast.success("Google accepted this client.");
+      return r;
+    } catch (e) { toast.error(String(e)); return null; }
+    finally { setBusy(""); }
+  }, []);
+
   const saveClient = async () => {
     if (!form.client_id.trim() || !form.client_secret.trim()) {
       return toast.error("Client ID and Client secret are both required.");
+    }
+    if (!isLoopbackRedirect(form.redirect_uri)) {
+      return toast.error(`The redirect URI must be a loopback address, e.g. ${DEFAULT_OAUTH_REDIRECT}`);
     }
     setBusy("save");
     try {
@@ -49,7 +68,7 @@ export default function YouTubeStepBody({ onDone }) {
       setCreating(false);
       await loadClients();
       const newId = r?.id || r?._id;
-      if (newId) setSelected(newId);
+      if (newId) { setSelected(newId); verify(newId); }
     } catch (e) { toast.error(String(e)); }
     finally { setBusy(""); }
   };
@@ -105,9 +124,15 @@ export default function YouTubeStepBody({ onDone }) {
               <div>Create one once in Google Cloud Console — it takes a couple of minutes:</div>
               <ol className="list-decimal ml-4 space-y-0.5">
                 <li>APIs &amp; Services → <b className="text-foreground">Enable</b> the "YouTube Data API v3".</li>
-                <li>Credentials → Create credentials → <b className="text-foreground">OAuth client ID</b> → type <b className="text-foreground">Desktop app</b> (or Web app with the redirect below).</li>
+                <li>Credentials → Create credentials → <b className="text-foreground">OAuth client ID</b> → type <b className="text-foreground">Desktop app</b>. Desktop credentials accept any 127.0.0.1 port, so there is nothing to register.</li>
                 <li>Copy the Client ID and Client secret into the fields here.</li>
               </ol>
+              <div className="text-[11px] leading-relaxed pt-1">
+                Picking <b className="text-foreground">Web application</b> instead? Then the redirect URI below has to be
+                registered under "Authorised redirect URIs" <b className="text-foreground">character for character</b> —
+                a missing or extra trailing slash is a different URI to Google, and the sign-in fails with
+                <span className="font-mono"> redirect_uri_mismatch</span>.
+              </div>
               <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer"
                 className="text-primary inline-flex items-center gap-1 pt-0.5">
                 Open Google Cloud Credentials <ExternalLink className="w-3 h-3" />
@@ -117,7 +142,13 @@ export default function YouTubeStepBody({ onDone }) {
               <div className="space-y-1"><Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Label</Label>
                 <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /></div>
               <div className="space-y-1"><Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Redirect URI</Label>
-                <Input value={form.redirect_uri} onChange={(e) => setForm({ ...form, redirect_uri: e.target.value })} className="font-mono text-xs" /></div>
+                <div className="flex gap-1.5">
+                  <Input value={form.redirect_uri} onChange={(e) => setForm({ ...form, redirect_uri: e.target.value })} className="font-mono text-xs" />
+                  <Button size="sm" variant="outline" type="button" title="Copy the exact redirect URI"
+                    onClick={() => { navigator.clipboard?.writeText(form.redirect_uri); toast.success("Redirect URI copied — paste it into Google Cloud Console unchanged."); }}>
+                    <Copy className="w-3 h-3" />
+                  </Button>
+                </div></div>
               <div className="space-y-1"><Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Client ID</Label>
                 <Input value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} placeholder="…apps.googleusercontent.com" className="font-mono text-xs" /></div>
               <div className="space-y-1"><Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Client secret</Label>
@@ -145,9 +176,28 @@ export default function YouTubeStepBody({ onDone }) {
           Opens Google's sign-in in your browser, then pulls in the YouTube channels on that account
           and stores a refreshable upload token for each.
         </p>
-        <Button size="sm" onClick={connect} disabled={!selected || busy === "connect"} data-testid="guide-yt-connect">
-          {busy === "connect" ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Waiting for Google…</> : "Connect Google account"}
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" onClick={connect} disabled={!selected || busy === "connect"} data-testid="guide-yt-connect">
+            {busy === "connect" ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Waiting for Google…</> : "Connect Google account"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => verify(selected)} disabled={!selected || busy === "verify"}>
+            {busy === "verify" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Check with Google first"}
+          </Button>
+        </div>
+        {check?.google_ok === false && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-[11px] leading-relaxed">
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="whitespace-pre-wrap" data-no-i18n>{check.google_error}</div>
+          </div>
+        )}
+        {check?.google_ok === true && (
+          <div className="flex items-center gap-1.5 text-[11px] text-emerald-500">
+            <ShieldCheck className="w-3.5 h-3.5" />Google accepted this client and redirect URI.
+          </div>
+        )}
+        {(check?.missing?.length > 0) && (
+          <div className="text-[11px] text-amber-400">Incomplete client — missing: {check.missing.join(", ")}.</div>
+        )}
         {channels.length > 0 && (
           <div className="space-y-1 pt-1">
             {channels.map((c, i) => (

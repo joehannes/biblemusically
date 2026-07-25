@@ -120,7 +120,10 @@ pub async fn save_global_channel_settings(
     Ok(update_doc)
 }
 
-/// Call OpenRouter AI for translation and cultural adaptation
+/// Call the configured AI provider for translation and cultural adaptation.
+///
+/// Goes through the shared `provider_chat`, so it follows the provider chosen in Settings and
+/// automatically retries on the free fallback model when that provider is overloaded.
 async fn translate_with_ai(
     db: &crate::store::Db,
     request: &TranslateSettingsRequest,
@@ -131,27 +134,7 @@ async fn translate_with_ai(
         .map_err(e)?
         .map(bson_to_value)
         .unwrap_or_default();
-    
-    let api_key = settings_doc["openrouter_api_key"]
-        .as_str()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    
-    if api_key.is_empty() {
-        return Err("Configure openrouter_api_key in Settings first".into());
-    }
-    
-    let model = settings_doc["openrouter_model"]
-        .as_str()
-        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
-        .to_string();
-    
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(e)?;
-    
+
     // Templated system prompt: explicit per-field guidance (a real localizer's job — adapt, don't
     // transliterate), a hard JSON schema (so parsing below can trust the shape instead of hoping),
     // YouTube's actual field limits (so a downstream sync_channel_to_youtube call can't get
@@ -217,46 +200,23 @@ Return ONLY a JSON object with exactly these keys and nothing else:
         "channel_name": request.channel_name,
     });
 
-    let body = serde_json::json!({
-        "model": model,
-        "temperature": 0.7,
-        "response_format": { "type": "json_object" },
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": format!("Adapt this content:\n{}", user_message) }
-        ]
-    });
-
-    let response = http
-        .post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("HTTP-Referer", "https://lightkid.studio")
-        .header("X-Title", "Lightkid AI Studio")
-        .json(&body)
-        .send()
-        .await
-        .map_err(e)?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("OpenRouter API error {}: {}", status, text));
-    }
-
-    let result: Value = response.json().await.map_err(e)?;
-
-    // Extract the translated content
-    let content = result["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("{}");
+    let (content, _model) = crate::commands::ai::provider_chat(
+        &settings_doc,
+        &system_prompt,
+        &format!("Adapt this content:\n{}", user_message),
+        0.7,
+        true,
+    ).await?;
 
     // Parse the JSON response. This used to fall back to an empty object on a parse failure —
     // every field then silently defaulted to the *English source* text a few lines up the call
     // stack, which got saved (and could get synced live to YouTube) as if it were the translated
     // content for a non-English channel. Surface the failure instead so the caller records it as
     // a real per-channel error.
-    let translated: Value = serde_json::from_str(content)
-        .map_err(|err| format!("AI returned unparseable JSON: {} (raw: {})", err, content.chars().take(300).collect::<String>()))?;
+    let translated: Value = serde_json::from_str(&content)
+        .ok()
+        .or_else(|| crate::commands::ai::extract_json_value(&content))
+        .ok_or_else(|| format!("AI returned unparseable JSON (raw: {})", content.chars().take(300).collect::<String>()))?;
 
     Ok(translated)
 }
@@ -678,11 +638,6 @@ pub async fn ai_flavor_style(state: State<'_, AppState>, request: FlavorStyleReq
     let settings_doc = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or_default();
-    let api_key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
-    if api_key.is_empty() { return Err("Configure openrouter_api_key in Settings first".into()); }
-    let model = settings_doc["openrouter_model"].as_str()
-        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free").to_string();
-
     let musical = request.kind.eq_ignore_ascii_case("musical");
     let role = if musical { "a music production consultant" } else { "a visual art director" };
     let guidance = if musical {
@@ -718,37 +673,13 @@ Return ONLY a JSON object with exactly these keys:
         channel_name = channel_name, base_text = request.base_text, guidance = guidance, limit = limit,
     );
 
-    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(60)).build().map_err(e)?;
-    let body = serde_json::json!({
-        "model": model,
-        "temperature": 0.8,
-        "response_format": { "type": "json_object" },
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": "Adapt it now." },
-        ]
-    });
-
-    let response = http
-        .post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("HTTP-Referer", "https://lightkid.studio")
-        .header("X-Title", "Lightkid AI Studio")
-        .json(&body)
-        .send()
-        .await
-        .map_err(e)?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("OpenRouter API error {}: {}", status, text));
-    }
-
-    let result: Value = response.json().await.map_err(e)?;
-    let content = result["choices"][0]["message"]["content"].as_str().unwrap_or("{}");
-    let parsed: Value = serde_json::from_str(content)
-        .map_err(|err| format!("AI returned unparseable JSON: {} (raw: {})", err, content.chars().take(300).collect::<String>()))?;
+    let (content, _model) = crate::commands::ai::provider_chat(
+        &settings_doc, &system_prompt, "Adapt it now.", 0.8, true,
+    ).await?;
+    let parsed: Value = serde_json::from_str(&content)
+        .ok()
+        .or_else(|| crate::commands::ai::extract_json_value(&content))
+        .ok_or_else(|| format!("AI returned unparseable JSON (raw: {})", content.chars().take(300).collect::<String>()))?;
 
     let flavored_text = truncate_chars(
         parsed.get("flavored_text").and_then(|v| v.as_str()).unwrap_or(&request.base_text),

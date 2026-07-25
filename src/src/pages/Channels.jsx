@@ -716,7 +716,7 @@ export default function Channels() {
               <strong className="text-destructive">No OAuth clients configured.</strong>{" "}
               You need to set up at least one Google OAuth client first. Open the "YouTube OAuth client pool" section above to add one.
               You'll need a Google Cloud Console project with the YouTube Data API enabled and OAuth credentials created.
-              Make sure the <strong>redirect_uri</strong> is set to <code className="text-foreground">http://127.0.0.1:3335</code> (must match what you enter in Google Cloud Console).
+              A <strong>Desktop app</strong> credential is easiest — it accepts any 127.0.0.1 redirect without registering one.
             </div>
           </div>
         )}

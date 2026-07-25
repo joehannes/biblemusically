@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
-import { UI_LANGUAGES, getUiLanguage, setUiLanguage, subscribeLanguage, initUiLanguage } from "../lib/uiTranslate";
+import { UI_LANGUAGES, getUiLanguage, setUiLanguage, subscribeLanguage, initUiLanguage, isBundledLanguage } from "../lib/uiTranslate";
 import { useRequireGuideStep } from "./GuideStepDialog";
 import ToursFab from "./Tours";
 import HealthBanner from "./HealthBanner";
@@ -408,7 +408,13 @@ function LanguageFab() {
       const r = await setUiLanguage(code);
       if (code === "en") { toast.success("Back to English."); return; }
       if (r?.ok && r.applied > 0) {
-        toast.success(`Interface translated (${r.applied} labels).`, { id: t });
+        // A bundled language never touched the AI — say so, it explains why it was instant.
+        toast.success(
+          r.bundled
+            ? `Interface translated (${r.applied} labels, built-in catalog).`
+            : `Interface translated (${r.applied} labels).`,
+          { id: t },
+        );
       } else if (r?.error) {
         toast.error(`Couldn't translate: ${r.error}. Check your AI provider key in Settings.`, { id: t });
       } else {
@@ -445,11 +451,18 @@ function LanguageFab() {
               className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-muted/50 flex items-center justify-between gap-2 ${l.code === lang ? "text-primary font-medium" : ""}`}
             >
               <span>{l.native}</span>
-              {l.code === lang && <Check className="w-3.5 h-3.5" />}
+              <span className="flex items-center gap-1.5">
+                {/* Built-in means the catalog ships with the app: instant, offline, no AI request. */}
+                {isBundledLanguage(l.code) && l.code !== lang && (
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">built-in</span>
+                )}
+                {l.code === lang && <Check className="w-3.5 h-3.5" />}
+              </span>
             </button>
           ))}
           <div className="text-[10px] text-muted-foreground px-1.5 pt-1.5 leading-snug border-t border-border/50 mt-1">
-            Translated on the fly by your AI provider. Your own content (lyrics, titles, text you typed) is left untouched.
+            "Built-in" languages ship with the app — instant and offline. The rest are translated once by
+            your AI provider and cached. Your own content (lyrics, titles, text you typed) is left untouched.
           </div>
         </div>
       )}

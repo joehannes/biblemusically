@@ -5,6 +5,16 @@ follow-up implementation passes since. Each still-open item below also has an in
 `// deprecated???` comment at the referenced location. Fixed items keep their original write-up for
 context, with a `Fixed —` note.
 
+## Open (2026-07-25) — asked for, not yet built
+
+Two requests from the same session as the OAuth/i18n fixes. Both are large enough that starting them
+badly would be worse than starting them next, so they are recorded here with the intended shape.
+
+| # | Item | Shape |
+|---|---|---|
+| 1 | **Guided, adaptive workflow layer — starting with AI Composer, then every page.** The Composer shows every section at once and is hard to enter. Wanted: an interactive guide that asks a few multiple-choice questions with sensible learnt defaults, reveals only the section that is currently relevant, adapts the offered controls to what the *selected* engine can actually do (Suno tags vs ACE-Step tags vs HeartMuLa plain headers; per-engine image settings), and lets the user cherry-pick or change their mind at any point. It should know the user: project brief, mood, daily topic, social feeds, work style, and past choices via the learnings store. | New `GuidedFlow` component driving a per-page step graph; step definitions declare `capabilities` they need so unsupported controls disappear rather than fail; defaults come from `learnings` + `brief`; every answer is recorded as a learning signal so the proposals improve. `DailyGuide` (v0.65) and `pageSteps.js` are the existing seams to build on. |
+| 2 | **Run all rendering and uploading on remote computers.** ffmpeg assembly and YouTube upload should not happen on the user's machine or phone, and should not push media through the user's connection. Free tier is required; a cheap paid tier is wanted as an extra option. | Researched and designed in [docs/REMOTE_RENDER.md](docs/REMOTE_RENDER.md) — job contract, provider matrix with verified 2026 limits, and a 4-step implementation order (job document + provider setting, Kaggle CPU notebook, shared ffmpeg/upload script, Actions/Modal adapters). |
+
 ## Cleared (2026-07-25) — the Mongo→JSON pass
 
 Everything that was still open in this file is now either done or has moved to a precise, named

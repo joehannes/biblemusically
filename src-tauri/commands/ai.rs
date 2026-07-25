@@ -9,6 +9,82 @@ use regex::Regex;
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
+// ────────────────────────────────────────────────────────────────
+// Automatic fallback when the chosen provider is overloaded
+//
+// Free tiers fail by being busy, not by being broken: Gemini's free quota answers "the model is
+// overloaded" (503 / RESOURCE_EXHAUSTED) under load, which surfaced in the app as "the AI is busy"
+// and lost the whole request. OpenRouter's free Nemotron 3 Ultra is far less contended, so whenever
+// the primary fails with an overload-class error and an OpenRouter key exists, the request is
+// retried once on that model instead of failing. Every such switch leaves a notice the UI drains
+// (`take_ai_notices`) and toasts, so an automatic provider change is never silent.
+// ────────────────────────────────────────────────────────────────
+
+/// The always-free model used when the configured provider is overloaded.
+pub const FALLBACK_MODEL: &str = "nvidia/nemotron-3-ultra-550b-a55b:free";
+
+/// Pending one-shot notices for the UI. In-memory only — a notice describes the request that just
+/// happened, so there is nothing worth persisting across restarts.
+static AI_NOTICES: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+
+/// Is this failure the kind another provider might succeed at right now?
+///
+/// Deliberately narrow: a bad key, an unknown model or a malformed request (HTTP 400/401/403/404)
+/// would fail identically on the fallback, and retrying those would only hide a misconfiguration.
+fn is_overload_error(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    let http_status = |code: &str| m.contains(&format!("http {code}"));
+    ["429", "500", "502", "503", "504", "529"].iter().any(|c| http_status(c))
+        || m.contains("overload")
+        || m.contains("resource_exhausted")
+        || m.contains("rate limit") || m.contains("rate-limit") || m.contains("ratelimit")
+        || m.contains("quota")
+        || m.contains("too many requests")
+        || m.contains("unavailable")
+        || m.contains("is busy") || m.contains("try again")
+        || m.contains("timed out") || m.contains("timeout")
+        || m.contains("connection closed") || m.contains("connection reset")
+}
+
+/// Record that a request was served by the fallback. Repeats within a minute (a batch translation
+/// makes many calls in a row) collapse into one notice with a count, so the user gets one toast.
+fn note_fallback(from: &str, to: &str, reason: &str) {
+    let Ok(mut notices) = AI_NOTICES.lock() else { return };
+    let now = chrono::Utc::now();
+    let short: String = reason.chars().take(160).collect();
+    if let Some(last) = notices.last_mut() {
+        let same = last["from"].as_str() == Some(from) && last["to"].as_str() == Some(to);
+        let recent = last["at"].as_str()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|t| (now - t.with_timezone(&chrono::Utc)).num_seconds() < 60)
+            .unwrap_or(false);
+        if same && recent {
+            let n = last["count"].as_i64().unwrap_or(1) + 1;
+            last["count"] = serde_json::json!(n);
+            last["at"] = serde_json::json!(now.to_rfc3339());
+            return;
+        }
+    }
+    notices.push(serde_json::json!({
+        "kind": "ai_fallback",
+        "from": from,
+        "to": to,
+        "reason": short,
+        "count": 1,
+        "at": now.to_rfc3339(),
+    }));
+    // Keep the buffer bounded if the UI never drains it (e.g. a headless/scheduler-only run).
+    let len = notices.len();
+    if len > 8 { notices.drain(..len - 8); }
+}
+
+/// Drain pending AI notices. Polled by the UI alongside the job list; each notice is delivered once.
+#[tauri::command]
+pub async fn take_ai_notices() -> Res<Value> {
+    let drained = AI_NOTICES.lock().map(|mut n| std::mem::take(&mut *n)).unwrap_or_default();
+    Ok(serde_json::json!({ "notices": drained }))
+}
+
 fn proj0() -> crate::store::FindOneOptions {
     crate::store::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
 }
@@ -271,12 +347,14 @@ pub async fn provider_chat_grounded(
     if !r.status().is_success() {
         let status = r.status();
         let txt = r.text().await.unwrap_or_default();
-        // Some models/versions reject the tool — fall back ungrounded rather than failing the task.
-        if status.as_u16() == 400 {
+        // Some models/versions reject the tool (400); an overloaded free tier fails with 429/503.
+        // Either way an ungrounded answer beats no answer, and `provider_chat` adds its own
+        // fallback model on top — so the request survives, just without live citations.
+        let safe: String = txt.chars().take(400).collect();
+        if status.as_u16() == 400 || is_overload_error(&format!("http {status}: {safe}")) {
             let (content, model2) = provider_chat(settings_doc, system, user, temperature, false).await?;
             return Ok((content, model2, Vec::new()));
         }
-        let safe: String = txt.chars().take(400).collect();
         return Err(format!("Gemini (grounded) HTTP {status}: {safe}"));
     }
     let res: Value = r.json().await.map_err(e)?;
@@ -297,6 +375,11 @@ pub async fn provider_chat_grounded(
     Ok((content, format!("gemini:{model}+search"), sources))
 }
 
+/// Provider-agnostic chat with automatic overload fallback (see `FALLBACK_MODEL`).
+///
+/// Every AI feature funnels through here, so one retry policy covers lyrics, assists, style
+/// adaptation, insights and GUI translation alike. The returned model label reports what actually
+/// answered — a fallback is tagged so callers that display the model tell the truth.
 pub async fn provider_chat(
     settings_doc: &Value,
     system: &str,
@@ -304,7 +387,46 @@ pub async fn provider_chat(
     temperature: f32,
     json_mode: bool,
 ) -> Result<(String, String), String> {
+    let err = match provider_chat_once(settings_doc, system, user, temperature, json_mode, None).await {
+        Ok(ok) => return Ok(ok),
+        Err(err) => err,
+    };
+    if !is_overload_error(&err) { return Err(err); }
+
+    // The fallback needs an OpenRouter key, and is pointless if that model was the primary already.
+    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim();
     let provider = settings_doc["ai_provider"].as_str().unwrap_or("openrouter").trim();
+    let primary_model = settings_doc["openrouter_model"].as_str().unwrap_or("").trim();
+    if key.is_empty() || (provider != "gemini" && primary_model == FALLBACK_MODEL) {
+        return Err(err);
+    }
+    let from = if provider == "gemini" {
+        format!("gemini:{}", settings_doc["gemini_model"].as_str().unwrap_or("gemini-3.5-flash"))
+    } else if primary_model.is_empty() { "openrouter".to_string() } else { primary_model.to_string() };
+
+    match provider_chat_once(settings_doc, system, user, temperature, json_mode, Some(FALLBACK_MODEL)).await {
+        Ok((content, model)) => {
+            note_fallback(&from, &model, &err);
+            Ok((content, format!("{model} (fallback)")))
+        }
+        // Report both failures: knowing the fallback was tried too is what tells the user this is
+        // not just their primary provider having a bad minute.
+        Err(err2) => Err(format!("{err} — the {FALLBACK_MODEL} fallback also failed: {err2}")),
+    }
+}
+
+/// One attempt at one provider. `force_openrouter_model` pins the call to OpenRouter with that
+/// model regardless of the configured provider (used by the fallback path).
+async fn provider_chat_once(
+    settings_doc: &Value,
+    system: &str,
+    user: &str,
+    temperature: f32,
+    json_mode: bool,
+    force_openrouter_model: Option<&str>,
+) -> Result<(String, String), String> {
+    let provider = if force_openrouter_model.is_some() { "openrouter" }
+        else { settings_doc["ai_provider"].as_str().unwrap_or("openrouter").trim() };
 
     // ── Per-engine tunables ──────────────────────────────────────────
     // Settings-driven knobs that apply to whichever provider is selected. Each is opt-in: blank/0
@@ -383,10 +505,12 @@ pub async fn provider_chat(
 
     // ── OpenRouter (default) ─────────────────────────────────────────
     let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim().to_string();
-    let mut model = settings_doc["openrouter_model"].as_str()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
-        .to_string();
+    let mut model = force_openrouter_model.map(|m| m.to_string()).unwrap_or_else(|| {
+        settings_doc["openrouter_model"].as_str()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("qwen/qwen3-next-80b-a3b-instruct:free")
+            .to_string()
+    });
     // Self-heal the old default that OpenRouter has delisted (stale DBs still carry it).
     if model == "qwen/qwen-2.5-72b-instruct:free" {
         model = "qwen/qwen3-next-80b-a3b-instruct:free".to_string();

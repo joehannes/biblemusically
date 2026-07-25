@@ -131,6 +131,8 @@ export const api = {
   openYoutubeCreateChannel: () => invokeCommand("open_youtube_create_channel"),
   importChannelByHandle: (handle) => invokeCommand("import_channel_by_handle", { handle }),
   aiTranslateUi: (strings, language) => invokeCommand("ai_translate_ui", { payload: { strings, language } }),
+  // Drains one-shot notices about automatic provider fallbacks (each is delivered once).
+  takeAiNotices: () => invokeCommand("take_ai_notices"),
   listGenrePresets: () => invokeCommand("list_genre_presets"),
   saveGenrePreset: (payload) => invokeCommand("save_genre_preset", { payload }),
   deleteGenrePreset: (id) => invokeCommand("delete_genre_preset", { id }),

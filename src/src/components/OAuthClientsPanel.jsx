@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Plus, Trash2, KeyRound, ChevronDown, ChevronUp, Edit3, Languages, ShieldCheck, ShieldAlert, RefreshCw, Info } from "lucide-react";
 import { toast } from "sonner";
+import { DEFAULT_OAUTH_REDIRECT, isLoopbackRedirect } from "../lib/oauthRedirect";
 
 /** Manage multiple Google OAuth clients to overcome per-client quota.
  * Each client binds to a list of languages; channel→client resolution prefers explicit binding then language match. */
@@ -15,7 +16,7 @@ export default function OAuthClientsPanel({ defaultOpen = false, onChange }) {
   const [clients, setClients] = useState([]);
   const [editing, setEditing] = useState(null); // {id?, label, client_id, client_secret, redirect_uri, languages[], notes}
   const [validating, setValidating] = useState({}); // { [id]: 'loading' | { ok, missing } }
-  const blank = { label: "", client_id: "", client_secret: "", redirect_uri: "http://127.0.0.1:3335", languages: "", notes: "" };
+  const blank = { label: "", client_id: "", client_secret: "", redirect_uri: DEFAULT_OAUTH_REDIRECT, languages: "", notes: "" };
 
   const load = async () => { const cs = await api.listOauthClients(); setClients(cs); onChange?.(cs); };
   useEffect(() => { load(); }, []);
@@ -26,10 +27,14 @@ export default function OAuthClientsPanel({ defaultOpen = false, onChange }) {
     try {
       const result = await api.validateOauthClient(id);
       setValidating(prev => ({ ...prev, [id]: result }));
-      if (!result.ok) {
-        toast.error(`Client "${result.label || id}" is missing: ${result.missing?.join(", ") || "unknown fields"}`);
+      // Two ways to be invalid: fields missing here, or Google refusing the client/redirect pair.
+      // The second one is the failure users actually hit, so it gets the long message.
+      if (result.missing?.length) {
+        toast.error(`Client "${result.label || id}" is missing: ${result.missing.join(", ")}`);
+      } else if (result.google_ok === false) {
+        toast.error(result.google_error || "Google rejected this OAuth client.", { duration: 15000 });
       } else {
-        toast.success(`Client "${result.label || id}" is valid.`);
+        toast.success(`Client "${result.label || id}" is valid — Google accepted it.`);
       }
     } catch (err) {
       setValidating(prev => ({ ...prev, [id]: { ok: false, error: err.toString() } }));
@@ -42,13 +47,8 @@ export default function OAuthClientsPanel({ defaultOpen = false, onChange }) {
 
   const save = async () => {
     if (!editing.label || !editing.client_id || !editing.redirect_uri) return toast.error("Label, client_id, and redirect_uri are required");
-    try {
-      const redirect = new URL(editing.redirect_uri);
-      if (redirect.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(redirect.hostname)) {
-        return toast.error("Redirect URI must be a local loopback URL such as http://127.0.0.1:3335");
-      }
-    } catch {
-      return toast.error("Redirect URI must be a valid URL");
+    if (!isLoopbackRedirect(editing.redirect_uri)) {
+      return toast.error(`Redirect URI must be a local loopback URL such as ${DEFAULT_OAUTH_REDIRECT}`);
     }
     const payload = { ...editing, languages: (editing.languages || "").split(",").map(s=>s.trim()).filter(Boolean) };
     if (editing.id && !payload.client_secret) delete payload.client_secret;
@@ -162,13 +162,19 @@ export default function OAuthClientsPanel({ defaultOpen = false, onChange }) {
               <Input data-testid="oauth-client-cid" placeholder="Client ID (xxxxx.apps.googleusercontent.com)" value={editing.client_id} onChange={e=>setEditing({...editing, client_id:e.target.value})} />
               <Input data-testid="oauth-client-secret" type="password" placeholder={editing.id ? "leave blank to keep existing secret" : "Client Secret (GOCSPX-...)"} value={editing.client_secret} onChange={e=>setEditing({...editing, client_secret:e.target.value})} />
               <Input data-testid="oauth-client-redirect" placeholder="Redirect URI (must match Google Console)" value={editing.redirect_uri} onChange={e=>setEditing({...editing, redirect_uri:e.target.value})} />
-              <p className="text-xs text-muted-foreground">Use the same loopback redirect URI in Google Cloud Console, for example <code className="text-foreground">http://127.0.0.1:3335</code>.</p>
+              <p className="text-xs text-muted-foreground">
+                Google matches this string exactly — same port, same trailing slash (or none) as whatever you registered.
+                Default: <code className="text-foreground">{DEFAULT_OAUTH_REDIRECT}</code>.
+              </p>
               <div className="flex items-start gap-2 p-2 rounded-md bg-amber-500/5 border border-amber-500/20 text-[11px] text-muted-foreground">
                 <Info className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-amber-300">Important:</strong> You must create a <strong className="text-foreground">Desktop App</strong> type credential in Google Cloud Console — not a "Web Application" credential.
-                  Desktop App credentials are required for local loopback redirects. Also, if your app is in <strong>Testing</strong> mode,
+                  <strong className="text-amber-300">Important:</strong> create a <strong className="text-foreground">Desktop App</strong> credential in Google Cloud Console.
+                  Google accepts any 127.0.0.1 port for those, so nothing has to be registered. A "Web Application" credential
+                  only works if this exact redirect URI is listed under its "Authorised redirect URIs" — otherwise sign-in fails with
+                  <span className="font-mono"> redirect_uri_mismatch</span>. Also, if your app is in <strong>Testing</strong> mode,
                   add your Gmail account to the <strong>Test Users</strong> list in the OAuth consent screen.
+                  Use <strong>Validate</strong> after saving — it asks Google whether this client will work.
                 </div>
               </div>
               <Input data-testid="oauth-client-langs" placeholder="Languages (comma-separated, e.g. English, German)" value={editing.languages} onChange={e=>setEditing({...editing, languages:e.target.value})} />

@@ -131,6 +131,31 @@ export function StudioProvider({ children }) {
     }
   }, [jobs]);
 
+  // ── AI provider fallback notices ──────────────────────────────────────────
+  // When the configured provider is overloaded the backend transparently retries the request on the
+  // free Nemotron 3 Ultra model rather than failing. That is a change the user should know about —
+  // a different model wrote their lyrics — so the backend leaves a notice and this drains it. Same
+  // 2.5s tick as the job poll: no extra timer, and the toast lands while the result is still fresh.
+  useEffect(() => {
+    let stop = false;
+    const drain = async () => {
+      try {
+        const r = await api.takeAiNotices();
+        for (const n of r?.notices || []) {
+          if (stop || n.kind !== "ai_fallback") continue;
+          const times = n.count > 1 ? ` (${n.count} requests)` : "";
+          toast.info(`${n.from} was busy — used ${n.to} instead${times}`, {
+            description: n.reason || "Automatic fallback so the request wasn't lost.",
+            duration: 8000,
+          });
+        }
+      } catch { /* the notice channel is best-effort */ }
+    };
+    drain();
+    const t = setInterval(drain, 2500);
+    return () => { stop = true; clearInterval(t); };
+  }, []);
+
   const value = {
     theme, setTheme,
     activeProjectId, selectProject,

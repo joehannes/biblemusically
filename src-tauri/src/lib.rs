@@ -571,6 +571,7 @@ pub fn run() {
             commands::compose_freeform,
             commands::mix_genres,
             commands::ai_translate_ui,
+            commands::take_ai_notices,
             commands::suggest_transitions,
             // Style presets + per-channel sticky styles
             commands::list_style_presets,

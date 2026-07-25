@@ -206,3 +206,26 @@ Legend: ✅ Real/working · 🟡 Real but rough edge (documented) · 🔴 Broken
   which engine produced the audio.
 - **Characters in scenes** — attach a character to specific sections and push its appearance tags and
   prompt into them in one action.
+
+## Interface language (2026-07-25)
+
+- **Built-in languages** — German, Spanish, Portuguese and Russian ship as translation catalogs
+  inside the app. Switching is instant and offline; no AI request is made. The picker marks them
+  "built-in".
+- **Any other language** — translated once by your AI provider and cached, including panels you have
+  not opened yet (tours, dialogs, wizards), so nothing appears in English later. Bounded by a
+  per-day request cap so interface translation can never consume the quota your generations need.
+- **Your content is never translated** — inputs, code blocks, song text, anything marked
+  `data-no-i18n`, and any string that looks like data rather than a label.
+- **Keeping the catalogs current** — `npm run i18n:extract` refreshes the string inventory from the
+  source, `npm run i18n:build` fills the catalogs (resumable), `npm run i18n:check` fails when the
+  inventory is stale.
+
+## AI provider resilience (2026-07-25)
+
+- **Automatic fallback** — when the configured provider is overloaded or rate-limited, the request is
+  retried once on the free Nemotron 3 Ultra 550B model via OpenRouter rather than failing, and a
+  toast names both models so you know which one answered.
+- **Google OAuth preflight** — "Validate" and every sign-in flow ask Google whether the client and
+  redirect URI are acceptable *before* opening a browser, and report the real reason (with the exact
+  URI to register) instead of a silent timeout.

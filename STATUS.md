@@ -4,6 +4,72 @@ A dated log of observed project state, **newest observation first** (reverse-chr
 
 ---
 
+## 2026-07-25 (later) — OAuth preflight, AI overload fallback, offline GUI translation catalogs
+
+Driven by three reports from using the app: YouTube authorization dying on Google's "Access blocked"
+page, Gemini answering "the AI is busy", and the interface flickering between German and English
+while OpenRouter's free daily allowance drained away. Verified with `cargo check` (clean) and
+`vite build`.
+
+**OAuth: `redirect_uri_mismatch` is now caught before the browser opens.**
+- The stored redirect URI is sent **verbatim**. It used to be round-tripped through
+  `Url::to_string()`, which turns `http://127.0.0.1:3335` into `http://127.0.0.1:3335/` — a
+  different string to Google, which compares redirect URIs exactly. The callback port is also no
+  longer re-read from the bound socket unless the client deliberately left the port out (the
+  "Desktop app" case, where Google ignores the loopback port).
+- `preflight_authorize()` GETs the authorization URL server-side before `open::that`. A rejected
+  client/redirect makes Google redirect to its own error page with a base64 `authError` blob;
+  that blob is decoded and reported as the actual reason — including the exact URI to register —
+  instead of the app waiting out a 120s callback timeout it was never going to receive.
+- `validate_oauth_client` runs the same probe, so **Validate** now predicts whether sign-in will
+  work rather than only checking that fields are non-empty.
+- One redirect default (`src/src/lib/oauthRedirect.js`). The first-run guide suggested port 8765
+  while the OAuth panel suggested 3335, so whichever one the user registered, the other flow failed.
+
+**AI: an overloaded provider falls back to Nemotron 3 Ultra instead of failing.**
+- `provider_chat` is now a wrapper: on an overload-class error (429/5xx, "overloaded",
+  RESOURCE_EXHAUSTED, quota, timeout) it retries once on `nvidia/nemotron-3-ultra-550b-a55b:free`
+  via OpenRouter, if a key exists. Configuration errors (400/401/403) are never retried — they would
+  fail identically and retrying only hides them.
+- Each switch leaves a notice (`take_ai_notices`, drained on the existing 2.5s poll in `store.jsx`)
+  and toasts "gemini:… was busy — used nvidia/nemotron-… instead", so an automatic provider change
+  is never silent. Repeats within a minute collapse into one notice with a count.
+- Three call sites that talked to OpenRouter directly (`uploads.rs` metadata, `channel_settings.rs`
+  translation and flavor) now route through `provider_chat`, so they inherit the fallback, the
+  provider choice and the timeout/token settings.
+
+**GUI translation: catalogs, and an end to the request leak.**
+- The leak: the translator keyed each node's original text forever, so when React reused a text node
+  for different content it kept re-applying a stale translation — React wrote English, it wrote the
+  old translation back, forever. That was the flicker. Worse, every changing string (counts,
+  timestamps) was a cache miss, and a cache miss was an AI request: a 10-minute session burned
+  OpenRouter's **50 free requests/day**.
+- Now the set of translatable strings is fixed: `scripts/extract-ui-strings.mjs` extracts the 1,581
+  literal strings the interface is built from into `src/src/i18n/ui-strings.json`, and only those
+  (plus a small, budgeted allowance for static-looking strings it missed) may reach the AI. Runtime
+  data — anything with a digit, a URL, markup, or over 80 characters — is never sent.
+- German, Spanish, Portuguese and Russian ship as catalogs in `src/src/i18n/<code>.json`
+  (`scripts/build-i18n-catalogs.mjs` generates them; `scripts/i18n-core-catalog.py` holds the
+  hand-translated core). Switching to those is instant, offline, and costs **zero** AI requests.
+  Coverage today: de 1484/1581, es 348, pt 172, ru 172 — the builder is resumable and fills the rest
+  (`npm run i18n:build`) once a free-tier quota resets.
+- Hidden panels are covered: the observer watches `document.body` instead of `#root`, so dialogs,
+  toasts and the tour veil — all portalled outside `#root`, which is why tours stayed English — are
+  translated, as are `placeholder`/`title`/`aria-label` attributes. For non-bundled languages the
+  whole inventory is prefetched in the background so a panel opened later is already translated.
+- Spend guards: each string is requested at most once per session even if the answer is useless, a
+  provider failure pauses translation for 5 minutes instead of retrying every render, and a
+  localStorage ledger caps translation at 24 requests/day across sessions.
+
+**Research, not yet implemented.** [docs/REMOTE_RENDER.md](docs/REMOTE_RENDER.md) works out what it
+takes to run ffmpeg and the YouTube upload off this machine for 50 channels (~750 videos/month):
+the workload is 50–100 core-hours and 150–300 GB egress per month, the free answer is Kaggle CPU
+sessions (5 concurrent, 12 h each, already integrated) or GitHub Actions on a public repo, and the
+paid answer is Modal (inside its $30/month credits) or a $4.59 Hetzner CX22. It also notes that the
+real ceiling is the YouTube API upload bucket, not CPU.
+
+---
+
 ## 2026-07-25 — MongoDB retired, project data in git, remote sync, social presence, insights
 
 A large pass driven by three requests: (1) make all persistence JSON files stored in each project's

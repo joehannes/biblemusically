@@ -28,6 +28,136 @@ pub fn bson_to_value(doc: Document) -> Value {
 }
 
 // ────────────────────────────────────────────────────────────────
+// Loopback redirect handling
+//
+// Google matches `redirect_uri` as an exact string, so the URI in the authorization request has to
+// be byte-identical to what is registered in the Cloud Console. Two things used to break that:
+//
+//   • the stored URI was round-tripped through `Url::to_string()`, which normalises
+//     `http://127.0.0.1:3335` into `http://127.0.0.1:3335/` — a different string to Google;
+//   • the callback port was re-read from the actually-bound socket, so if the configured port was
+//     taken the request went out with a port nobody had registered.
+//
+// Now the stored string is sent verbatim whenever it names a port. A URI with no explicit port
+// keeps the old ephemeral-port behaviour, which is what "Desktop app" credentials want — for those
+// Google ignores the loopback port entirely.
+// ────────────────────────────────────────────────────────────────
+
+/// Validate a stored redirect URI for the loopback flow.
+/// Returns `(uri_as_stored, explicit_port)` — `None` port means "pick an ephemeral one".
+fn loopback_target(stored: &str) -> Res<(String, Option<u16>)> {
+    let stored = stored.trim().to_string();
+    let parsed = Url::parse(&stored).map_err(|err| format!("redirect_uri is not a valid URL: {err}"))?;
+    let host = parsed.host_str().unwrap_or("");
+    if host != "127.0.0.1" && host != "localhost" {
+        return Err("OAuth client redirect_uri must be a loopback address (127.0.0.1 or localhost)".into());
+    }
+    // `Url::port()` hides the scheme default, which is exactly what we want: only an explicitly
+    // written port pins the socket.
+    Ok((stored, parsed.port()))
+}
+
+/// The redirect URI to put in the authorization request and the token exchange (the same value has
+/// to appear in both). Verbatim when the client named a port; otherwise the stored URI with the
+/// ephemeral port that actually got bound.
+fn redirect_for_request(stored: &str, explicit_port: Option<u16>, bound_port: u16) -> Res<String> {
+    if explicit_port.is_some() { return Ok(stored.trim().to_string()); }
+    let mut url = Url::parse(stored.trim()).map_err(e)?;
+    url.set_port(Some(bound_port)).map_err(|_| "cannot set port on redirect_uri".to_string())?;
+    Ok(url.to_string())
+}
+
+/// Ask Google whether it will accept this authorization request *before* sending the user to the
+/// browser.
+///
+/// A rejected `redirect_uri` (or an unknown client) is decided server-side, at the authorize
+/// endpoint, and Google answers with a redirect to its own error page carrying a base64 `authError`
+/// blob. Without this check the app opened the browser, the user hit "Access blocked", and the app
+/// sat waiting on a callback that was never coming until the 120s timeout — with nothing but
+/// "timed out" to show for it. Now the actual reason is reported immediately.
+///
+/// Returns `Some(message)` only on a *positive* rejection. Anything ambiguous — network failure,
+/// an unexpected page, a real sign-in page — returns `None` so the flow proceeds as before.
+async fn preflight_authorize(auth_url: &str) -> Option<String> {
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        // A plain UA and English keep the response (and the error text we surface) predictable.
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+        .build().ok()?;
+    let r = http.get(auth_url).header("Accept-Language", "en-US,en;q=0.9").send().await.ok()?;
+    let final_url = r.url().clone();
+    if !final_url.path().contains("/signin/oauth/error") { return None; }
+
+    let blob = final_url.query_pairs()
+        .find(|(k, _)| k == "authError")
+        .map(|(_, v)| v.to_string())
+        .unwrap_or_default();
+    let decoded = decode_auth_error(&blob);
+    let code = decoded.first().cloned().unwrap_or_else(|| "invalid_request".to_string());
+    // The offending redirect URI is echoed back in the blob; showing it is what makes the fix obvious.
+    let echoed = decoded.iter().find(|s| s.starts_with("http://") || s.starts_with("https://")).cloned();
+
+    Some(match code.as_str() {
+        "redirect_uri_mismatch" => format!(
+            "Google rejected the sign-in before it started: redirect_uri_mismatch.\n\n\
+             This app asked to be sent back to {}, and that exact address is not registered on the \
+             OAuth client.\n\nFix it in Google Cloud Console → APIs & Services → Credentials → your \
+             OAuth client, either:\n\
+             • add {} under \"Authorised redirect URIs\" (copy it exactly — the trailing slash counts), or\n\
+             • create a \"Desktop app\" credential instead, which accepts any 127.0.0.1 port without \
+             registering one.",
+            echoed.clone().unwrap_or_else(|| "the loopback address".into()),
+            echoed.unwrap_or_else(|| "the redirect URI shown in this app".into()),
+        ),
+        "invalid_client" | "unauthorized_client" | "deleted_client" | "disabled_client" => format!(
+            "Google rejected the OAuth client ({code}). Check that the Client ID belongs to a live \
+             project with the YouTube Data API v3 enabled, and that it was not deleted or disabled."
+        ),
+        "access_denied" | "admin_policy_enforced" => format!(
+            "Google blocked this client ({code}). If the consent screen is still in Testing, add \
+             your Google account under \"Test users\" first."
+        ),
+        other => {
+            let detail = decoded.iter().find(|s| s.contains(' ')).cloned().unwrap_or_default();
+            format!("Google rejected the sign-in request ({other}). {detail}").trim().to_string()
+        }
+    })
+}
+
+/// Pull the readable strings out of Google's base64 `authError` payload. It is a protobuf blob, so
+/// rather than modelling it, the printable runs are extracted in order: the error code comes first,
+/// then the human message(s), then any echoed parameter values.
+fn decode_auth_error(blob: &str) -> Vec<String> {
+    use base64::Engine;
+    if blob.is_empty() { return Vec::new(); }
+    let padded = format!("{blob}{}", "=".repeat((4 - blob.len() % 4) % 4));
+    let bytes = base64::engine::general_purpose::URL_SAFE.decode(padded.as_bytes())
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(blob.as_bytes()))
+        .unwrap_or_default();
+    let text = String::from_utf8_lossy(&bytes);
+    let mut out: Vec<String> = Vec::new();
+    let mut run = String::new();
+    for ch in text.chars() {
+        // Field separators in the blob are control bytes; readable prose is everything else.
+        if ch.is_control() || (ch as u32) < 0x20 || ch == '\u{fffd}' {
+            if run.chars().count() >= 6 { out.push(run.trim().to_string()); }
+            run.clear();
+        } else {
+            run.push(ch);
+        }
+    }
+    if run.chars().count() >= 6 { out.push(run.trim().to_string()); }
+    // Google prefixes some fields with a length byte that survives as a stray leading letter
+    // (e.g. "mhttps://…"); trim that so URLs come out usable.
+    for s in out.iter_mut() {
+        if let Some(idx) = s.find("http://").or_else(|| s.find("https://")) {
+            if idx == 1 { *s = s[idx..].to_string(); }
+        }
+    }
+    out
+}
+
+// ────────────────────────────────────────────────────────────────
 // OAuth Clients CRUD
 // ────────────────────────────────────────────────────────────────
 
@@ -125,8 +255,9 @@ pub async fn channel_picked_client(state: State<'_, AppState>, cid: String) -> R
 }
 
 // ────────────────────────────────────────────────────────────────
-// Validate OAuth client — checks that the stored client has all
-// required fields non-empty. Returns { ok: true/false, missing: [...] }
+// Validate OAuth client — field completeness plus a live check that
+// Google will actually accept this client + redirect URI pair.
+// Returns { ok, missing: [...], google_ok, google_error }
 // ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -142,10 +273,35 @@ pub async fn validate_oauth_client(state: State<'_, AppState>, oid: String) -> R
     if csec.trim().is_empty() || csec.starts_with('•') { missing.push("client_secret"); }
     let redirect = client["redirect_uri"].as_str().unwrap_or("");
     if redirect.trim().is_empty() { missing.push("redirect_uri"); }
-    let ok = missing.is_empty();
+    let fields_ok = missing.is_empty();
+
+    // With the fields in place, ask Google — a registered-redirect mistake is the failure users
+    // actually hit, and it is invisible to a field check. This is the same probe the sign-in flows
+    // run, so "Validate" now predicts whether they will work.
+    let mut google_ok = Value::Null;
+    let mut google_error = Value::Null;
+    if fields_ok {
+        let scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+        let probe = format!(
+            "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state=validate",
+            cid.trim(),
+            urlencoding::encode(redirect.trim()),
+            urlencoding::encode(scope),
+        );
+        match preflight_authorize(&probe).await {
+            Some(msg) => { google_ok = Value::Bool(false); google_error = Value::String(msg); }
+            // `None` also covers "could not reach Google"; it means "nothing rejected it", which is
+            // the honest answer either way.
+            None => { google_ok = Value::Bool(true); }
+        }
+    }
+
     Ok(serde_json::json!({
-        "ok": ok,
+        "ok": fields_ok && google_ok != Value::Bool(false),
+        "fields_ok": fields_ok,
         "missing": missing,
+        "google_ok": google_ok,
+        "google_error": google_error,
         "id": oid,
         "label": client["label"],
     }))
@@ -177,8 +333,11 @@ pub async fn oauth_start(
     let cid_g    = client["client_id"].as_str().unwrap_or("");
     let redirect = client["redirect_uri"].as_str().unwrap_or("");
     let scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+    // Encode the redirect: it has to reach Google as one parameter value, unsplit by its own ':' or
+    // any '&' a hand-entered URI might carry.
     let url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={cid_g}&redirect_uri={redirect}&scope={}&access_type=offline&prompt=consent&state={cid}",
+        "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={cid_g}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state={cid}",
+        urlencoding::encode(redirect.trim()),
         scope.replace(' ', "%20"),
     );
     state.db.collection::<Document>("channels")
@@ -326,11 +485,7 @@ pub async fn oauth_start_for_channel(
         return Err("OAuth client missing client_id/client_secret/redirect_uri".into());
     }
 
-    let parsed = Url::parse(&redirect).map_err(e)?;
-    let host = parsed.host_str().unwrap_or("");
-    if host != "127.0.0.1" && host != "localhost" {
-        return Err("OAuth client redirect_uri must be a loopback address (127.0.0.1 or localhost)".into());
-    }
+    let (redirect, explicit_port) = loopback_target(&redirect)?;
 
     // Update channel's oauth_client_id
     state.db.collection::<Document>("channels")
@@ -354,9 +509,8 @@ pub async fn oauth_start_for_channel(
             Ok::<_, std::convert::Infallible>(warp::reply::html(body))
         });
 
-    // Bind to port from redirect URI — use TcpListener so we get a clean
-    // error if the port is already in use instead of a panic.
-    let port = parsed.port().unwrap_or(0);
+    // Bind the callback port — a TcpListener gives a clean error if it is taken instead of a panic.
+    let port = explicit_port.unwrap_or(0);
     let bind_addr: SocketAddr = format!("127.0.0.1:{}", port).parse().map_err(e)?;
     let tcp = TcpListener::bind(bind_addr).await
         .map_err(|err| format!("Cannot bind OAuth callback port {}: {}. Another process may already be using it — restart the app and try again.", port, err))?;
@@ -373,10 +527,7 @@ pub async fn oauth_start_for_channel(
         );
     let server_task = tokio::task::spawn(server);
 
-    // Reconstruct redirect URI with actual bound port
-    let mut redirect_used = parsed.clone();
-    redirect_used.set_port(Some(bound_port)).ok();
-    let redirect_used_str = redirect_used.to_string();
+    let redirect_used_str = redirect_for_request(&redirect, explicit_port, bound_port)?;
 
     let scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
     let state_param = cid.clone();
@@ -387,6 +538,14 @@ pub async fn oauth_start_for_channel(
         urlencoding::encode(scope),
         state_param
     );
+
+    // Catch a configuration Google will refuse anyway, instead of parking the user on an
+    // "Access blocked" page and waiting out the callback timeout.
+    if let Some(rejected) = preflight_authorize(&auth_url).await {
+        let _ = shutdown_tx.send(());
+        let _ = server_task.await;
+        return Err(rejected);
+    }
 
     // Open system browser for user consent
     let _ = open::that(auth_url.clone());
@@ -540,11 +699,7 @@ pub async fn perform_oauth_loopback(db: &crate::store::Db, oauth_client_db_id: &
     }
 
     // parse redirect URI — only allow localhost/127.0.0.1 loopback flows
-    let parsed = Url::parse(&redirect).map_err(e)?;
-    let host = parsed.host_str().unwrap_or("");
-    if host != "127.0.0.1" && host != "localhost" {
-        return Err("OAuth client redirect_uri must be a loopback address (127.0.0.1 or localhost)".into());
-    }
+    let (redirect, explicit_port) = loopback_target(&redirect)?;
 
     // Channel to receive the query params from the callback
     let (tx, mut rx) = mpsc::channel::<HashMap<String, String>>(1);
@@ -565,7 +720,7 @@ pub async fn perform_oauth_loopback(db: &crate::store::Db, oauth_client_db_id: &
 
     // Determine port to bind — use TcpListener so we get a clean error if the
     // port is already in use instead of a panic.
-    let port = parsed.port().unwrap_or(0);
+    let port = explicit_port.unwrap_or(0);
     let bind_addr: SocketAddr = format!("127.0.0.1:{}", port).parse().map_err(e)?;
     let tcp = TcpListener::bind(bind_addr).await
         .map_err(|err| format!("Cannot bind OAuth callback port {}: {}. Another process may already be using it — restart the app and try again.", port, err))?;
@@ -582,10 +737,8 @@ pub async fn perform_oauth_loopback(db: &crate::store::Db, oauth_client_db_id: &
         );
     let server_task = tokio::task::spawn(server);
 
-    // Reconstruct redirect URI to use for this auth request (in case port was 0)
-    let mut redirect_used = parsed.clone();
-    redirect_used.set_port(Some(bound_port)).ok();
-    let redirect_used_str = redirect_used.to_string();
+    // The redirect URI must be identical here, in the browser request and in the token exchange.
+    let redirect_used_str = redirect_for_request(&redirect, explicit_port, bound_port)?;
 
     let scope = scope.unwrap_or_else(|| "openid email profile".to_string());
     let state_param = Uuid::new_v4().to_string();
@@ -596,6 +749,14 @@ pub async fn perform_oauth_loopback(db: &crate::store::Db, oauth_client_db_id: &
         urlencoding::encode(&scope),
         state_param
     );
+
+    // Report a configuration Google will refuse up front, rather than after a 120s wait for a
+    // callback that the "Access blocked" page never sends.
+    if let Some(rejected) = preflight_authorize(&auth_url).await {
+        let _ = shutdown_tx.send(());
+        let _ = server_task.await;
+        return Err(rejected);
+    }
 
     // Open system browser
     let _ = open::that(auth_url.clone());
