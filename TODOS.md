@@ -22,36 +22,37 @@ blocker. See `STATUS.md` for the full write-up and `ARCHITECTURE.md` §3.3/§9�
 | 19 | Social presence: self-knowledge, co-creation, co-publishing | **Done** — `commands/social.rs`, `/social` page. See `ARCHITECTURE.md` §11. |
 | 20 | Mobile build (Android first) | **Rust-side unblocked; one named toolchain blocker left** — see below. |
 
-### What remains for the Android build
+### Android: the crate compiles (2026-07-25)
 
-The Mongo→JSON migration (the hard prerequisite) is done, and the code-level blockers are addressed:
-the unconditional `webkit2gtk` import in `commands/webview.rs` was the single thing keeping the crate
-from compiling for anything but Linux — both its call sites were already `cfg(target_os = "linux")`,
-and the `linux_layout` module always was. `rfd` is now a desktop-only dependency with its three call
-sites guarded, and `mongo_import` / `project_sync` / the FFmpeg derivative cutter already degrade
-cleanly off-desktop.
+The toolchain is installed and the code builds for Android. What it took, all of it non-obvious:
 
-Verified by running `cargo check --lib --target aarch64-linux-android` (with rustup's toolchain —
-note the `rustc` on `PATH` here is Homebrew's, which can't see rustup's Android std). It now fails
-in exactly one place, and it isn't our code:
+* **JDK 17** installed from apt (`openjdk-17-jdk` 17.0.19). The system default here is JDK 26, which
+  AGP 8.11.0 / Gradle 8.14.3 reject outright.
+* **NDK**: none needed — 29.0.13846066 was already installed under `$ANDROID_HOME/ndk`, with SDK
+  platform 36 and build-tools 36.0.0. `NDK_HOME` simply was never exported.
+* **`rustc` shadowing**: the `rustc` on `PATH` is Homebrew's and cannot see rustup's Android std, so
+  every cross-target check failed with a misleading `can't find crate for 'core'` even though
+  `rustup target list --installed` showed the target. `RUSTC` must point at rustup's copy.
+* **`ring` needs the NDK's clang** (it compiles C, under rustls → reqwest). The NDK ships only
+  API-versioned wrappers (`aarch64-linux-android24-clang`); cc-rs looks for an unversioned
+  `aarch64-linux-android-clang` that doesn't exist, so `CC_*`/`AR_*`/`RANLIB_*` and the per-target
+  linker have to be set explicitly.
 
-```
-error: failed to run custom build command for `ring v0.17.14`
-  error occurred in cc-rs: failed to find tool "aarch64-linux-android-clang"
-```
+All four are captured in [scripts/android-env.sh](scripts/android-env.sh) — `source` it and the
+Android commands work.
 
-`ring` (the crypto library under rustls, which `reqwest` uses) compiles C, so it needs the NDK's
-clang. That is a toolchain install, not a code change:
+With that in place, the compile reached our own code with 11 errors, all desktop-only APIs used
+unconditionally, now fixed: child webviews (`Window::add_child`, and `show`/`hide`/`close`/
+`set_position`/`set_size` on a `Webview`) don't exist in the mobile runtime, and
+`blocking_pick_folder` doesn't either. Both are cfg-split with mobile definitions that return a
+plain-English explanation, so the commands stay registered and the frontend gets "not available
+here" rather than an unknown-command error. `cargo check --lib --target aarch64-linux-android` now
+finishes clean.
 
-1. Install an NDK via Android Studio's SDK Manager and export `NDK_HOME`.
-2. Install JDK 17 (the JDK here is 26; the Android Gradle Plugin wants 17) and point Gradle at it.
-3. `cargo tauri android dev` / `build` for a debug `.apk`.
-4. For release: an Android signing keystore → `.aab`.
-
-Two things are still worth deciding before shipping a mobile build, and neither is a bug: the
-embedded browser (GTK child-webviews) has no mobile implementation and its commands will return
-errors there, and Playwright-driven Midjourney automation cannot run on Android at all — so a mobile
-build is the "mobile-lite" shape the backlog described, not feature parity.
+**A mobile build is "mobile-lite" by construction**, and that is a product decision rather than a
+bug: the embedded browser (Suno/Midjourney sign-in, macro recording) and Playwright-driven
+Midjourney automation cannot run on Android at all. What does work there is everything that talks
+HTTP — brief, compose, the Kaggle-backed engines, review, upload triggering.
 
 ## Fixed (2026-07-08, implementation pass 1)
 
