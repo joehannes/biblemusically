@@ -354,4 +354,32 @@ export const api = {
     }
   },
 
+  // ============ Data & storage (JSON store, legacy import, per-project git) ============
+  storeInfo: () => invokeCommand("store_info"),
+  runLegacyMigration: (force = false) => invokeCommand("run_legacy_migration", { force }),
+  purgeLegacyData: () => invokeCommand("purge_legacy_data"),
+  commitProjectData: (projectId, message) => invokeCommand("commit_project_data", { projectId, message: message || null }),
+  commitAllProjectData: () => invokeCommand("commit_all_project_data"),
+  revealInFileManager: (path) => invokeCommand("reveal_in_file_manager", { path }),
+
+  // ============ Encrypted credential vault ============
+  vaultStatus: () => invokeCommand("vault_status"),
+  vaultList: () => invokeCommand("vault_list"),
+  vaultPut: (key, secret) => invokeCommand("vault_put", { key, secret }),
+  vaultDelete: (key) => invokeCommand("vault_delete", { key }),
+  vaultUnlock: (passphrase) => invokeCommand("vault_unlock", { passphrase }),
+  vaultLock: () => invokeCommand("vault_lock"),
+  vaultSetPassphrase: (passphrase, current) => invokeCommand("vault_set_passphrase", { passphrase, current: current || null }),
+
+  // ============ Remote sync (free git hosts + asset platforms) ============
+  listSyncProviders: () => invokeCommand("list_sync_providers"),
+  getSyncConfig: (projectId) => invokeCommand("get_sync_config", { projectId }),
+  saveSyncConfig: (projectId, config) => invokeCommand("save_sync_config", { projectId, config }),
+  saveAssetCredentials: (provider, accessKey, secretKey) => invokeCommand("save_asset_credentials", { provider, accessKey, secretKey }),
+  testSyncConnection: (provider, token) => invokeCommand("test_sync_connection", { provider, token: token || null }),
+  syncProjectNow: (projectId) => invokeCommand("sync_project_now", { projectId }),
+  pullProjectNow: (projectId) => invokeCommand("pull_project_now", { projectId }),
+  listProjectAssets: (projectId) => invokeCommand("list_project_assets", { projectId }),
+  restoreProjectAssets: (projectId) => invokeCommand("restore_project_assets", { projectId }),
+
 };

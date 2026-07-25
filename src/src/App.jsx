@@ -28,6 +28,7 @@ import Upload from "./pages/Upload";
 import Jobs from "./pages/Jobs";
 import Browser from "./pages/Browser";
 import MacroManager from "./pages/MacroManager";
+import DataSync from "./pages/DataSync";
 import Settings from "./pages/Settings";
 import { Toaster } from "sonner";
 
@@ -100,6 +101,7 @@ function RootGate() {
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/browser" element={<Browser />} />
             <Route path="/macros" element={<MacroManager />} />
+            <Route path="/data" element={<DataSync />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Shell>

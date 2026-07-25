@@ -28,6 +28,7 @@ import {
   Tv,
   UploadCloud,
   Activity,
+  Database,
   Settings as Cog,
   Palette,
   ChevronLeft,
@@ -208,6 +209,13 @@ const NAV = [
     label: "Jobs Monitor",
     icon: Activity,
     testid: "nav-jobs",
+    group: "system",
+  },
+  {
+    to: "/data",
+    label: "Data & Sync",
+    icon: Database,
+    testid: "nav-data",
     group: "system",
   },
   {
