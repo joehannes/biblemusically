@@ -107,6 +107,21 @@ Directly requested: investigate what it takes to ship a mobile build. **Findings
 4. For release: an Android signing keystore → `.aab` for Play Store (or sideload `.apk`).
 5. **iOS later** — needs macOS + Xcode hardware the current Linux box doesn't have; revisit once Android is proven.
 
+### Alternative mobile strategy — web-first (PWA/TWA WebView) instead of a native port
+
+A second, distinct path to "use it on a phone" that trades the native Android build for a hosted/served web UI. Captured alongside the native mobile-lite plan above so the two are weighed side by side.
+
+**The shell is easy:** the frontend is already a plain Vite web build, so the UI is hostable as a website today. Wrap it for mobile via a **PWA + Trusted Web Activity** on Android (Google's blessed path — install, push, offline shell, no URL bar). iOS is stricter: App Store guideline 4.2 rejects thin WebView wrappers, so iOS needs genuine native integration or ships as an add-to-home-screen PWA.
+
+**The work is relocating the backend.** Today the "backend" is Rust on the user's own machine spawning local `mongod`/`ffmpeg`/Playwright. Two sub-options:
+
+- **(B1) Multi-tenant PaaS** — host the Rust backend on a Linux server. Upside: the desktop-only subsystems (`mongod`, `ffmpeg`, headless-Chromium Playwright) *all run fine on a Linux VM*, so this sidesteps the entire Android-porting problem and can carry more features than a `cfg`-gated native build. Downside: it flips single-user-local into SaaS — real hosting cost (no longer free), a multi-tenancy/auth/shared-DB rewrite (the "multi-user/team" item above), **centralized ToS/ban risk** (automation from datacenter IPs on many users' cookies gets blocked far faster than each user from their own IP), and you become a **credential custodian** for strangers' social/Google/Suno secrets. Scope this as a product pivot, not a build target.
+- **(B2) Self-hosted-per-user remote control (recommended)** — keep the backend on the *user's own* machine, expose its existing web UI over a secure tunnel, and point a thin mobile PWA/WebView at it. The phone becomes a remote for the user's own desktop instance. Low-effort here because the app **already** runs a local server and **already** stands up `cloudflared` tunnels (that's how it reaches Kaggle). Preserves free + private + own-IP + own-cookies, needs **zero** porting of the native subsystems: phone does the light work (brief, compose, review, trigger), desktop does the heavy/fragile work.
+
+**Key enabler for any web-first route:** the Tauri→web transport swap is centralized — every backend call goes through the single `invoke` wrapper in `src/src/lib/api.js`, so converting Tauri IPC to HTTP/WebSocket is one chokepoint, not a scatter across 25 pages.
+
+**Decision guide:** phone-against-your-own-PC → **B2** (cheapest, on-ethos). Strangers with only a phone → **B1** (full PaaS pivot). Neither replaces the native mobile-lite plan; they're parallel bets.
+
 ## Explicitly out of scope for now (per current architecture)
 
 - Building a real Suno/Midjourney/YouTube *server-side* SaaS — the whole design (bundled `mongod`, local file paths, local git repos, local OAuth loopback servers) is single-desktop by construction. Any of the above should keep that constraint unless there's an explicit decision to re-architect toward a hosted service.

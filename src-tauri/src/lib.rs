@@ -8,8 +8,14 @@ pub mod helpers;
 pub mod jobs;
 #[path = "../models.rs"]
 pub mod models;
+#[path = "../mongo_import.rs"]
+pub mod mongo_import;
+#[path = "../project_sync.rs"]
+pub mod project_sync;
 #[path = "../state.rs"]
 pub mod state;
+#[path = "../store.rs"]
+pub mod store;
 
 use std::sync::Arc;
 
@@ -28,47 +34,32 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             use tauri::Manager;
-            use tauri_plugin_shell::ShellExt;
             let handle = app.handle();
-            
-            // Start mongod sidecar
+
+            // Persistence is plain JSON files (see store.rs) — there is no database server to
+            // start any more. The old `mongod` sidecar is gone: it was a native x86_64 binary that
+            // could never ship to Android, and it made the user's own data unreadable without it.
             let app_data = handle.path().app_data_dir().expect("failed to get app data dir");
-            let db_path = app_data.join("db");
-            std::fs::create_dir_all(&db_path).unwrap();
-            
-            if let Ok(sidecar) = handle.shell().sidecar("mongod") {
-                match sidecar.args(["--dbpath", db_path.to_str().unwrap(), "--port", "27018"]).spawn() {
-                    Ok(_) => println!("mongod sidecar started on port 27018"),
-                    Err(e) => eprintln!("Failed to start mongod sidecar: {}", e),
-                }
-            } else {
-                eprintln!("Failed to find mongod sidecar configuration.");
-            }
+
             // Browsh sidecar and midjourney-proxy autostart have been deprecated
             // in favor of a visible Playwright-driven browser workflow.
             // No automatic browsh or proxy startup is performed.
-            
-            // Give mongod and any sidecars a second to bind
-            std::thread::sleep(std::time::Duration::from_millis(1500));
-            
-            // Tell AppState to use our sidecar port
-            std::env::set_var("MONGO_URL", "mongodb://localhost:27018");
 
             // Midjourney proxy auto-detection removed. Use direct Playwright
             // driven automation which uses a Playwright profile (stored as `mj_profile_dir`)
             // to interact with midjourney.com.
-            
+
             let app_state_res = tauri::async_runtime::block_on(async {
                 state::AppState::new().await
             });
-            
+
             let app_state = match app_state_res {
                 Ok(state) => state,
                 Err(e) => {
                     rfd::MessageDialog::new()
-                        .set_title("Database Connection Error")
+                        .set_title("Data Folder Error")
                         .set_description(&format!(
-                            "Failed to connect to the local bundled database.\n\nError: {}\n\nThe application will now exit.",
+                            "Failed to open the local data folder.\n\nError: {}\n\nThe application will now exit.",
                             e
                         ))
                         .set_level(rfd::MessageLevel::Error)
@@ -76,6 +67,32 @@ pub fn run() {
                     std::process::exit(1);
                 }
             };
+
+            // One-time carry-over from the retired MongoDB sidecar. Runs before the UI can read
+            // anything, so an upgrading user never sees a half-empty app; a no-op (microseconds)
+            // once the marker file is in place, and skipped entirely on a fresh install.
+            {
+                let db = app_state.db.clone();
+                let app_data = app_data.clone();
+                let report = tauri::async_runtime::block_on(async move {
+                    mongo_import::import_if_needed(&db, &app_data).await
+                });
+                match report.get("status").and_then(|s| s.as_str()) {
+                    Some("migrated") => println!(
+                        "Legacy database imported into JSON: {} documents",
+                        report.get("documents_imported").and_then(|d| d.as_u64()).unwrap_or(0)
+                    ),
+                    Some("failed") => eprintln!(
+                        "Legacy database import failed: {}",
+                        report.get("error").and_then(|e| e.as_str()).unwrap_or("unknown")
+                    ),
+                    _ => {}
+                }
+                // Keep the report readable from the UI (Settings → Data).
+                if let Ok(text) = serde_json::to_string_pretty(&report) {
+                    let _ = std::fs::write(app_state.db.global_root().join("migration-report.json"), text);
+                }
+            }
             
             // If we auto-detected and set MJ_PROXY_URL earlier, persist it into the settings collection
             if let Ok(proxy) = std::env::var("MJ_PROXY_URL") {
@@ -84,9 +101,9 @@ pub fn run() {
                     let proxy_clone = proxy.clone();
                     // perform update on the runtime to ensure DB is available
                     let _ = tauri::async_runtime::block_on(async move {
-                        let coll = db_clone.collection::<mongodb::bson::Document>("settings");
-                        let filter = mongodb::bson::doc! { "_id": "singleton" };
-                        let update = mongodb::bson::doc! { "$set": { "mj_proxy_url": proxy_clone } };
+                        let coll = db_clone.collection::<bson::Document>("settings");
+                        let filter = bson::doc! { "_id": "singleton" };
+                        let update = bson::doc! { "$set": { "mj_proxy_url": proxy_clone } };
                         let _ = coll.update_one(filter.clone(), update).await;
                     });
                 }
@@ -98,9 +115,9 @@ pub fn run() {
                     let db_clone = app_state.db.clone();
                     let cookie_clone = suno_cookie.clone();
                     let _ = tauri::async_runtime::block_on(async move {
-                        let coll = db_clone.collection::<mongodb::bson::Document>("settings");
-                        let filter = mongodb::bson::doc! { "_id": "singleton" };
-                        let update = mongodb::bson::doc! { "$set": { "suno_cookie": cookie_clone } };
+                        let coll = db_clone.collection::<bson::Document>("settings");
+                        let filter = bson::doc! { "_id": "singleton" };
+                        let update = bson::doc! { "$set": { "suno_cookie": cookie_clone } };
                         let _ = coll.update_one(filter.clone(), update).await;
                     });
                 }
@@ -112,9 +129,9 @@ pub fn run() {
                     let db_clone = app_state.db.clone();
                     let token_clone = dtoken.clone();
                     let _ = tauri::async_runtime::block_on(async move {
-                        let coll = db_clone.collection::<mongodb::bson::Document>("settings");
-                        let filter = mongodb::bson::doc! { "_id": "singleton" };
-                        let update = mongodb::bson::doc! { "$set": { "mj_discord_token": token_clone } };
+                        let coll = db_clone.collection::<bson::Document>("settings");
+                        let filter = bson::doc! { "_id": "singleton" };
+                        let update = bson::doc! { "$set": { "mj_discord_token": token_clone } };
                             let _ = coll.update_one(filter, update).await;
                         });
                     }
@@ -181,10 +198,10 @@ pub fn run() {
                         .and(warp::path("auth")).and(warp::path("suno"))
                         .and(warp::body::json())
                         .and(db_filter)
-                        .and_then(|payload: CookiePayload, db: mongodb::Database| async move {
-                            let coll = db.collection::<mongodb::bson::Document>("settings");
-                            let filter = mongodb::bson::doc! { "_id": "singleton" };
-                            let update = mongodb::bson::doc! { "$set": { "suno_cookie": payload.cookie.clone() } };
+                        .and_then(|payload: CookiePayload, db: crate::store::Db| async move {
+                            let coll = db.collection::<bson::Document>("settings");
+                            let filter = bson::doc! { "_id": "singleton" };
+                            let update = bson::doc! { "$set": { "suno_cookie": payload.cookie.clone() } };
                             let _ = coll.update_one(filter, update).await;
                             Ok::<_, std::convert::Infallible>(warp::reply::with_status(
                                 "OK",
@@ -282,6 +299,11 @@ pub fn run() {
                 });
             }
 
+            // Per-project git autosave: commit whatever JSON the store changed, every 45s. The
+            // store flags projects dirty on write; this turns those flags into commits so each
+            // project's folder carries its own history (see project_sync.rs).
+            project_sync::spawn_sweeper(db_clone.clone(), 45);
+
             // Scheduler: every 5 minutes, check every project's `schedule_config` and run
             // chapter-generation for any that are due. See commands/scheduler.rs for the full
             // design (Bible-book chapter cursor → AI lyrics → draft song → auto-enqueue music;
@@ -344,6 +366,13 @@ pub fn run() {
             commands::update_project_learnings,
             commands::record_learning_signal,
             commands::learnings_locations,
+            // Data / storage transparency + legacy import
+            commands::store_info,
+            commands::run_legacy_migration,
+            commands::purge_legacy_data,
+            commands::commit_project_data,
+            commands::commit_all_project_data,
+            commands::reveal_in_file_manager,
             commands::list_kaggle_accounts,
             commands::activate_kaggle_account,
             commands::remove_kaggle_account,

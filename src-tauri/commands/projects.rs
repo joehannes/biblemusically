@@ -137,6 +137,17 @@ pub async fn create_project(state: State<'_, AppState>, body: Value) -> Res<Valu
         if let Err(err) = std::fs::create_dir_all(&folder) {
             eprintln!("Failed to create project folder {}: {}", folder.display(), err);
         }
+        // The folder is a git repository from the very first moment, because it is where this
+        // project's JSON data lives from now on (store.rs routes songs/sections/characters/uploads
+        // into <folder>/data/). Initializing it here — rather than lazily on the first "Save
+        // version" — means the project's whole life is in its history, not just what happened after
+        // someone remembered to press a button.
+        if let Err(err) = crate::project_sync::ensure_repo(&folder) {
+            eprintln!("Failed to initialize git for {}: {}", folder.display(), err);
+        }
+        // Track generated media with LFS when it's installed, so pushing the project to a remote
+        // that offers large-file storage works without re-writing history later.
+        let _ = crate::project_sync::ensure_lfs(&folder);
         folder.to_string_lossy().to_string()
     });
 
@@ -519,7 +530,7 @@ pub async fn import_lyrics(state: State<'_, AppState>, pid: String, body: Value)
 }
 
 // Helper to sync from checked-out project.json to MongoDB
-async fn sync_git_to_db(db: &mongodb::Database, repo_path: &Path, project_id: &str) -> Res<()> {
+async fn sync_git_to_db(db: &crate::store::Db, repo_path: &Path, project_id: &str) -> Res<()> {
     let json_path = repo_path.join("project.json");
     if !json_path.exists() {
         return Err("project.json missing in repository".to_string());
@@ -656,7 +667,7 @@ fn add_dir_to_tar<W: std::io::Write>(
 }
 
 // Google Drive OAuth token refresh
-async fn refresh_gdrive_token(db: &mongodb::Database, project_id: &str) -> Result<String, String> {
+async fn refresh_gdrive_token(db: &crate::store::Db, project_id: &str) -> Result<String, String> {
     let settings = db.collection::<Document>("settings")
         .find_one(doc! { "_id": project_id }).await.map_err(e)?
         .ok_or_else(|| "Project settings not found. Configure Google OAuth in settings first.".to_string())?;
@@ -1072,6 +1083,9 @@ pub async fn checkout_project_git_tag(state: State<'_, AppState>, project_id: St
     }
     
     sync_git_to_db(&state.db, path, &project_id).await?;
+    // The checkout replaced files on disk (including this project's data/*.json), so drop the
+    // store's in-memory shards and let the next read parse what git just put there.
+    state.db.invalidate_cache().await;
     Ok(serde_json::json!({ "ok": true }))
 }
 
@@ -1099,6 +1113,9 @@ pub async fn checkout_project_git_branch(state: State<'_, AppState>, project_id:
     }
     
     sync_git_to_db(&state.db, path, &project_id).await?;
+    // The checkout replaced files on disk (including this project's data/*.json), so drop the
+    // store's in-memory shards and let the next read parse what git just put there.
+    state.db.invalidate_cache().await;
     Ok(serde_json::json!({ "ok": true }))
 }
 

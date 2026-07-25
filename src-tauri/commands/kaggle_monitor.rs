@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use mongodb::bson::{doc, Document};
+use bson::{doc, Document};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::State;
@@ -227,7 +227,7 @@ async fn run_monitor(
     kaggle: String,
     progress: Arc<Mutex<KaggleProgress>>,
     stop: Arc<AtomicBool>,
-    db: mongodb::Database,
+    db: crate::store::Db,
 ) {
     progress.lock().unwrap().push("info", format!("Watching {} boot on Kaggle…", engine));
 

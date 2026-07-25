@@ -113,7 +113,7 @@ pub async fn save_global_channel_settings(
         filter,
         doc! { "$set": &bson },
     )
-    .with_options(mongodb::options::UpdateOptions::builder().upsert(true).build())
+    .with_options(crate::store::UpdateOptions::builder().upsert(true).build())
     .await
     .map_err(e)?;
     
@@ -122,7 +122,7 @@ pub async fn save_global_channel_settings(
 
 /// Call OpenRouter AI for translation and cultural adaptation
 async fn translate_with_ai(
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     request: &TranslateSettingsRequest,
 ) -> Res<Value> {
     let settings_doc = db.collection::<Document>("settings")

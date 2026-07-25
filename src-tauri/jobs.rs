@@ -22,7 +22,7 @@ async fn is_cancelled(cancelled: &CancelSet, job_id: &str) -> bool {
 // Helpers
 // ────────────────────────────────────────────────────────────────
 
-async fn db_log(db: &mongodb::Database, job_id: &str, msg: &str) {
+async fn db_log(db: &crate::store::Db, job_id: &str, msg: &str) {
     let ts = now_iso();
     let entry = format!("[{ts}] {msg}");
     let _ = db.collection::<Document>("jobs")
@@ -33,7 +33,7 @@ async fn db_log(db: &mongodb::Database, job_id: &str, msg: &str) {
         .await;
 }
 
-async fn set_progress(db: &mongodb::Database, job_id: &str, p: i32) {
+async fn set_progress(db: &crate::store::Db, job_id: &str, p: i32) {
     let ts = now_iso();
     let _ = db.collection::<Document>("jobs")
         .update_one(
@@ -64,7 +64,7 @@ fn unix_secs() -> i64 {
 /// the frontend draw a real staged view (and a live elapsed timer via `stage_started_at`) without
 /// regex-scraping log text. `new_stage` = false keeps the original stage-start timestamp, so a
 /// long-running stage can refresh its percentage/message without resetting its timer.
-async fn set_stage(db: &mongodb::Database, job_id: &str, stage: &str, p: i32, msg: &str, new_stage: bool) {
+async fn set_stage(db: &crate::store::Db, job_id: &str, stage: &str, p: i32, msg: &str, new_stage: bool) {
     let ts = now_iso();
     let mut set = doc! { "stage": stage, "progress": p, "stage_message": msg, "updated_at": &ts };
     if new_stage {
@@ -160,7 +160,7 @@ async fn adapt_styles_for_engine(
     song: &Value,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
 ) -> String {
     let styles = song.get("styles").and_then(|v| v.as_str()).unwrap_or("");
     let title = song.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -255,7 +255,7 @@ async fn real_suno(
     song: &Value,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     cancelled: &CancelSet,
 ) -> Option<Vec<Value>> {
     let raw_cookie = settings.get("suno_cookie")?.as_str()?.trim();
@@ -447,7 +447,7 @@ async fn generate_song_api(
     song: &Value,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     cancelled: &CancelSet,
 ) -> Option<Vec<Value>> {
     // No saved URL is the single most common cause of "generation failed: server url missing":
@@ -716,14 +716,14 @@ async fn generate_song_api(
 /// Generate ONE image sample for a style descriptor, using the configured image engine. Returns the
 /// image URL. Used by the on-demand style-sample gallery (commands/style_samples.rs) so the user can
 /// see what a style/genre-mix actually looks like on their own engine — not a bundled library.
-pub(crate) async fn sample_image(style_prompt: &str, settings: &Value, db: &mongodb::Database, cancelled: &CancelSet) -> Option<String> {
+pub(crate) async fn sample_image(style_prompt: &str, settings: &Value, db: &crate::store::Db, cancelled: &CancelSet) -> Option<String> {
     gen_images(style_prompt, None, settings, "style-sample", db, cancelled).await
         .and_then(|mut v| { if v.is_empty() { None } else { Some(v.remove(0)) } })
 }
 
 /// Generate ONE short music sample for a genre descriptor, using the configured music engine.
 /// Returns the audio URL. Short + lyric-light so it renders fast.
-pub(crate) async fn sample_music(genre: &str, settings: &Value, db: &mongodb::Database, cancelled: &CancelSet) -> Option<String> {
+pub(crate) async fn sample_music(genre: &str, settings: &Value, db: &crate::store::Db, cancelled: &CancelSet) -> Option<String> {
     let engine = settings["music_engine"].as_str().unwrap_or("suno");
     let song = serde_json::json!({
         "styles": genre, "title": "style sample", "lyrics": "[Verse]\nlight and sound\n", "duration": 20.0
@@ -737,7 +737,7 @@ pub(crate) async fn sample_music(genre: &str, settings: &Value, db: &mongodb::Da
         .and_then(|c| c["audio_url"].as_str().map(|s| s.to_string()))
 }
 
-async fn real_acestep(song: &Value, settings: &Value, job_id: &str, db: &mongodb::Database, cancelled: &CancelSet) -> Option<Vec<Value>> {
+async fn real_acestep(song: &Value, settings: &Value, job_id: &str, db: &crate::store::Db, cancelled: &CancelSet) -> Option<Vec<Value>> {
     let base = trim_base_url(settings.get("acestep_api_url").and_then(|v| v.as_str()).unwrap_or(""));
     let key = settings.get("acestep_api_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
     generate_song_api(base, key, "acestep", song, settings, job_id, db, cancelled).await
@@ -745,7 +745,7 @@ async fn real_acestep(song: &Value, settings: &Value, job_id: &str, db: &mongodb
 
 /// HeartMuLa music engine (free, Apache-2.0 Suno competitor). Its Kaggle notebook exposes the same
 /// task API as ACE-Step, so it reuses the shared client.
-async fn real_heartmula(song: &Value, settings: &Value, job_id: &str, db: &mongodb::Database, cancelled: &CancelSet) -> Option<Vec<Value>> {
+async fn real_heartmula(song: &Value, settings: &Value, job_id: &str, db: &crate::store::Db, cancelled: &CancelSet) -> Option<Vec<Value>> {
     let base = trim_base_url(settings.get("heartmula_api_url").and_then(|v| v.as_str()).unwrap_or(""));
     let key = settings.get("heartmula_api_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
     generate_song_api(base, key, "heartmula", song, settings, job_id, db, cancelled).await
@@ -759,7 +759,7 @@ async fn real_mj(
     prompt: &str,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     cancelled: &CancelSet,
 ) -> Option<Vec<String>> {
     // New Playwright-driven flow: spawn a Node helper which controls a visible
@@ -893,7 +893,7 @@ async fn real_flux(
     prompt: &str,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     cancelled: &CancelSet,
 ) -> Option<Vec<String>> {
     let mut base = settings.get("flux_api_url").and_then(|v| v.as_str()).unwrap_or("").trim().trim_end_matches('/').to_string();
@@ -1081,7 +1081,7 @@ async fn real_comfy(
     ref_image: Option<&str>,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     cancelled: &CancelSet,
 ) -> Option<Vec<String>> {
     let base = settings.get("comfyui_api_url").and_then(|v| v.as_str()).unwrap_or("").trim().trim_end_matches('/').to_string();
@@ -1345,7 +1345,7 @@ async fn gen_images(
     ref_image: Option<&str>,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     cancelled: &CancelSet,
 ) -> Option<Vec<String>> {
     match settings.get("image_engine").and_then(|v| v.as_str()).unwrap_or("midjourney") {
@@ -1400,7 +1400,7 @@ async fn real_overlay(
     song: &Value,
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
 ) -> Option<Value> {
     let song_id = song["id"].as_str()?;
     let audio_url = match song["audio_url"].as_str() {
@@ -1492,7 +1492,7 @@ async fn real_ffmpeg(
     sections: &[Value],
     settings: &Value,
     job_id: &str,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
 ) -> Option<Value> {
     let ff = settings.get("ffmpeg_path").and_then(|v|v.as_str()).unwrap_or("ffmpeg");
     // Resolve ffmpeg: prefer configured path, then system `which`, then bundled resource
@@ -1807,7 +1807,7 @@ async fn real_ffmpeg(
 
 async fn real_youtube_upload(
     upload: &Value,
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     job_id: &str,
     cancelled: &CancelSet,
 ) -> Option<Value> {
@@ -1999,7 +1999,7 @@ async fn real_youtube_upload(
     None
 }
 
-async fn download_video(url: &str, job_id: &str, db: &mongodb::Database) -> Option<Vec<u8>> {
+async fn download_video(url: &str, job_id: &str, db: &crate::store::Db) -> Option<Vec<u8>> {
     let client = reqwest::Client::new();
     
     let res = client.get(url).send().await.ok()?;
@@ -2038,7 +2038,7 @@ async fn download_video(url: &str, job_id: &str, db: &mongodb::Database) -> Opti
 // ────────────────────────────────────────────────────────────────
 
 pub async fn pick_oauth_client(
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     channel: &Value,
     forced_id: Option<&str>,
 ) -> Option<Value> {
@@ -2157,7 +2157,7 @@ pub async fn enqueue(
 // Job runner
 // ────────────────────────────────────────────────────────────────
 
-async fn get_job_settings(db: &mongodb::Database, kind: &str, tgt: &str) -> Value {
+async fn get_job_settings(db: &crate::store::Db, kind: &str, tgt: &str) -> Value {
     let mut project_id: Option<String> = None;
     // For image-on-section jobs we also capture the song's language so we can apply that
     // channel's sticky style.
@@ -2601,7 +2601,7 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
     }
 }
 
-async fn fetch_doc(db: &mongodb::Database, coll: &str, key: &str, val: &str) -> Value {
+async fn fetch_doc(db: &crate::store::Db, coll: &str, key: &str, val: &str) -> Value {
     db.collection::<Document>(coll)
         .find_one(doc! { key: val }).await.ok().flatten()
         .map(bson_doc_to_value)

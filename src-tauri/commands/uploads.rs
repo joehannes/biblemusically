@@ -287,7 +287,7 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
 // Internal: single Qwen call via OpenRouter
 // ────────────────────────────────────────────────────────────────
 
-async fn qwen_text(db: &mongodb::Database, system: &str, user: &str) -> String {
+async fn qwen_text(db: &crate::store::Db, system: &str, user: &str) -> String {
     let s = db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
         .map(|d| {

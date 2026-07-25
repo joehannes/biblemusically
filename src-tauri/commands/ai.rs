@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use bson::{doc, Document};
-use mongodb::options::UpdateOptions;
+use crate::store::UpdateOptions;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::State;
@@ -9,8 +9,8 @@ use regex::Regex;
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
-fn proj0() -> mongodb::options::FindOneOptions {
-    mongodb::options::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
+fn proj0() -> crate::store::FindOneOptions {
+    crate::store::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
 }
 
 fn bson_to_value(doc: Document) -> Value {
@@ -439,7 +439,7 @@ pub async fn provider_chat(
 }
 
 pub async fn call_openrouter(
-    db: &mongodb::Database,
+    db: &crate::store::Db,
     system: &str,
     user: &str,
     temperature: f32,
@@ -1081,7 +1081,7 @@ pub async fn ai_translate_ui(state: State<'_, AppState>, payload: TranslateUiReq
 
 /// Render a project's Brief (its creative DNA from the Dashboard) into a compact prompt block.
 /// Returns an empty string when there's no project or no brief — callers just append it.
-pub async fn project_brief_block(db: &mongodb::Database, project_id: &str) -> String {
+pub async fn project_brief_block(db: &crate::store::Db, project_id: &str) -> String {
     if project_id.trim().is_empty() { return String::new(); }
     let Some(doc) = db.collection::<Document>("projects")
         .find_one(doc! { "id": project_id }).await.ok().flatten() else { return String::new(); };
@@ -1110,7 +1110,7 @@ pub async fn project_brief_block(db: &mongodb::Database, project_id: &str) -> St
 }
 
 /// Cached research notes per channel, rendered as one prompt block (empty when none).
-pub async fn channel_research_block(db: &mongodb::Database) -> String {
+pub async fn channel_research_block(db: &crate::store::Db) -> String {
     use futures_util::StreamExt;
     let Ok(mut cursor) = db.collection::<Document>("channels").find(doc! {}).await else { return String::new(); };
     let mut lines: Vec<String> = Vec::new();

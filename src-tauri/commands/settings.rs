@@ -13,8 +13,8 @@ use warp::Filter;
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
-fn proj0() -> mongodb::options::FindOneOptions {
-    mongodb::options::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
+fn proj0() -> crate::store::FindOneOptions {
+    crate::store::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
 }
 
 fn bson_to_value(doc: Document) -> Value {
@@ -43,7 +43,7 @@ async fn probe_midjourney_proxy() -> Option<String> {
     None
 }
 
-async fn get_settings_doc(db: &mongodb::Database) -> Result<Value, String> {
+async fn get_settings_doc(db: &crate::store::Db) -> Result<Value, String> {
     let doc = db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or_default();
@@ -76,7 +76,7 @@ fn normalize_suno_cookie(raw: &str) -> Option<String> {
     Some(cookie.to_string())
 }
 
-pub async fn validate_suno_cookie_internal(db: &mongodb::Database) -> Result<(), String> {
+pub async fn validate_suno_cookie_internal(db: &crate::store::Db) -> Result<(), String> {
     let s = get_settings_doc(db).await?;
     let cookie_env = std::env::var("SUNO_COOKIE").ok();
     let raw_cookie = cookie_env.as_deref().unwrap_or_else(|| s["suno_cookie"].as_str().unwrap_or(""));
@@ -115,7 +115,7 @@ pub async fn validate_suno_cookie_internal(db: &mongodb::Database) -> Result<(),
     }
 }
 
-pub async fn validate_mj_token_internal(db: &mongodb::Database) -> Result<(), String> {
+pub async fn validate_mj_token_internal(db: &crate::store::Db) -> Result<(), String> {
     let s = get_settings_doc(db).await?;
     // Prefer Playwright profile for authentication; if present and exists, consider valid
     let profile_env = std::env::var("MJ_PROFILE_DIR").ok();
@@ -152,7 +152,7 @@ pub async fn validate_mj_token_internal(db: &mongodb::Database) -> Result<(), St
     }
 }
 
-pub async fn validate_google_refresh_tokens_internal(db: &mongodb::Database) -> Result<Vec<String>, String> {
+pub async fn validate_google_refresh_tokens_internal(db: &crate::store::Db) -> Result<Vec<String>, String> {
     use futures_util::StreamExt;
     let mut cursor = db.collection::<Document>("channels").find(doc! {}).await.map_err(e)?;
     let mut invalidated = Vec::new();
@@ -208,7 +208,7 @@ pub async fn validate_google_refresh_tokens_internal(db: &mongodb::Database) -> 
     Ok(invalidated)
 }
 
-pub async fn ensure_mj_autostart_internal(db: &mongodb::Database) -> Res<Value> {
+pub async fn ensure_mj_autostart_internal(db: &crate::store::Db) -> Res<Value> {
     // Midjourney proxy autostart is deprecated. Use the visible Playwright
     // driven workflow and the Settings → Capture session flow to obtain a
     // Playwright profile directory (stored as `mj_profile_dir`). This function remains for API compatibility and no
@@ -777,7 +777,7 @@ async fn verify_kaggle_auth() -> (bool, String) {
 }
 
 /// Read the stored Kaggle accounts (`[{username, key}]`) from the settings singleton.
-async fn stored_kaggle_accounts(db: &mongodb::Database) -> Vec<Document> {
+async fn stored_kaggle_accounts(db: &crate::store::Db) -> Vec<Document> {
     db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten()
         .and_then(|d| d.get_array("kaggle_accounts").ok().cloned())
         .map(|arr| arr.iter().filter_map(|b| b.as_document().cloned()).collect())
@@ -811,7 +811,7 @@ pub async fn save_kaggle_token(state: State<'_, AppState>, token_json: String) -
         doc! { "_id": "singleton" },
         doc! { "$set": { "kaggle_accounts": bson_accts, "kaggle_active": &username,
                          "kaggle_connected": true, "kaggle_username": &username } },
-    ).with_options(mongodb::options::UpdateOptions::builder().upsert(true).build()).await.map_err(e)?;
+    ).with_options(crate::store::UpdateOptions::builder().upsert(true).build()).await.map_err(e)?;
 
     Ok(serde_json::json!({ "ok": true, "username": username, "verified": verified, "detail": detail,
         "path": path, "account_count": accts.len() }))
@@ -1052,7 +1052,7 @@ pub async fn supersede_kaggle_session(engine: String) -> Res<Value> {
 /// so a job runner can call this mid-run when the cached URL turns out to be a dead tunnel
 /// (Cloudflare tunnels rotate every run — see jobs.rs's `generate_song_api`) instead of failing
 /// outright and making the user manually re-run "Fetch live URL" in Settings.
-pub async fn refresh_kaggle_url(db: &mongodb::Database, engine: &str) -> Option<String> {
+pub async fn refresh_kaggle_url(db: &crate::store::Db, engine: &str) -> Option<String> {
     let (slug, settings_key) = kaggle_kernel_for(engine)?;
     let kaggle = locate_kaggle();
 

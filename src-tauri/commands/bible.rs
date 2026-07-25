@@ -251,7 +251,7 @@ pub async fn save_pasted_chapter(state: State<'_, AppState>, body: Value) -> Res
     let bson = bson::to_document(&doc).map_err(e)?;
     state.db.collection::<Document>("pasted_chapters")
         .update_one(doc! { "id": &id }, doc! { "$set": bson })
-        .with_options(mongodb::options::UpdateOptions::builder().upsert(true).build())
+        .with_options(crate::store::UpdateOptions::builder().upsert(true).build())
         .await.map_err(e)?;
     Ok(doc)
 }

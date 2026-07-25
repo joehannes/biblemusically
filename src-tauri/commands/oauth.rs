@@ -525,7 +525,7 @@ pub async fn oauth_start_loopback(
 
 /// Perform loopback OAuth flow using a raw Database handle. This is a reusable helper
 /// so the flow can be invoked from startup tasks as well as from the UI.
-pub async fn perform_oauth_loopback(db: &mongodb::Database, oauth_client_db_id: &str, scope: Option<String>) -> Res<Value> {
+pub async fn perform_oauth_loopback(db: &crate::store::Db, oauth_client_db_id: &str, scope: Option<String>) -> Res<Value> {
     // Find OAuth client by DB id
     let client_doc = db.collection::<Document>("oauth_clients")
         .find_one(doc! { "id": oauth_client_db_id }).await.map_err(e)?

@@ -1,5 +1,6 @@
-use mongodb::{Client, Database};
+use crate::store::Db;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 
@@ -8,7 +9,10 @@ const DEFAULT_MAX_CONCURRENT_JOBS: usize = 2;
 /// Shared application state injected into every Tauri command via `tauri::State`.
 #[derive(Clone)]
 pub struct AppState {
-    pub db: Database,
+    /// The JSON file store (see `store.rs`). Named `db` because ~380 call sites read
+    /// `state.db.collection::<Document>(…)`; it is a directory of JSON files, not a database
+    /// server — the bundled `mongod` sidecar it replaced is gone.
+    pub db: Db,
     /// Bounds how many jobs (Suno/Midjourney/FFmpeg/YouTube upload/etc.) run at once. Each job
     /// task acquires a permit before doing real work and holds it for its whole run; a job stays
     /// visibly "queued" in the Jobs Monitor until a permit frees up. Sized from the
@@ -29,28 +33,24 @@ impl AppState {
         // Load .env from the crate root so dev overrides work out of the box.
         let _ = dotenvy::dotenv();
 
-        // The app runs ONE MongoDB: the bundled `mongod` sidecar, which lib.rs starts on 27018 and
-        // exports as MONGO_URL before this runs. The fallback matches that port (not the stock
-        // 27017) so there's no stray reference implying a separate/system Mongo — there isn't one.
-        let mongo_url = std::env::var("MONGO_URL")
-            .unwrap_or_else(|_| "mongodb://localhost:27018".into());
-        let db_name = std::env::var("DB_NAME")
-            .unwrap_or_else(|_| "studio".into());
-
-        let client = Client::with_uri_str(&mongo_url).await?;
-        let db = client.database(&db_name);
-
-        // Ping the database to ensure it's actually running
-        db.run_command(bson::doc! { "ping": 1 }).await?;
+        // All persistence is JSON files under one directory. `STUDIO_DATA_DIR` overrides it (useful
+        // for tests, portable installs, or pointing several builds at the same data).
+        let root = match std::env::var("STUDIO_DATA_DIR") {
+            Ok(p) if !p.trim().is_empty() => PathBuf::from(p),
+            _ => Db::default_root().map_err(|e| anyhow::anyhow!(e.to_string()))?,
+        };
+        let db = Db::open(root).map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         // Read the desired concurrency cap from settings (falls back to the default if unset,
         // non-numeric, or no settings document exists yet). Changing this setting takes effect
         // on the next app restart, since a Semaphore's permit count is fixed at construction.
-        let max_concurrent = db.collection::<bson::Document>("settings")
-            .find_one(bson::doc! { "_id": "singleton" }).await
+        let max_concurrent = db
+            .collection::<bson::Document>("settings")
+            .find_one(bson::doc! { "_id": "singleton" })
+            .await
             .ok()
             .flatten()
-            .and_then(|d| d.get_i32("max_concurrent_jobs").ok())
+            .and_then(|d| crate::store::get_num(&d, "max_concurrent_jobs"))
             .filter(|v| *v > 0)
             .map(|v| v as usize)
             .unwrap_or(DEFAULT_MAX_CONCURRENT_JOBS);

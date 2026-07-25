@@ -33,13 +33,9 @@
     "targets": [
       "deb"
     ],
-    "externalBin": [
-      "binaries/mongod"
-    ],
     "resources": [
       "packaging",
-      "packaging/node_modules",
-      "../binaries"
+      "packaging/node_modules"
     ],
     "icon": [
       "icons/32x32.png",

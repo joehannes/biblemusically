@@ -19,8 +19,11 @@ tauri-plugin-opener = "2"
 serde            = { version = "1", features = ["derive"] }
 serde_json       = "1"
 
-# MongoDB async driver
-mongodb          = { version = "3" }
+# Persistence is plain JSON files (see store.rs) — there is no database driver and no `mongod`
+# sidecar any more. `bson` stays, but only as a *serialization* crate: it provides the `doc! { … }`
+# filter/update literals the ~380 store call sites are written with, has no client, no sockets and
+# no server, and cross-compiles to Android (the mongodb driver + a native mongod binary could not,
+# which is what blocked the mobile build).
 bson             = { version = "2", features = ["chrono-0_4"] }
 
 # Async runtime
@@ -38,6 +41,17 @@ reqwest          = { version = "0.12", default-features = false, features = ["js
 
 # Lightweight local callback server used to receive proxy login notifications
 warp = "0.3"
+
+# Credential vault (see vault.rs) + content hashing for the asset manifest. All pure Rust, no C
+# toolchain, so they cross-compile to Android like the rest of the crate: XChaCha20-Poly1305 for
+# authenticated encryption of the stored secrets, Argon2id to turn a passphrase into a key, and
+# SHA-256/HMAC for asset checksums and S3-style upload signatures.
+chacha20poly1305 = "0.10"
+argon2           = "0.5"
+sha2             = "0.10"
+hmac             = "0.12"
+base64           = "0.22"
+zeroize          = "1"
 
 # Utilities
 uuid             = { version = "1", features = ["v4"] }

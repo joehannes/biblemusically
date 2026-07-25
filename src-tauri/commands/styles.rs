@@ -162,7 +162,7 @@ pub async fn set_channel_style(state: State<'_, AppState>, channel_id: String, p
 /// project-wide default pack (`global_channel_settings.default_style_preset_id`, set in Channel
 /// Manager's Global Settings). Returns the `comfyui_*` params object to overlay onto the job
 /// settings, or `None` if neither resolves to anything. Used by the image job.
-pub async fn channel_style_overrides(db: &mongodb::Database, language: &str, project_id: Option<&str>) -> Option<Value> {
+pub async fn channel_style_overrides(db: &crate::store::Db, language: &str, project_id: Option<&str>) -> Option<Value> {
     let language = language.trim();
     if !language.is_empty() {
         // Case-insensitive language match against channels.
