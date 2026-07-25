@@ -45,11 +45,14 @@ There is no separate backend server process the user talks to over HTTP — the 
 
 ```
 src-tauri/
-├── src/lib.rs        # tauri::Builder setup, sidecar/DB bootstrap, invoke_handler registration
+├── src/lib.rs        # tauri::Builder setup, store bootstrap, invoke_handler registration
 ├── src/main.rs       # actual binary entrypoint (calls app_lib::run())
-├── main.rs           # deprecated??? — orphaned duplicate at crate root, not built (see TODOS.md)
-├── test_warp.rs      # deprecated??? — orphaned scratch file, not built (see TODOS.md)
-├── state.rs          # AppState { db: mongodb::Database, job_queue: Arc<Mutex<Vec<String>>> }
+├── store.rs          # THE persistence layer: JSON files with a Mongo-shaped API (see §3.3)
+├── mongo_import.rs   # one-time carry-over from the retired mongod sidecar (own wire protocol)
+├── project_sync.rs   # each project folder is a git repo; debounced autosave commits
+├── vault.rs          # XChaCha20-Poly1305 credential vault (Argon2id passphrase or machine key)
+├── tests_logic.rs    # unit tests for the pure logic (annotations, moods, JSON recovery, slugs)
+├── state.rs          # AppState { db: store::Db, job_semaphore, cancelled_jobs }
 ├── models.rs         # serde structs: Project, Song, Section, Channel, OAuthClient, Job, Upload, Character, ComposeRequest
 ├── helpers.rs        # resource/sidecar path resolution, mood/effect-preset tables, annotation parsing
 ├── jobs.rs           # background job runner: real Suno/Midjourney/FFmpeg/YouTube-upload integrations
@@ -66,7 +69,14 @@ src-tauri/
     ├── uploads.rs          # upload queue CRUD, preflight OAuth check, AI-generated title/description/tags
     ├── bible.rs            # translation/book lists, bible-api.com + bible.helloao.org chapter fetch, pasted-chapter cache
     ├── ai.rs               # OpenRouter/Qwen client: compose_lyrics, compose_assist, get/save compose config
-    └── jobs_cmd.rs         # job list/get/retry/cancel (thin wrapper over jobs.rs)
+    ├── jobs_cmd.rs         # job list/get/retry/cancel (thin wrapper over jobs.rs)
+    ├── data.rs             # where the JSON lives, per-collection counts, legacy import, manual commit
+    ├── remote_sync.rs      # push a project to Hugging Face/GitLab/GitHub/Codeberg; asset offloading
+    ├── health.rs           # aggregated engine health, scoped to the engines actually in use
+    ├── social.rs           # social accounts, taste profile, ideation, derivatives, co-publishing
+    ├── insights.rs         # pipeline board, YouTube analytics feedback loop, quota report
+    ├── learnings.rs        # JSON learnings store (taste signals, per-project preferences)
+    └── webview.rs          # embedded browser child-webviews (GTK placement is Linux-gated)
 ```
 
 All command modules are re-exported through [src-tauri/commands/mod.rs](src-tauri/commands/mod.rs) via `pub use x::*`, then registered individually in the `tauri::generate_handler![...]` macro call in [src-tauri/src/lib.rs](src-tauri/src/lib.rs). **Registration is manual and easy to desync from the command definitions** — one instance of this has already happened (`probe_node` is defined but not registered; see [TODOS.md](TODOS.md)).
@@ -74,13 +84,15 @@ All command modules are re-exported through [src-tauri/commands/mod.rs](src-taur
 ### 3.1 Startup sequence (`src-tauri/src/lib.rs::run()`)
 
 1. Create a Tokio runtime; register the shell/dialog/opener plugins.
-2. Resolve the app-data dir, `mkdir -p <app_data>/db`, and spawn the bundled `mongod` sidecar bound to `127.0.0.1:27018` with that data directory.
-3. Sleep 1.5s (fixed) to let `mongod` bind, then set `MONGO_URL` env var and construct `AppState` (which pings the DB — if it fails, a native error dialog is shown and the process exits).
-4. Persist any `MJ_PROXY_URL` / `SUNO_COOKIE` / `MJ_DISCORD_TOKEN` env vars into the `settings` collection (dev/CI override path).
-5. Fire-and-forget spawn `ensure_mj_autostart_internal` (now a no-op stub — Midjourney proxy autostart was deprecated in favor of the Playwright flow; see §4).
-6. `app.manage(app_state)` and `app.manage(Arc::new(app_state.clone()))` — **both** a bare `AppState` and an `Arc<AppState>` are managed, because the job queue (`jobs::enqueue`) needs an owned `Arc` to move into `tokio::spawn`, while most commands just borrow `State<'_, AppState>`.
-7. Spawn a tiny `warp` HTTP server on `127.0.0.1:3337` (`POST /auth/suno`) so an external Suno-cookie capture tool could push a cookie in; also spawn a background loop that re-validates the Suno cookie every 15 min and Google refresh tokens every hour.
-8. If `ffmpeg` isn't found on `PATH`, show a native warning dialog (video composition will be unavailable but the rest of the app still runs).
+2. Resolve the app-data dir. **There is no database server to start** — the `mongod` sidecar was removed along with the `mongodb` dependency.
+3. Construct `AppState`, which opens the JSON store at `<config>/studio-lightkid/data` (or `STUDIO_DATA_DIR`). On failure a native dialog is shown on desktop, the message is logged, and the process exits.
+4. Run the legacy MongoDB import **once**, blocking, if `<app_data>/db` holds WiredTiger files without the `.migrated-to-json` marker — so an upgrading user never sees a half-empty app. Microseconds on every later launch, skipped entirely on a fresh install. The report is written to `migration-report.json` for the Data panel.
+5. Persist any `MJ_PROXY_URL` / `SUNO_COOKIE` / `MJ_DISCORD_TOKEN` env vars into the `settings` collection (dev/CI override path).
+6. Fire-and-forget spawn `ensure_mj_autostart_internal` (now a no-op stub — Midjourney proxy autostart was deprecated in favor of the Playwright flow; see §4).
+7. `app.manage(app_state)` and `app.manage(Arc::new(app_state.clone()))` — **both** a bare `AppState` and an `Arc<AppState>` are managed, because the job queue (`jobs::enqueue`) needs an owned `Arc` to move into `tokio::spawn`, while most commands just borrow `State<'_, AppState>`.
+8. Spawn a tiny `warp` HTTP server on `127.0.0.1:3337` (`POST /auth/suno`) so an external Suno-cookie capture tool could push a cookie in; also spawn a background loop that re-validates the Suno cookie every 15 min and Google refresh tokens every hour.
+9. Spawn the background timers: the per-project git autosave sweep (45s), the opt-in remote auto-sync (15min), and the chapter scheduler (5min).
+10. If `ffmpeg` isn't found on `PATH`, show a native warning dialog (video composition will be unavailable but the rest of the app still runs).
 
 ### 3.2 Job queue (`jobs.rs`)
 
@@ -90,9 +102,46 @@ All command modules are re-exported through [src-tauri/commands/mod.rs](src-taur
 - **Cancellation is real.** `AppState.cancelled_jobs` (`Arc<Mutex<HashSet<String>>>`) is checked by `run_job` at start and again before writing its final status (a cancellation always wins), and polled mid-flight by the two slow integrations: `real_suno`'s ~200s polling loop (every 5s tick) and `real_youtube_upload`'s chunked-upload loop (before every chunk). `real_mj`'s up-to-6-minute Playwright wait uses a `tokio::select!` against a 2s cancellation check that kills the child process by PID.
 - `retry_job` re-queues by resetting status, clearing any stale cancellation flag, and spawning a task that acquires a `job_semaphore` permit the same way `enqueue` does before calling `run_job` again.
 
-### 3.3 Data model / persistence
+### 3.3 Data model / persistence — JSON files, no database
 
-MongoDB collections (all accessed as loosely-typed `bson::Document` → `serde_json::Value`, not through the `mongodb` driver's typed API, except on insert): `projects`, `songs`, `sections`, `channels`, `oauth_clients`, `jobs`, `uploads`, `characters`, `settings` (singleton doc `_id: "singleton"`, or per-project docs keyed by project id), `global_channel_settings`, `pasted_chapters`, `compose_configs`.
+`store.rs` is the whole persistence layer. It exposes the slice of the MongoDB API the codebase
+already used, so the ~380 call sites still read `state.db.collection::<Document>("songs")
+.find_one(doc! { "id": &id })`; only the storage underneath changed. Supported: `find_one`, `find`,
+`insert_one`, `insert_many`, `update_one`, `update_many`, `delete_one`, `delete_many`,
+`count_documents`, the `.sort()`/`.limit()`/`.skip()`/`.projection()`/`.upsert()`/`.with_options()`
+builders, cursors as `futures_util::Stream`, and the operators `$set $setOnInsert $unset $inc $push
+$addToSet $pull $pop $rename` / `$eq $ne $in $nin $exists $gt $gte $lt $lte $regex $type $size $all
+$elemMatch $not $or $and $nor`.
+
+`bson` remains a dependency, but only as a **serialization** crate for those `doc! {…}` literals — no
+client, no sockets, no server, and it cross-compiles to Android, which the driver plus a native
+`mongod` binary never could. That was the hard prerequisite for the mobile build.
+
+**Two roots, one logical view:**
+
+```text
+GLOBAL      <config>/studio-lightkid/data/<collection>.json
+PER PROJECT <project_folder>/data/<collection>.json     ← inside the project's own git repo
+```
+
+Project *content* — `songs`, `sections`, `characters`, `uploads`, `assets`, `derivatives` — lives in
+the project's folder, so its history is `git log`, restoring an old state is `git checkout`, and
+copying the folder copies the project. Everything cross-project — `settings`, `projects`, `channels`,
+`oauth_clients`, `jobs`, `sync_configs`, `social_accounts`, the preset collections,
+`pasted_chapters`, `compose_configs` — stays global. `jobs` is deliberately global: it is transient
+machine state, and committing it would churn git history on every progress tick.
+
+Reads of a project-scoped collection union the global shard with every known project shard, so an
+unfiltered `find(doc! {})` still sees everything. Writes route to the shard that owns the document;
+`sections` and `uploads` resolve their project *through their song*, which the store looks up itself.
+Each file is `{ version, collection, updated_at, documents: [...] }`, pretty-printed with sorted keys
+and written via `write`+`rename`, so files are hand-readable, diff minimally, and a crash can't leave
+a half-written file. Shards are cached in memory and reloaded when their mtime changes — which is
+what makes a `git checkout` of an older project version simply work.
+
+One nuance worth knowing: JSON has a single number type, BSON has three. A value written as
+`doc! { "index": 1 }` can come back as `Int32`, `Int64` or `Double`, so `store::get_num()` /
+`get_float()` exist for callers that want the number without caring which width it arrived as.
 
 Settings resolution has an interesting fallback chain: job execution (`jobs::get_job_settings`) resolves the owning project from the job's target, then looks up `settings` by `_id: <project_id>`, falling back to the `singleton` doc if no per-project override exists — so most Settings fields are effectively global unless a project explicitly overrides them.
 
@@ -107,17 +156,19 @@ Settings resolution has an interesting fallback chain: job execution (`jobs::get
 | **Google Drive** (project backup) | OAuth2 (loopback server, separate scope: `drive.file`) + multipart upload | Per-project refresh token stored in the project's `settings` doc | Real (new/uncommitted, see §5) |
 | **OpenRouter / Qwen** (AI composer, translation, tag/description enrichment, character proposal) | HTTPS to `openrouter.ai`, free-tier models | User-supplied API key | Real |
 | **Bible text** | `bible-api.com` (English public-domain translations) + `bible.helloao.org` (everything else — 20+ languages) | None (public APIs) | Real |
-| **Riffusion** (Kaggle) | Standalone Python/FastAPI project in `scripts/kaggle_riffusion/`, meant to run on a free Kaggle GPU and expose a REST API via Cloudflare tunnel | Kaggle account | **Not wired into the app at all** — no Rust command references it; it's a separate manual tool (see [TODOS.md](TODOS.md)) |
+| **ACE-Step / HeartMuLa** (free music engines) | REST servers, typically a free Kaggle GPU notebook reached over a Cloudflare tunnel | Optional API key | Real. Selectable as the primary engine, or as `music_engine_fallback` so an expired Suno cookie costs a retry instead of the night's queue |
+| **Mastodon / Bluesky / Telegram / Discord** (co-publishing) | Open HTTP APIs | Token or app password, in the credential vault | Real (see §11) |
+| **Hugging Face / GitLab / GitHub / Codeberg / Internet Archive** (project sync + assets) | Provider REST APIs + `git push` over HTTPS | Token in the credential vault | Real (see §9) |
 
 Automation scripts live in `src-tauri/packaging/*.js` and are located at runtime by `helpers::locate_resource_file`, which walks several candidate paths (dev tree, `TAURI_RESOURCE_DIR`, `/usr/lib/<app>/...` for installed `.deb` packages, snap/flatpak) and executed with a `node` binary resolved by `helpers::resolve_node_executable` (bundled binary → `TAURI_RESOURCE_DIR` → dev tree → system `PATH` → common OS paths).
 
-## 5. Project version control + Google Drive backup (new, uncommitted)
+## 5. Project version control + Google Drive backup
 
 This is the single largest piece of in-flight work in the working tree (`git diff --stat` shows +767 lines in `projects.rs` alone). It gives each **project** its own local git repository:
 
 - **`save_project_version`** (`src-tauri/commands/projects.rs`): on first save, asks the user (via the frontend) for a local folder, `git init`s it if needed, serializes the project + all songs + sections to `project.json` (copying any locally-referenced media into a `media/` subfolder and rewriting URLs to relative paths), commits, and tags it `YYYY-MM-DD.N` (auto-incrementing per day). Depending on `save_type` it either writes a `.tar` archive next to the folder (`local`), or uploads a tar to Google Drive — either the full tree (`gdrive_include`) or JSON+project-files only, excluding `media/` (`gdrive_exclude`). The tar builder (`add_dir_to_tar`) always excludes `.git/` — added 2026-07-08 after verification showed that including it defeated `gdrive_exclude`'s "no media" promise (git's content-addressed object store keeps every historical media blob reachable regardless of what's in the current `media/` dir).
 - **`get_project_git_info`**: reports current branch/detached-HEAD state, dirty/clean status, all local branches, and all tags (newest first) by shelling out to `git`. Verified against a real git repo: the exact command sequence (`symbolic-ref`, `diff --quiet`, `branch --format`, `for-each-ref` with the `|`-delimited format string) behaves as the parsing code expects.
-- **`checkout_project_git_tag` / `checkout_project_git_branch`**: runs `git checkout`, then re-syncs the checked-out `project.json` back into MongoDB (`sync_git_to_db`), replacing that project's `songs`/`sections` documents wholesale.
+- **`checkout_project_git_tag` / `checkout_project_git_branch`**: runs `git checkout`, re-syncs the checked-out `project.json` (`sync_git_to_db`), and then invalidates the store's shard cache so the JSON files git just replaced are re-read (see §3.3).
 - **`create_project_git_branch`**: plain `git checkout -b`.
 - **`authorize_project_gdrive`**: a loopback-server OAuth2 flow (scope `drive.file` + `userinfo.email`) that stores a per-project Google refresh token.
 - Frontend surface: [Shell.jsx](src/src/components/Shell.jsx)'s header **Save** split-button (Local / Google Drive JSON / Google Drive full + a branch-creation modal for detached HEAD), and a **Version History & Branches** panel per project card in [Dashboard.jsx](src/src/pages/Dashboard.jsx) (grouped-by-date tag list, branch switcher, new-branch input).
@@ -144,6 +195,83 @@ Turns a project into a self-progressing daily/weekly content pipeline through a 
 - **`appearance_tags`** (new field on `Character`/`CharacterCreate`): short, stable visual descriptors prepended to the prompt in `jobs.rs`'s `character_image` job branch, for both fresh generation and "Vary" — the mechanism that actually delivers on the app's stated goal of "consistent Midjourney portraits across a song's sections" (previously only the free-text `image_prompt`/`description` was re-sent verbatim each time, with no anchor keeping regenerations visually aligned).
 - **Search/filter bar** in [Characters.jsx](src/src/pages/Characters.jsx): client-side filter over name/description/tags.
 - Not done: linking a character to specific sections and one-click-inserting its prompt into those sections' `image_prompt` — see `BACKLOG.md`.
+
+## 9. Remote sync + asset hosting (`commands/remote_sync.rs`, `project_sync.rs`)
+
+Because the store already keeps each project in its own git repo, "backup" reduces to "push". The
+only real decision is where the *large* files go, since generated audio/images/video are what consume
+storage. Two strategies, selectable per project:
+
+- **`lfs`** — media stays in the repo, tracked by git-LFS, and the host stores it.
+- **`offload`** — media is uploaded to an asset host; the repo keeps only `data/assets.json`
+  (path → URL + SHA-256 + size) and the media is git-ignored. `restore_project_assets` pulls it back
+  into a fresh clone, skipping anything already present.
+
+Free tiers, checked against each provider's own documentation (July 2026):
+
+| Provider | Free storage | LFS | Use it for |
+|---|---|---|---|
+| **Hugging Face** (default) | 100 GB private; public is best-effort and generous | native; 500 GB/file hard cap | everything, media included |
+| GitLab.com | 10 GiB per project (repo + LFS) | yes, inside that 10 GiB | a private mirror with a predictable quota |
+| GitHub | repos free; LFS only 1 GB + 1 GB/mo bandwidth | yes, but small | JSON with media offloaded |
+| Codeberg | 750 MiB git + 1.5 GiB LFS | yes | JSON on a non-profit host |
+| Internet Archive | free, effectively unlimited — **public** | n/a (asset host) | finished, publishable media |
+
+The repository is created through each provider's API on first sync (a 409 "already exists" is the
+expected result on every subsequent run). Credentials never touch the store or `.git/config`: they
+live in `vault.rs` and are handed to git through an inline credential helper that reads two
+environment variables, so the token stays out of the repo, out of `ps` output, and is scrubbed from
+any error text before it reaches the UI.
+
+## 10. Credential vault (`vault.rs`)
+
+XChaCha20-Poly1305 with a random nonce per entry, in one of two modes:
+
+- **Passphrase** — Argon2id-derived key, held only in memory after an explicit unlock. Someone who
+  copies the disk gets ciphertext.
+- **Machine key** (default, so the app works without ceremony) — a random key in a `0600` file
+  beside the vault. This protects against *casual* exposure (a cloud-synced folder, a git commit, a
+  screenshot); it does **not** protect against anyone who can read the user's files. The UI says
+  exactly that instead of implying more.
+
+Switching to a passphrase re-encrypts every entry in one write and deletes the machine key. Secrets
+are masked (`••••••••cdef`) on the way out; the plaintext never crosses the IPC boundary.
+
+## 11. Social presence (`commands/social.rs`)
+
+Four stages, each usable on its own:
+
+1. **Accounts** — Mastodon, Bluesky, Telegram and Discord have open APIs and are fully implemented.
+   Meta (Instagram/Facebook/Threads) and TikTok are free but gated behind app review/audit; X is
+   pay-per-post since Feb 2026 and deliberately not wired. Anything else falls back to the embedded
+   browser plus a recorded macro. Each platform's tier is shown in the UI so expectations match
+   reality.
+2. **Ingestion → taste profile** — reads the user's own posts and favourites from the open-protocol
+   platforms only (scraping Instagram with the user's session risks their account for a worse
+   signal), then distils voice / themes / audience / what-performs / avoid with the free in-app AI.
+   Stored in the JSON learnings, so it is hand-editable and travels with the user's other
+   preferences. Only post text and engagement counts are sent to the model.
+3. **Grounded generation** — `taste_profile_block()` is prepended to `compose_lyrics` and
+   `compose_assist`; `ideate_next` reasons over the profile, the learnings and the project's recent
+   output.
+4. **Derivatives + publishing** — FFmpeg cuts a centre-cropped vertical short (per-platform aspect
+   and duration caps), an image post is built from the song's first section image with an AI-written
+   poem, and a teaser links back to the canonical YouTube upload. One AI call writes all the copy so
+   the set reads consistently, and a missing AI degrades to video-only rather than failing.
+   **Publishing is always an explicit action** — no timer posts anything.
+
+## 12. Insights (`commands/insights.rs`)
+
+- **Pipeline overview** — every song bucketed by stage, split by project/language/style, with
+  anything unfinished for ≥7 days flagged (in practice: a job failed quietly and nobody noticed).
+- **Upload analytics** — view/like/comment counts pulled back from the YouTube Data API through the
+  per-channel OAuth the Channel Manager already holds, batched 50 ids per call. Combinations are
+  ranked by **median** views so one runaway video isn't mistaken for a strategy, and any combination
+  with fewer than ~5 videos is marked thin rather than trusted.
+- **Quota report** — YouTube uploads today against the ~6/day an upload's quota cost allows, Kaggle
+  accounts available for rotation, AI jobs/failures today, and disk headroom. Where an exact figure
+  isn't knowable without paying for it, the report states what the app observed and names the limit
+  rather than inventing precision.
 
 ## 8. Known architectural gaps
 

@@ -895,9 +895,19 @@ pub async fn rotate_kaggle_account(state: State<'_, AppState>) -> Res<Value> {
 /// Returns the chosen absolute path, or null if the user cancelled.
 #[tauri::command]
 pub async fn pick_directory(title: Option<String>) -> Res<Option<String>> {
-    let mut dlg = rfd::AsyncFileDialog::new();
-    if let Some(t) = title.filter(|s| !s.is_empty()) { dlg = dlg.set_title(t); }
-    Ok(dlg.pick_folder().await.map(|f| f.path().to_string_lossy().to_string()))
+    #[cfg(desktop)]
+    {
+        let mut dlg = rfd::AsyncFileDialog::new();
+        if let Some(t) = title.filter(|s| !s.is_empty()) { dlg = dlg.set_title(t); }
+        Ok(dlg.pick_folder().await.map(|f| f.path().to_string_lossy().to_string()))
+    }
+    // Android has no user-browsable folder picker of this shape; the caller falls back to the
+    // app's own storage directory, which is the only place a mobile build should write anyway.
+    #[cfg(not(desktop))]
+    {
+        let _ = title;
+        Ok(None)
+    }
 }
 
 #[tauri::command]

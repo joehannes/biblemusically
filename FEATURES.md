@@ -157,3 +157,52 @@ Legend: ✅ Real/working · 🟡 Real but rough edge (documented) · 🔴 Broken
 | Feature | Status | Notes |
 |---|---|---|
 | Riffusion long-form song generation via free Kaggle GPU | ⚪ | Complete standalone Python project in `scripts/kaggle_riffusion/` (FastAPI server, Cloudflare tunnel, checkpointing) but **zero references from Rust or the frontend** — a manual side-tool today, not an in-app alternative to Suno |
+
+## Data & Sync (2026-07-25)
+
+- **Your data is files.** Everything the app knows is plain JSON you can open, diff and copy. The
+  Data & Sync page shows the global folder and every project folder with one-click reveal, plus a
+  document count per collection.
+- **Each project is a git repository.** Songs, sections, characters, uploads and asset manifests live
+  in `<project folder>/data/`, committed automatically (debounced to 45s) — so a project's history is
+  `git log` and restoring an older state is a checkout.
+- **Free remote backup with room for the media.** Push a project to Hugging Face (100 GB free
+  private, native git-LFS), GitLab, GitHub, Codeberg or your own git server. Media either rides along
+  in LFS or is offloaded to Internet Archive with a checksummed manifest kept in the repo;
+  "Restore media" rebuilds a fresh clone. Optional 15-minute auto-sync.
+- **Credential vault.** Every token is encrypted with XChaCha20-Poly1305, optionally behind an
+  Argon2id passphrase. The UI states plainly what each mode does and does not protect against.
+- **Legacy database import.** Data from the retired MongoDB sidecar is carried over on first launch,
+  idempotently, and the old folder is only deleted when you say so.
+
+## Social presence (2026-07-25)
+
+- **Connect your accounts** — Mastodon, Bluesky, Telegram and Discord work with a token or app
+  password. Instagram/TikTok are shown with their app-review requirement rather than pretending;
+  anything else falls back to the browser-macro route.
+- **A profile of you.** The app reads your own posts and likes and distils voice, themes, audience
+  and what performs — then feeds that into the composer and the assistant, so generated work sounds
+  like you rather than like nobody.
+- **"What should I make next?"** Ideation grounded in that profile, your accumulated learnings and
+  what this project already produced.
+- **One song, many versions.** A vertical short cut with FFmpeg, an image post with an AI-written
+  poem, and a teaser linking back to the full video — captioned per platform, published only when
+  you press publish.
+
+## Insights (2026-07-25)
+
+- **Pipeline board** — every song by stage across projects, languages and styles, with anything
+  unfinished for a week flagged (which usually means a job failed quietly).
+- **What performs** — view counts pulled back from YouTube and ranked by median, so one lucky video
+  doesn't get mistaken for a strategy. Thin samples are labelled as such.
+- **Quotas** — YouTube uploads used today, Kaggle GPU accounts available to rotate, AI requests and
+  failures today, and disk headroom.
+
+## Reliability (2026-07-25)
+
+- **Engine health banner** — a persistent warning when the engines you actually use are failing,
+  with the age of the check shown. It stays quiet about engines you don't use.
+- **Music engine fallback** — if the primary engine fails, retry once on another; the job log records
+  which engine produced the audio.
+- **Characters in scenes** — attach a character to specific sections and push its appearance tags and
+  prompt into them in one action.

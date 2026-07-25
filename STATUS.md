@@ -4,6 +4,86 @@ A dated log of observed project state, **newest observation first** (reverse-chr
 
 ---
 
+## 2026-07-25 — MongoDB retired, project data in git, remote sync, social presence, insights
+
+A large pass driven by three requests: (1) make all persistence JSON files stored in each project's
+own git repo and remove every database dependency, (2) implement the outstanding TODOS/BACKLOG
+items, (3) find a free git host that can also hold the generated assets and sync automatically.
+Verified with `cargo check` and `cargo test --lib` (30 tests, all passing) throughout; the frontend
+was syntax-checked per change and built once at the end.
+
+**Persistence: no database, anywhere.**
+- `src-tauri/store.rs` is a JSON document store exposing the exact slice of the MongoDB API the
+  codebase used — `find_one`/`find`/`insert_one`/`insert_many`/`update_one`/`update_many`/
+  `delete_one`/`delete_many`/`count_documents`, the `.sort()`/`.limit()`/`.projection()`/`.upsert()`
+  builders, and cursors that implement `Stream`. Because all ~380 call sites used
+  `Collection<Document>` with `bson::doc! {…}` filters, the migration was a storage swap, not a
+  query rewrite. Filters support `$set/$push/$unset/$inc/$addToSet/$pull/$in/$nin/$ne/$exists/$or/
+  $and/$regex/$type/$gt/$lt/$elemMatch/$size/$all`.
+- **`bson` stays, `mongodb` is gone.** bson is a serialization crate — no client, no sockets, no
+  server — and it cross-compiles to Android, which the driver plus a native `mongod` never could.
+- Project *content* (songs, sections, characters, uploads, assets, derivatives) is written to
+  `<project_folder>/data/*.json`, inside the project's own git repo; global data (settings,
+  projects, channels, oauth clients, presets, jobs) stays under `<config>/studio-lightkid/data`.
+  Reads union the shards so callers can't tell, and writes route to the owning project — sections
+  and uploads resolve theirs through their song.
+- `project_sync.rs` makes every project folder a git repo at creation (with `.gitignore`, and LFS
+  tracking when git-lfs exists) and a 45-second sweeper commits whatever the store flagged dirty.
+- `mongo_import.rs` carries existing MongoDB data over **without depending on the driver**: it
+  starts the legacy `mongod` on a scratch port and speaks ~120 lines of the OP_MSG wire protocol
+  (`find`/`getMore`/`listCollections`) using bson alone. Idempotent (skips documents whose
+  `_id`/`id` already exists), ordered so projects and songs land before the documents that
+  reference them, and it never deletes the old directory — only an explicit action in
+  Settings → Data does that. The `mongod` sidecar, its bundled 219 MB binary and its shell
+  capabilities are all removed from the build.
+
+**Remote sync + assets (free tiers checked against each provider's own docs, July 2026).**
+Hugging Face is the default: 100 GB free private storage, native git-LFS, 500 GB/file hard cap.
+Also GitLab (10 GiB/project incl. LFS), GitHub (repo free, 1 GB LFS), Codeberg (750 MiB + 1.5 GiB)
+and any custom git URL. Two media strategies per project: keep it in the repo via LFS, or offload to
+Internet Archive and keep only `data/assets.json` (path → URL + SHA-256 + size) in git, with
+`restore_project_assets` fetching it back into a fresh clone. Tokens live in the new encrypted
+vault and reach git through a credential helper fed by environment variables — never in
+`.git/config`, never in argv, and scrubbed from error text.
+
+**Credential vault** (`vault.rs`) — XChaCha20-Poly1305 with two honest modes: an Argon2id
+passphrase key held only in memory, or a machine key in a `0600` file, with the UI stating exactly
+what each protects against rather than implying more. Switching to a passphrase re-encrypts every
+entry and deletes the machine key.
+
+**Social presence** (`commands/social.rs`) — connect Mastodon/Bluesky/Telegram/Discord, ingest the
+user's own posts and favourites from the open-protocol platforms, distil a taste profile with the
+free in-app AI, and inject it into `compose_lyrics` and `compose_assist` so generated work lands in
+the creator's voice. `ideate_next` answers "what should I make next?" from the profile, the
+learnings and the project's recent output. `derive_song_versions` cuts a centre-cropped vertical
+short with FFmpeg plus an image post and a teaser, and publishing is implemented for the four open
+platforms; review-gated (Meta, TikTok) and paid (X) ones explain themselves instead of failing
+silently. Nothing is ever published by a timer.
+
+**Insights** (`commands/insights.rs`) — the pipeline board (every song by stage, per project /
+language / style, plus anything unfinished for a week), the upload-analytics feedback loop (YouTube
+view counts pulled back through the existing OAuth, ranked by *median* views so one runaway video
+isn't mistaken for a strategy), and a quota report for YouTube uploads, Kaggle GPU accounts,
+AI requests and disk.
+
+**TODOS.md cleared.** Dead code deleted after verifying nothing referenced it (`main.rs`,
+`test_warp.rs`, the unregistered second git implementation `commands/project_git.rs`,
+`lib/tauri-api.js`, `youtube-channel-discovery.js`, craco config + CRA scripts, `plugins/
+health-check`). Engine health is now surfaced by a persistent banner — but only for the engines the
+current settings actually use, so it can't become wallpaper. Music generation gained a configurable
+fallback engine. The two schedule fields are merged: `schedule` is derived from `schedule_config` on
+every save, so the dashboard can't contradict the automation. The scheduler's AI calls take a job
+semaphore permit. Characters can be attached to sections with their appearance tags and prompt
+injected in one action. `tests_logic.rs` covers the pure logic (annotation pairing, mood derivation,
+effect suggestion, JSON recovery, slugs, secret masking).
+
+**Mobile + cross-platform.** The unconditional `webkit2gtk` import in `commands/webview.rs` was the
+single thing keeping the crate from compiling anywhere but Linux — both its call sites were already
+`cfg(target_os = "linux")`. That import is now gated, `rfd` is a desktop-only dependency with its
+three call sites guarded, and the bundler targets macOS/Windows/RPM/AppImage as well as `.deb`.
+Producing an actual `.apk` still needs an NDK and JDK 17 on this machine, which is a toolchain
+install, not a code change.
+
 ## 2026-07-08 — Implementation pass 3: Job Queue, Scheduler, Character builder, daily-lyrics usability
 
 Four features requested directly, all implemented and verified (`cargo check` + `npm run build` clean throughout):

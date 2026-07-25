@@ -1,6 +1,57 @@
 # TODOs
 
-Concrete, file-anchored issues found while documenting the codebase, first on **2026-07-08**, with two follow-up implementation passes the same day. Each still-open item below also has an inline `// TODO` or `// deprecated???` comment at the referenced location. Fixed items keep their original write-up for context, with a `Fixed —` note.
+Concrete, file-anchored issues found while documenting the codebase, first on **2026-07-08**, with
+follow-up implementation passes since. Each still-open item below also has an inline `// TODO` or
+`// deprecated???` comment at the referenced location. Fixed items keep their original write-up for
+context, with a `Fixed —` note.
+
+## Cleared (2026-07-25) — the Mongo→JSON pass
+
+Everything that was still open in this file is now either done or has moved to a precise, named
+blocker. See `STATUS.md` for the full write-up and `ARCHITECTURE.md` §3.3/§9–§12 for the design.
+
+| # | Item | Outcome |
+|---|---|---|
+| 8–12 | Dead code (`main.rs`, `test_warp.rs`, `commands/project_git.rs`, `lib/tauri-api.js`, `youtube-channel-discovery.js`, craco config + CRA scripts, `plugins/health-check`) | **Deleted**, after verifying repo-wide that nothing referenced them. `src/package.json` itself stays — `Shell.jsx` imports it for a first-paint version fallback — but its craco scripts and deps are gone. |
+| 13 | Riffusion / a free music engine not integrated | **Superseded and closed.** ACE-Step and HeartMuLa are wired as first-class engines, and `music_engine_fallback` now retries a failed generation on another engine, which was the actual point of the item (a Suno outage shouldn't block the pipeline). |
+| 14 | No automated tests | **Done.** 30 tests: the JSON store (CRUD, persistence across reopen, upsert seeding, operators, `$push`/`$inc`/`$unset`, sort/limit/cursor streaming, projection, ext-JSON flattening, project-shard routing), the credential vault (seal/open, wrong-key rejection, masking, salt-dependent KDF), project git conventions, asset walking/hashing, derivative specs, HTML stripping, and the pure pipeline logic in `tests_logic.rs`. |
+| 15 | `memory/PRD.md` is stale | **Marked historical** at the top of the file rather than deleted, since it records the original intent. |
+| 16 | No Suno/Midjourney health surfacing in the UI | **Done.** `commands/health.rs` + a persistent `HealthBanner`, scoped to the engines the current settings actually use so it can't become wallpaper, with dismissal keyed to the problem set. |
+| 17 | Two schedule fields that can drift | **Done.** `schedule` is now *derived* from `schedule_config` on every save (including the scheduler's own chapter-cursor advance) by `projects::describe_schedule`, and the free-text input is gone. |
+| 18 | Scheduler's AI calls not gated by the job queue | **Done.** The OpenRouter call takes a `job_semaphore` permit, released before the music job is enqueued so it can't deadlock against the job it is about to create. |
+| 19 | Social presence: self-knowledge, co-creation, co-publishing | **Done** — `commands/social.rs`, `/social` page. See `ARCHITECTURE.md` §11. |
+| 20 | Mobile build (Android first) | **Rust-side unblocked; one named toolchain blocker left** — see below. |
+
+### What remains for the Android build
+
+The Mongo→JSON migration (the hard prerequisite) is done, and the code-level blockers are addressed:
+the unconditional `webkit2gtk` import in `commands/webview.rs` was the single thing keeping the crate
+from compiling for anything but Linux — both its call sites were already `cfg(target_os = "linux")`,
+and the `linux_layout` module always was. `rfd` is now a desktop-only dependency with its three call
+sites guarded, and `mongo_import` / `project_sync` / the FFmpeg derivative cutter already degrade
+cleanly off-desktop.
+
+Verified by running `cargo check --lib --target aarch64-linux-android` (with rustup's toolchain —
+note the `rustc` on `PATH` here is Homebrew's, which can't see rustup's Android std). It now fails
+in exactly one place, and it isn't our code:
+
+```
+error: failed to run custom build command for `ring v0.17.14`
+  error occurred in cc-rs: failed to find tool "aarch64-linux-android-clang"
+```
+
+`ring` (the crypto library under rustls, which `reqwest` uses) compiles C, so it needs the NDK's
+clang. That is a toolchain install, not a code change:
+
+1. Install an NDK via Android Studio's SDK Manager and export `NDK_HOME`.
+2. Install JDK 17 (the JDK here is 26; the Android Gradle Plugin wants 17) and point Gradle at it.
+3. `cargo tauri android dev` / `build` for a debug `.apk`.
+4. For release: an Android signing keystore → `.aab`.
+
+Two things are still worth deciding before shipping a mobile build, and neither is a bug: the
+embedded browser (GTK child-webviews) has no mobile implementation and its commands will return
+errors there, and Playwright-driven Midjourney automation cannot run on Android at all — so a mobile
+build is the "mobile-lite" shape the backlog described, not feature parity.
 
 ## Fixed (2026-07-08, implementation pass 1)
 
@@ -36,7 +87,7 @@ Four items requested directly: a real Job Queue, a Scheduler, Character-builder 
 - ~~**No scheduler acts on a project's schedule.**~~ **Resolved with a new, narrower mechanism**, not by parsing the old free-text `schedule` field. Projects get an optional `schedule_config` (book, translation, frequency, time, languages, styles, chapter cursor) driving a background tick (`commands/scheduler.rs::run_scheduler_tick`, every 5 minutes) that fetches the next chapter, generates lyrics via AI, saves a draft song, and auto-enqueues music generation — analysis/images/video/upload stay manual. A "Generate Now" button in the Dashboard's new Daily Content panel runs the exact same function manually.
 - **Character builder enhancements**: project-level scoping actually works now (`Character.project_id` existed in the model but `list_characters` never accepted/filtered by it — every song-less character leaked into every song's list); added `appearance_tags` (stable visual descriptors prepended to every Midjourney prompt so regenerated portraits stay consistent); added a client-side search/filter bar.
 
-## Dead code (candidates for deletion — not yet removed)
+## Dead code (all deleted 2026-07-25 — kept here for the record)
 
 8. **`src-tauri/main.rs`** (root-level, 5 lines) — duplicate of `src-tauri/src/main.rs`; not part of the Cargo build (no `[[bin]]` override points at it). Annotated `deprecated???`.
 9. **`src-tauri/test_warp.rs`** — standalone scratch file with its own `fn main()`, not declared as a module anywhere, not compiled. Annotated `deprecated???`.
@@ -44,7 +95,7 @@ Four items requested directly: a real Job Queue, a Scheduler, Character-builder 
 11. **`src-tauri/packaging/youtube-channel-discovery.js`** (265 lines, Playwright-based) — not invoked from any Rust command; channel discovery is now done by the pure-Rust HTTP scraper (`commands/channels.rs::discover_youtube_channels`) or `youtube-channel-switcher.js` (via `discover_from_channel_switcher`). Annotated `deprecated???`.
 12. **`src/package.json` (craco scripts) + `src/craco.config.js` + `src/plugins/health-check/`** — leftover Create-React-App tooling. The actual build is the root `vite.config.ts` (`root: "src"`), which Tauri and `npm run dev`/`build` invoke directly; nothing calls `craco`. Annotated `deprecated???` in `craco.config.js` (can't add a JS-style comment inside `package.json`, which is strict JSON).
 
-These are intentionally left in place rather than deleted — low-risk to leave annotated until the repo owner confirms nothing external depends on them (e.g. a packaging script referenced from outside this repo).
+All of the above were deleted on 2026-07-25 after a repo-wide reference check. They are recorded here so that a future reader who finds a stale external reference knows what was removed and why.
 
 ## Missing / incomplete pieces (not bugs — features that don't exist yet)
 

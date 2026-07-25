@@ -1,3 +1,10 @@
+> **HISTORICAL DOCUMENT (marked 2026-07-25).** This is the original product brief and no longer
+> describes the app. It predates the scheduler, the project-git versioning, the JSON store (it
+> assumes MongoDB), the free music/image engines, the social-presence engine and the Insights page;
+> it describes 3 themes where there are now 15, and mock fallbacks for Suno/Midjourney/FFmpeg/YouTube
+> that no longer exist (every job kind fails loudly instead). Kept because it records the original
+> intent. For what is actually true now, read `FEATURES.md`, `ARCHITECTURE.md` and `STATUS.md`.
+
 # Lightkid AI Studio — PRD
 
 ## Problem

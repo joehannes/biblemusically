@@ -60,14 +60,19 @@ pub fn run() {
             let app_state = match app_state_res {
                 Ok(state) => state,
                 Err(e) => {
+                    let message = format!(
+                        "Failed to open the local data folder.\n\nError: {}\n\nThe application will now exit.",
+                        e
+                    );
+                    // A native dialog on desktop; mobile has no rfd backend, so the message goes to
+                    // the log where `adb logcat` will show it.
+                    #[cfg(desktop)]
                     rfd::MessageDialog::new()
                         .set_title("Data Folder Error")
-                        .set_description(&format!(
-                            "Failed to open the local data folder.\n\nError: {}\n\nThe application will now exit.",
-                            e
-                        ))
+                        .set_description(&message)
                         .set_level(rfd::MessageLevel::Error)
                         .show();
+                    eprintln!("{message}");
                     std::process::exit(1);
                 }
             };

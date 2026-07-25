@@ -46,6 +46,11 @@ use tauri::webview::PageLoadEvent;
 use tauri::{command, AppHandle, LogicalPosition, LogicalSize, Manager, Webview, WebviewBuilder, WebviewUrl, Wry};
 
 #[cfg(target_os = "linux")]
+// WebKitGTK traits for the bmChannel bridge and the download hook. Both call sites are already
+// `cfg(target_os = "linux")`; gating the import too is what lets the crate compile for Android,
+// macOS and Windows at all — the dependency itself is Linux-only in Cargo.toml, so an
+// unconditional `use` was a hard compile error everywhere else.
+#[cfg(target_os = "linux")]
 use webkit2gtk::{DownloadExt as _, UserContentManagerExt as _, WebContextExt as _, WebViewExt as _};
 
 pub const BROWSER_LABEL_PREFIX: &str = "embedded-browser";
