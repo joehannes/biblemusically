@@ -150,6 +150,13 @@ export const api = {
   guideInterpret: (payload) => invokeCommand("guide_interpret", { payload }),
   // What a stated goal actually requires: which setup steps, and what can be preset outright.
   setupRecommendation: (payload) => invokeCommand("setup_recommendation", { payload }),
+  // ============ Publicity ============
+  authorPublicityPiece: (payload) => invokeCommand("author_publicity_piece", { payload }),
+  authorPublicitySet: (songId, platforms) => invokeCommand("author_publicity_set", { songId, platforms: platforms || null }),
+  generatePublicityCovers: (id) => invokeCommand("generate_publicity_covers", { id }),
+  listPublicityPieces: (songId, projectId) => invokeCommand("list_publicity_pieces", { songId: songId || null, projectId: projectId || null }),
+  updatePublicityPiece: (id, patch) => invokeCommand("update_publicity_piece", { id, patch }),
+  deletePublicityPiece: (id) => invokeCommand("delete_publicity_piece", { id }),
   // ============ Remote rendering ============
   listRenderProviders: () => invokeCommand("list_render_providers"),
   buildRenderSpec: (songId, options) => invokeCommand("build_render_spec", { songId, options: options || null }),

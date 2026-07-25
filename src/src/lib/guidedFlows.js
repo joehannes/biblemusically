@@ -760,6 +760,71 @@ export const workflowFlow = {
   ],
 };
 
+
+// ── Publicity ────────────────────────────────────────────────────────────────
+
+export const publicityFlow = {
+  id: "publicity",
+  title: "Guided publicity",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), platforms: (ctx.accounts || []).map((a) => a.platform), pieces: ctx.pieceCount || 0 }),
+  steps: [
+    {
+      id: "where",
+      title: "Where",
+      question: "Who is this piece for?",
+      help: "Each platform gets its own register — a Reddit post that reads like a press release is removed, a blog post that reads like a tweet is ignored.",
+      reveals: "target",
+      options: (ctx) => {
+        const linked = (ctx.accounts || []).map((a) => a.platform);
+        const named = (id) => (ctx.platforms || []).find((p) => p.id === id)?.label || id;
+        return [
+          {
+            id: "all",
+            label: `Every connected platform (${linked.length})`,
+            hint: linked.map(named).join(", ") || "none connected yet",
+            when: () => linked.length > 1,
+            recommended: linked.length > 1,
+            apply: (c) => c.setPlatform?.(""),
+          },
+          ...linked.slice(0, 3).map((id) => ({
+            id: `p:${id}`, label: named(id), hint: "One piece, written for this platform only.",
+            apply: (c) => c.setPlatform?.(id),
+          })),
+          {
+            id: "article",
+            label: "A long-form article",
+            hint: "Blog/DEV length — the song illustrates the idea rather than being the subject.",
+            apply: (c) => c.setPlatform?.("devto"),
+          },
+        ];
+      },
+    },
+    {
+      id: "angle",
+      title: "Angle",
+      question: "What should it lead with?",
+      help: "Leave it open and the writer draws the angle from the brief, the scripture and today's topic.",
+      reveals: "angle",
+      options: (ctx) => [
+        { id: "auto", label: "Let it choose", hint: "From the brief, the song and today's topic.", recommended: true, apply: (c) => c.setAngle?.("") },
+        { id: "scripture", label: "The scripture itself", hint: "The passage first, the song as its setting.", apply: (c) => c.setAngle?.("open with the scripture passage and what it is actually saying") },
+        { id: "craft", label: "How it was made", hint: "The production story — style choices, imagery, language.", apply: (c) => c.setAngle?.("tell the making-of: the style choices, the imagery and why") },
+        { id: "topic", label: "Today's topic", hint: ctx.project?.daily_topic || "No topic set for today.", when: (c) => Boolean(c.project?.daily_topic), apply: (c) => c.setAngle?.(`tie it to today's topic: ${ctx.project.daily_topic}`) },
+      ],
+    },
+    {
+      id: "write",
+      title: "Write",
+      question: "Write it now?",
+      reveals: "pieces",
+      options: () => [
+        { id: "go", label: "Write the draft", hint: "Nothing is posted — it lands here for you to read.", recommended: true, apply: (c) => c.write?.() },
+        { id: "later", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
+
 export const FLOWS = {
   composer: composerFlow,
   music: musicFlow,
@@ -771,4 +836,5 @@ export const FLOWS = {
   upload: uploadFlow,
   social: socialFlow,
   workflow: workflowFlow,
+  publicity: publicityFlow,
 };

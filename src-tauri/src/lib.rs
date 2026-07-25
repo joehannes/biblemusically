@@ -584,6 +584,13 @@ pub fn run() {
             commands::tts_speak,
             commands::stt_transcribe,
             commands::guide_interpret,
+            // Publicity: AI-authored articles and posts per platform, with their own covers
+            commands::author_publicity_piece,
+            commands::author_publicity_set,
+            commands::generate_publicity_covers,
+            commands::list_publicity_pieces,
+            commands::update_publicity_piece,
+            commands::delete_publicity_piece,
             commands::setup_recommendation,
             // Remote rendering (ffmpeg + upload on somebody else's computer)
             commands::list_render_providers,

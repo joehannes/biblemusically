@@ -122,6 +122,81 @@ pub async fn list_social_platforms() -> Res<Value> {
             "cost": "Free, gated by audit."
         },
         {
+            "id": "reddit", "label": "Reddit", "tier": "open",
+            "can": ["read_own", "post_text", "post_link", "post_image"],
+            "fields": [
+                { "key": "client_id", "label": "App client id", "placeholder": "from reddit.com/prefs/apps (script app)", "secret": false },
+                { "key": "client_secret", "label": "App secret", "placeholder": "", "secret": true },
+                { "key": "username", "label": "Reddit username", "placeholder": "u/yourname", "secret": false },
+                { "key": "password", "label": "Password", "placeholder": "", "secret": true },
+                { "key": "subreddits", "label": "Target subreddits", "placeholder": "ChristianMusic, WorshipMusic", "secret": false }
+            ],
+            "help": "Create a 'script' app at reddit.com/prefs/apps. Read each subreddit's rules first — most ban bare self-promotion, and a post that ignores them costs the account, not just the post.",
+            "cost": "Free. 100 queries/minute per OAuth client."
+        },
+        {
+            "id": "devto", "label": "DEV.to", "tier": "open",
+            "can": ["post_article"],
+            "fields": [
+                { "key": "api_key", "label": "API key", "placeholder": "Settings → Extensions → DEV Community API Keys", "secret": true }
+            ],
+            "help": "Publishes full markdown articles with a cover image. Canonical-URL support means cross-posting will not hurt the original.",
+            "cost": "Free."
+        },
+        {
+            "id": "wordpress", "label": "WordPress / Ghost blog", "tier": "open",
+            "can": ["post_article"],
+            "fields": [
+                { "key": "site_url", "label": "Site URL", "placeholder": "https://yourblog.com", "secret": false },
+                { "key": "token", "label": "Application password / admin API key", "placeholder": "", "secret": true }
+            ],
+            "help": "Your own site is the one platform whose rules cannot change under you — worth having as the canonical home for every article.",
+            "cost": "Whatever your hosting costs."
+        },
+        {
+            "id": "tumblr", "label": "Tumblr", "tier": "open",
+            "can": ["post_text", "post_image", "post_video"],
+            "fields": [
+                { "key": "consumer_key", "label": "Consumer key", "placeholder": "from tumblr.com/oauth/apps", "secret": false },
+                { "key": "consumer_secret", "label": "Consumer secret", "placeholder": "", "secret": true },
+                { "key": "blog", "label": "Blog name", "placeholder": "yourblog", "secret": false }
+            ],
+            "help": "Still a real distribution channel for image-led devotional posts.",
+            "cost": "Free."
+        },
+        {
+            "id": "pinterest", "label": "Pinterest", "tier": "review_gated",
+            "can": ["post_image", "post_link"],
+            "fields": [
+                { "key": "access_token", "label": "Access token", "placeholder": "from developers.pinterest.com", "secret": true },
+                { "key": "board_id", "label": "Board id", "placeholder": "", "secret": false }
+            ],
+            "help": "Strong for evergreen visual reach — a pinned cover image keeps sending traffic months later. Trial access posts to your own boards; wider access needs review.",
+            "cost": "Free, gated by review."
+        },
+        {
+            "id": "linkedin", "label": "LinkedIn page", "tier": "review_gated",
+            "can": ["post_text", "post_image", "post_link"],
+            "fields": [
+                { "key": "access_token", "label": "Access token", "placeholder": "OAuth token with w_organization_social", "secret": true },
+                { "key": "org_urn", "label": "Organisation URN", "placeholder": "urn:li:organization:12345", "secret": false }
+            ],
+            "help": "Posting to a company page needs the Community Management API, which is partner-gated. Personal-profile posting is not offered by the API at all.",
+            "cost": "Free, gated by partner approval."
+        },
+        {
+            "id": "x", "label": "X (Twitter)", "tier": "paid",
+            "can": ["post_text", "post_image"],
+            "fields": [
+                { "key": "api_key", "label": "API key", "placeholder": "", "secret": false },
+                { "key": "api_secret", "label": "API secret", "placeholder": "", "secret": true },
+                { "key": "access_token", "label": "Access token", "placeholder": "", "secret": false },
+                { "key": "access_secret", "label": "Access token secret", "placeholder": "", "secret": true }
+            ],
+            "help": "Writing costs money: the free tier allows a very small number of posts a month, and the next tier up is a monthly subscription. A browser macro is the cheaper route if you post often.",
+            "cost": "Paid — free tier is post-capped, Basic is a monthly fee."
+        },
+        {
             "id": "browser_macro", "label": "Anything else (browser macro)", "tier": "macro",
             "can": ["post_text", "post_image", "post_video"],
             "fields": [],

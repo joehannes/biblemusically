@@ -207,6 +207,30 @@ Legend: ✅ Real/working · 🟡 Real but rough edge (documented) · 🔴 Broken
 - **Characters in scenes** — attach a character to specific sections and push its appearance tags and
   prompt into them in one action.
 
+## Publicity (`/publicity`, 2026-07-25)
+
+- **The studio writes about the song** — once a song has lyrics, a style, analysed sections and
+  rendered images, it can author an article or post per platform from all of it, plus the project's
+  brief, today's topic, the channel's language, and your own social voice.
+- **Each platform gets its own register** — Reddit value-first with no hype, a blog article with
+  headings, X as a thread, LinkedIn short and reflective. A post written in the wrong register is
+  removed or ignored, so the register is part of the prompt, not an afterthought.
+- **Cover images made for the piece**, not frames lifted from the video — each piece plans its own
+  prompts and renders them through the normal image pipeline.
+- **Links back** to the YouTube upload and the short, substituted into the text where the writer
+  marked them.
+- **Honest about posting** — platforms with a usable API are marked as such; the review-gated, paid
+  and macro-only ones say so and hand over a copy button plus the in-app posting page.
+- **Nothing posts by itself.** Every piece is a draft until a human moves it.
+
+## Social platforms (2026-07-25)
+
+Added alongside Mastodon, Bluesky, Telegram, Discord, Instagram/Threads and TikTok: **Reddit**
+(free API; the catalogue warns that most subreddits ban bare self-promotion), **DEV.to** and
+**WordPress/Ghost** (full articles with canonical URLs), **Tumblr**, **Pinterest** and **LinkedIn**
+(both review-gated), and **X** (marked paid, because writing on the free tier is capped to a handful
+of posts a month).
+
 ## AI providers — free and paid (2026-07-25)
 
 - **Four providers**: OpenRouter and Google Gemini (free tiers), Claude/Anthropic and ChatGPT/OpenAI
