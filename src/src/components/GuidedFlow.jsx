@@ -67,10 +67,13 @@ export default function GuidedFlow({
   showAllLabel = "All controls",
   onShowAll,            // () => void — escape hatch into the untouched full page
   compact = false,
+  startAt = 0,          // resume position, for a session picked up later
+  answered,             // stepId -> optionId already recorded (persisted sessions)
+  onAnswer,             // (stepId, optionId, sectionId) => void — for callers that persist progress
 }) {
   const steps = useMemo(() => visibleSteps(flow, ctx), [flow, ctx]);
-  const [i, setI] = useState(0);
-  const [answers, setAnswers] = useState({});     // stepId -> optionId
+  const [i, setI] = useState(() => Math.min(Math.max(0, startAt), Math.max(0, steps.length - 1)));
+  const [answers, setAnswers] = useState(() => answered || {});   // stepId -> optionId
   const [proposal, setProposal] = useState(null); // { picks: {stepId: {option, why}}, greeting }
   const [proposing, setProposing] = useState(false);
   const localChoices = useMemo(() => loadLocalChoices(flow.id), [flow.id]);
@@ -145,6 +148,9 @@ export default function GuidedFlow({
     // fails to record a preference is still a working guide.
     api.recordLearningSignal("project", ctx?.projectId || null, "guided_choice",
       `${flow.id}:${step.id}`, option.id).catch(() => {});
+    // Callers that own a persisted session (useGuidedView) record it there too, along with which
+    // section this answer settled — that is what makes the section manifest.
+    onAnswer?.(step.id, option.id, step.reveals || null);
 
     if (i + 1 < steps.length) setI(i + 1);
     else onFinish?.();

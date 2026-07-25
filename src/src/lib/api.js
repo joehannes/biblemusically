@@ -135,6 +135,11 @@ export const api = {
   takeAiNotices: () => invokeCommand("take_ai_notices"),
   // Guided-flow proposals: per-step picks personalised from brief + learnings + engine caps.
   guideProposal: (payload) => invokeCommand("guide_proposal", { payload }),
+  // Live-aggregated starter templates for a view, validated against its control catalogue.
+  guideTemplates: (payload) => invokeCommand("guide_templates", { payload }),
+  getWorkflowState: (projectId, view) => invokeCommand("get_workflow_state", { projectId, view }),
+  saveWorkflowState: (projectId, view, patch) => invokeCommand("save_workflow_state", { projectId, view, patch }),
+  resetWorkflowState: (projectId, view) => invokeCommand("reset_workflow_state", { projectId, view }),
   // ============ Remote rendering ============
   listRenderProviders: () => invokeCommand("list_render_providers"),
   buildRenderSpec: (songId, options) => invokeCommand("build_render_spec", { songId, options: options || null }),

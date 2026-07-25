@@ -573,6 +573,10 @@ pub fn run() {
             commands::ai_translate_ui,
             commands::take_ai_notices,
             commands::guide_proposal,
+            commands::guide_templates,
+            commands::get_workflow_state,
+            commands::save_workflow_state,
+            commands::reset_workflow_state,
             // Remote rendering (ffmpeg + upload on somebody else's computer)
             commands::list_render_providers,
             commands::build_render_spec,

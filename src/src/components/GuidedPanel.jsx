@@ -1,19 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import GuidedFlow from "./GuidedFlow";
-import { Wand2 } from "lucide-react";
+import { useGuidedView, GuidedHeader, GuidedBar } from "./GuidedView";
 
-// A page mounts the guided layer with this: it owns the on/off preference, loads the shared context
-// every flow needs (project brief, channels, selected engines) and gets out of the way when the user
-// turns it off. Pages only pass the flow and their own action handlers.
+// What a page mounts to become guided, when it has no collapsible sections of its own to manifest.
 //
-//   <GuidedPanel flow={musicFlow} actions={{ setEngine, run: triggerAll }} />
+// It loads the shared context every flow needs (project brief, channels, selected engines) and hands
+// it to the same controller the AI Composer uses — so these pages get the same template-first start,
+// the same persisted progress, and the same resume bar, without each page repeating the wiring.
 //
-// Kept separate from GuidedFlow so that component stays purely presentational and testable, and so a
-// page never has to repeat the context-loading effect.
-export default function GuidedPanel({ flow, actions = {}, extraCtx = {}, projectId, onRevealSection, onFinish }) {
-  const key = `studio:guided-${flow.id}`;
-  const [on, setOn] = useState(() => localStorage.getItem(key) !== "off");
+//   <GuidedPanel flow={musicFlow} projectId={id} actions={{ setEngine, run: triggerAll }} />
+//
+// Pages that DO have sections should call `useGuidedView` directly and ask it about each section
+// (see AIComposer) — that is what turns manifestation and the collapse rule on.
+export default function GuidedPanel({ flow, actions = {}, extraCtx = {}, projectId, showBottomBar = false }) {
   const [project, setProject] = useState(null);
   const [channels, setChannels] = useState([]);
   const [settings, setSettings] = useState({});
@@ -33,30 +32,23 @@ export default function GuidedPanel({ flow, actions = {}, extraCtx = {}, project
     })();
   }, [projectId]);
 
-  const setMode = (next) => {
-    setOn(next);
-    localStorage.setItem(key, next ? "on" : "off");
-  };
+  const ctx = useMemo(
+    () => ({ projectId, project, channels, settings, ...extraCtx, ...actions }),
+    [projectId, project, channels, settings, extraCtx, actions],
+  );
 
-  if (!on) {
-    return (
-      <button
-        onClick={() => setMode(true)}
-        className="text-[11px] text-muted-foreground hover:text-primary inline-flex items-center gap-1.5"
-      >
-        <Wand2 className="w-3.5 h-3.5" />Guide me through this
-      </button>
-    );
-  }
+  // Without a page-owned section list, the flow's own `reveals` ids are the manifestation order.
+  const sectionOrder = useMemo(
+    () => [...new Set((flow.steps || []).map((s) => s.reveals || s.id))],
+    [flow],
+  );
+
+  const guide = useGuidedView({ view: flow.id, projectId, flow, sectionOrder, ctx });
 
   return (
-    <GuidedFlow
-      flow={flow}
-      ctx={{ projectId, project, channels, settings, ...extraCtx, ...actions }}
-      onRevealSection={onRevealSection}
-      onShowAll={() => setMode(false)}
-      onFinish={onFinish}
-      compact
-    />
+    <>
+      <GuidedHeader guide={guide} flow={flow} ctx={ctx} />
+      {showBottomBar && <GuidedBar guide={guide} position="bottom" />}
+    </>
   );
 }
