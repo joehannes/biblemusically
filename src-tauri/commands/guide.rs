@@ -241,6 +241,127 @@ pub async fn guide_templates(state: State<'_, AppState>, payload: GuideTemplateR
     Ok(serde_json::json!({ "templates": out, "model": model }))
 }
 
+// ────────────────────────────────────────────────────────────────
+// Setup recommendation
+//
+// First-run setup used to be a fixed list of everything the app can connect to, which is the wrong
+// question: somebody trying the app out and somebody publishing to fifty channels need different
+// halves of it. So the guide asks for the goal, and this works out what that goal actually requires —
+// what is needed now, what can wait, and what to preset so the user never sees the choice at all.
+//
+// Step ids and setting keys are whitelisted: the model chooses *among* the app's real setup steps,
+// it cannot invent one.
+// ────────────────────────────────────────────────────────────────
+
+/// The setup steps the first-run guide knows how to show. The model may only speak about these.
+const SETUP_STEPS: &[(&str, &str)] = &[
+    ("language", "Interface language"),
+    ("goal", "What the user is trying to do"),
+    ("voice", "Assistant voice and spoken answers"),
+    ("permissions", "Microphone and folder access"),
+    ("ai", "AI provider key (lyrics, styles, planning)"),
+    ("kaggle", "Free GPU servers for music and images"),
+    ("youtube", "Google account for publishing"),
+    ("files", "Where generated files are stored"),
+    ("sync", "Backing the project up to a git remote"),
+    ("remote_render", "Rendering and uploading off this machine"),
+];
+
+/// Settings a recommendation may preset, so the user is not asked about them at all.
+fn setup_presets() -> Vec<ControlDescriptor> {
+    let enum_ctrl = |id: &str, section: &str, opts: Vec<&str>| ControlDescriptor {
+        id: id.into(), label: id.into(), kind: "enum".into(),
+        options: opts.into_iter().map(|o| Value::String(o.into())).collect(),
+        min: None, max: None, section: section.into(), hint: String::new(),
+    };
+    vec![
+        enum_ctrl("music_engine", "ai", vec!["heartmula", "acestep", "suno"]),
+        enum_ctrl("image_engine", "ai", vec!["comfy", "flux", "midjourney", "gemini"]),
+        enum_ctrl("ai_provider", "ai", vec!["openrouter", "gemini"]),
+        enum_ctrl("remote_render_provider", "remote_render", vec!["local", "kaggle", "actions", "modal", "http"]),
+        ControlDescriptor {
+            id: "is_christian".into(), label: "Christian content mode".into(), kind: "bool".into(),
+            options: vec![], min: None, max: None, section: "goal".into(), hint: String::new(),
+        },
+    ]
+}
+
+#[derive(serde::Deserialize)]
+pub struct SetupRecommendationRequest {
+    /// What the user said they want, in their own words or as a picked phrase.
+    pub goal: String,
+    /// Which steps are already satisfied, so the answer is about what is left.
+    #[serde(default)]
+    pub done: Vec<String>,
+    #[serde(default)]
+    pub context: Value,
+}
+
+/// Work out what this user's goal actually requires, and what can be decided for them.
+#[tauri::command]
+pub async fn setup_recommendation(state: State<'_, AppState>, payload: SetupRecommendationRequest) -> Res<Value> {
+    let settings = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
+        .map(bson_to_value).unwrap_or_default();
+
+    let presets = setup_presets();
+    let steps_json: Vec<Value> = SETUP_STEPS.iter()
+        .map(|(id, what)| serde_json::json!({ "id": id, "what": what, "already_done": payload.done.iter().any(|d| d == id) }))
+        .collect();
+
+    let system = "You set up a Bible music-video studio for one creator, from their goal.\n\n\
+         You get the app's real setup steps and the settings you are allowed to preset. Decide, for \
+         each step that is not already done, whether it is `required` for this goal, `optional` (worth \
+         doing later), or `skip` (this goal does not need it at all) — and say why in at most 12 words, \
+         addressed to the user.\n\n\
+         Facts to reason with, not to repeat: the free path is Kaggle GPUs for music/images, an \
+         OpenRouter or Gemini key for text (OpenRouter's free tier is 50 requests a day, Gemini's is \
+         per-minute and often busy), a Google OAuth client per YouTube account, and remote rendering on \
+         Kaggle CPU sessions when many videos a week are planned. Somebody just trying the app out \
+         needs the AI key and nothing else. Somebody publishing daily to many channels needs \
+         publishing, storage and remote rendering early.\n\n\
+         Preset only what the goal clearly implies, using the given ids and allowed values.\n\n\
+         Return ONLY: {\"summary\":\"one sentence, ≤25 words, what you will set up for them\",\
+         \"steps\":[{\"id\":…,\"need\":\"required|optional|skip\",\"why\":…}],\"presets\":{…}}";
+
+    let user = format!(
+        "GOAL (their words): {}\n\nSETUP STEPS:\n{}\n\nPRESETTABLE SETTINGS:\n{}\n\nCONTEXT:\n{}",
+        payload.goal.trim(),
+        serde_json::to_string_pretty(&steps_json).unwrap_or_else(|_| "[]".into()),
+        serde_json::to_string_pretty(&presets.iter().map(|c| serde_json::json!({
+            "id": c.id, "kind": c.kind, "options": c.options,
+        })).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".into()),
+        serde_json::to_string_pretty(&payload.context).unwrap_or_else(|_| "{}".into()),
+    );
+
+    let (content, model) = crate::commands::ai::provider_chat(&settings, system, &user, 0.4, true).await?;
+    let parsed = crate::commands::ai::extract_json_value(&content).unwrap_or(Value::Null);
+
+    // Keep only real step ids and real need levels; anything else is dropped rather than shown.
+    let mut steps = Vec::new();
+    if let Some(arr) = parsed["steps"].as_array() {
+        for s in arr {
+            let id = s["id"].as_str().unwrap_or("");
+            if !SETUP_STEPS.iter().any(|(k, _)| *k == id) { continue; }
+            let need = match s["need"].as_str().unwrap_or("optional") {
+                "required" => "required", "skip" => "skip", _ => "optional",
+            };
+            steps.push(serde_json::json!({
+                "id": id, "need": need,
+                "why": s["why"].as_str().unwrap_or("").chars().take(120).collect::<String>(),
+            }));
+        }
+    }
+    let (clean_presets, _rejected) = sanitise_patch(&presets, &parsed["presets"]);
+
+    Ok(serde_json::json!({
+        "summary": parsed["summary"].as_str().unwrap_or("").chars().take(200).collect::<String>(),
+        "steps": steps,
+        "presets": Value::Object(clean_presets),
+        "model": model,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

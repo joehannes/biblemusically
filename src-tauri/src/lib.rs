@@ -582,6 +582,7 @@ pub fn run() {
             commands::tts_speak,
             commands::stt_transcribe,
             commands::guide_interpret,
+            commands::setup_recommendation,
             // Remote rendering (ffmpeg + upload on somebody else's computer)
             commands::list_render_providers,
             commands::build_render_spec,

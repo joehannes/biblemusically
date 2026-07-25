@@ -145,6 +145,8 @@ export const api = {
   ttsSpeak: (payload) => invokeCommand("tts_speak", { payload }),
   sttTranscribe: (payload) => invokeCommand("stt_transcribe", { payload }),
   guideInterpret: (payload) => invokeCommand("guide_interpret", { payload }),
+  // What a stated goal actually requires: which setup steps, and what can be preset outright.
+  setupRecommendation: (payload) => invokeCommand("setup_recommendation", { payload }),
   // ============ Remote rendering ============
   listRenderProviders: () => invokeCommand("list_render_providers"),
   buildRenderSpec: (songId, options) => invokeCommand("build_render_spec", { songId, options: options || null }),

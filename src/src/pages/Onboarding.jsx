@@ -15,7 +15,7 @@ import {
 //     (the caller passes the filtered list). It skips the welcome and offers a clear dismiss, so a
 //     fully-configured app never nags — once every step's isDone() is true there's nothing to show.
 
-export default function Onboarding({ steps = GUIDE_STEPS, resume = false, onDone, onSkip }) {
+export default function Onboarding({ steps: requested = GUIDE_STEPS, resume = false, onDone, onSkip }) {
   const [idx, setIdx] = useState(0);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState(null);
@@ -27,6 +27,24 @@ export default function Onboarding({ steps = GUIDE_STEPS, resume = false, onDone
     setNoAutopop(v);
     try { await api.saveSettings({ onboarding_autopop_disabled: v }); } catch { /* ignore */ }
   };
+
+  // The "what are you here to do?" step writes a plan into settings.setup_plan: which of the remaining
+  // steps this goal actually needs. Honour it — a user who said "just trying it out" should not be
+  // walked through publishing credentials, and one aiming at fifty channels should be.
+  const plan = settings?.setup_plan;
+  const steps = (() => {
+    if (!Array.isArray(plan) || !plan.length) return requested;
+    const need = Object.fromEntries(plan.map((p) => [p.id, p.need]));
+    const keep = requested.filter((s) => need[s.id] !== "skip");
+    // Required first, then optional — without reordering within each group, so the sequence still
+    // reads like the app's own order.
+    return [
+      ...keep.filter((s) => need[s.id] !== "optional"),
+      ...keep.filter((s) => need[s.id] === "optional"),
+    ];
+  })();
+  const optionalIds = new Set((Array.isArray(plan) ? plan : []).filter((p) => p.need === "optional").map((p) => p.id));
+  const planReason = (id) => (Array.isArray(plan) ? plan.find((p) => p.id === id)?.why : "") || "";
 
   // screens: [welcome?] + steps + [done]
   const screens = [
@@ -124,12 +142,22 @@ export default function Onboarding({ steps = GUIDE_STEPS, resume = false, onDone
               {doneIds.has(cur.step.id) && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
             </div>
             {resume && <p className="text-sm text-muted-foreground -mt-2">This still needs setting up.</p>}
+            {planReason(cur.step.id) && (
+              <p className="text-sm text-primary/80 -mt-2">
+                {optionalIds.has(cur.step.id) ? "Optional for your goal — " : ""}{planReason(cur.step.id)}
+              </p>
+            )}
             {settings === null ? (
               <div className="text-sm text-muted-foreground py-8">Loading…</div>
             ) : (
               <cur.step.Body
                 settings={settings}
-                onDone={() => { setDoneIds((d) => new Set(d).add(cur.step.id)); next(); }}
+                onDone={async () => {
+                  setDoneIds((d) => new Set(d).add(cur.step.id));
+                  // The goal step's plan only exists in settings, so pick it up before moving on.
+                  try { setSettings((await api.getSettings()) || {}); } catch { /* keep what we have */ }
+                  next();
+                }}
               />
             )}
             <div className="flex justify-between pt-2 border-t border-border/50">
