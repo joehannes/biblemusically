@@ -354,6 +354,12 @@ export const api = {
     }
   },
 
+  // ============ Insights (pipeline, performance, quotas) ============
+  pipelineOverview: (projectId) => invokeCommand("pipeline_overview", { projectId: projectId || null }),
+  refreshUploadAnalytics: (channelId) => invokeCommand("refresh_upload_analytics", { channelId: channelId || null }),
+  performanceReport: (projectId) => invokeCommand("performance_report", { projectId: projectId || null }),
+  quotaReport: () => invokeCommand("quota_report"),
+
   // ============ Social presence (accounts, profile, derivatives, publishing) ============
   listSocialPlatforms: () => invokeCommand("list_social_platforms"),
   connectSocialAccount: (platform, fields) => invokeCommand("connect_social_account", { platform, fields }),

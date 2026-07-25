@@ -386,6 +386,11 @@ pub fn run() {
             commands::learnings_locations,
             // Data / storage transparency + legacy import
             commands::service_health,
+            // Pipeline overview, performance feedback, quotas
+            commands::pipeline_overview,
+            commands::refresh_upload_analytics,
+            commands::performance_report,
+            commands::quota_report,
             // Social presence: accounts, taste profile, derivatives, co-publishing
             commands::list_social_platforms,
             commands::connect_social_account,

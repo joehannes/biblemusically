@@ -31,6 +31,7 @@ import {
   Activity,
   Database,
   Share2,
+  BarChart3,
   Settings as Cog,
   Palette,
   ChevronLeft,
@@ -211,6 +212,13 @@ const NAV = [
     label: "Jobs Monitor",
     icon: Activity,
     testid: "nav-jobs",
+    group: "system",
+  },
+  {
+    to: "/insights",
+    label: "Insights",
+    icon: BarChart3,
+    testid: "nav-insights",
     group: "system",
   },
   {

@@ -21,6 +21,7 @@ pub mod data;
 pub mod remote_sync;
 pub mod health;
 pub mod social;
+pub mod insights;
 
 pub use settings::*;
 pub use projects::*;
@@ -45,3 +46,4 @@ pub use data::*;
 pub use remote_sync::*;
 pub use health::*;
 pub use social::*;
+pub use insights::*;

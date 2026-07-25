@@ -28,6 +28,7 @@ import Upload from "./pages/Upload";
 import Jobs from "./pages/Jobs";
 import Browser from "./pages/Browser";
 import MacroManager from "./pages/MacroManager";
+import Insights from "./pages/Insights";
 import Social from "./pages/Social";
 import DataSync from "./pages/DataSync";
 import Settings from "./pages/Settings";
@@ -102,6 +103,7 @@ function RootGate() {
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/browser" element={<Browser />} />
             <Route path="/macros" element={<MacroManager />} />
+            <Route path="/insights" element={<Insights />} />
             <Route path="/social" element={<Social />} />
             <Route path="/data" element={<DataSync />} />
         <Route path="/settings" element={<Settings />} />
