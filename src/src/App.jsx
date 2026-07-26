@@ -22,6 +22,7 @@ import PrintOnDemand from "./pages/PrintOnDemand";
 import Clipboard from "./pages/Clipboard";
 import AccessGuides from "./pages/AccessGuides";
 import Team from "./pages/Team";
+import Account from "./pages/Account";
 import BibleSources from "./pages/BibleSources";
 import AIComposer from "./pages/AIComposer";
 import FreeformComposer from "./pages/FreeformComposer";
@@ -111,6 +112,7 @@ function RootGate() {
             <Route path="/clipboard" element={<Clipboard />} />
             <Route path="/access" element={<AccessGuides />} />
             <Route path="/team" element={<Team />} />
+            <Route path="/account" element={<Account />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/characters" element={<Characters />} />
             <Route path="/upload" element={<Upload />} />

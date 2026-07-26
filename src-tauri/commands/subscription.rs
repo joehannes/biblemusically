@@ -427,6 +427,51 @@ pub async fn track_events(state: State<'_, AppState>, payload: EventBatch) -> Re
     r.json::<Value>().await.map_err(|_| "events could not be sent".to_string())
 }
 
+/// The devices this account is signed in on.
+///
+/// Approximate city rather than IP: enough to recognise your own laptop, and an IP address stored on a
+/// server is a liability rather than a feature.
+#[tauri::command]
+pub async fn list_sessions(state: State<'_, AppState>) -> Res<Value> {
+    let settings = settings_of(&state).await;
+    let base = base_of(&settings);
+    let email = current(&state).await
+        .and_then(|p| p["email"].as_str().map(|s| s.to_string()))
+        .ok_or("Not signed in.")?;
+    let r = http()?.post(format!("{base}/v1/sessions"))
+        .json(&json!({ "email": email, "device_id": device_id(&state).await }))
+        .send().await.map_err(e)?;
+    r.json::<Value>().await.map_err(|_| "The device list could not be read.".to_string())
+}
+
+/// Sign a specific device out, by the short id shown in the list.
+#[tauri::command]
+pub async fn end_session(state: State<'_, AppState>, device: String) -> Res<Value> {
+    let settings = settings_of(&state).await;
+    let base = base_of(&settings);
+    let email = current(&state).await
+        .and_then(|p| p["email"].as_str().map(|s| s.to_string()))
+        .ok_or("Not signed in.")?;
+    let r = http()?.post(format!("{base}/v1/sessions"))
+        .json(&json!({ "email": email, "device_id": device_id(&state).await, "end": device }))
+        .send().await.map_err(e)?;
+    r.json::<Value>().await.map_err(|_| "That device could not be signed out.".to_string())
+}
+
+/// Sign every other device out, keeping this one.
+#[tauri::command]
+pub async fn end_other_sessions(state: State<'_, AppState>) -> Res<Value> {
+    let settings = settings_of(&state).await;
+    let base = base_of(&settings);
+    let email = current(&state).await
+        .and_then(|p| p["email"].as_str().map(|s| s.to_string()))
+        .ok_or("Not signed in.")?;
+    let r = http()?.post(format!("{base}/v1/sessions"))
+        .json(&json!({ "email": email, "device_id": device_id(&state).await, "end": "others" }))
+        .send().await.map_err(e)?;
+    r.json::<Value>().await.map_err(|_| "The other devices could not be signed out.".to_string())
+}
+
 /// Called by every gated screen so the interface and the backend can never disagree about what is on.
 #[tauri::command]
 pub async fn subs_can(state: State<'_, AppState>, feature: String) -> Res<Value> {

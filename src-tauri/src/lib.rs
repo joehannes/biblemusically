@@ -739,6 +739,9 @@ pub fn run() {
             commands::subs_can,
             commands::send_report,
             commands::track_events,
+            commands::list_sessions,
+            commands::end_session,
+            commands::end_other_sessions,
             // Updates within a major version; upgrades announced, never applied
             commands::check_update,
             commands::dismiss_upgrade,

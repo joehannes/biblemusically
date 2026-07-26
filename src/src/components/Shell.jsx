@@ -59,7 +59,7 @@ import {
   Folder,
   Globe,
   Wand2,
-  Workflow as WorkflowIcon, Megaphone, Plus, Disc3, BookMarked, Shirt, ClipboardList, KeyRound, Users} from "lucide-react";
+  Workflow as WorkflowIcon, Megaphone, Plus, Disc3, BookMarked, Shirt, ClipboardList, KeyRound, Users, UserCircle} from "lucide-react";
 import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -233,6 +233,13 @@ const NAV = [
     label: "Web Browser",
     icon: Globe,
     testid: "nav-browser",
+    group: "system",
+  },
+  {
+    to: "/account",
+    label: "Account",
+    icon: UserCircle,
+    testid: "nav-account",
     group: "system",
   },
   {
@@ -696,6 +703,8 @@ export default function Shell({ children }) {
   // one being LEFT, not the one arriving — a commit labelled with the destination would be a lie about
   // where the edits came from.
   useEffect(() => { installAutosave(); }, []);
+  // Entitlement refreshed hourly and on refocus; the paywall reads the same store.
+  useEffect(() => { installEntitlement(); }, []);
   useEffect(() => { setAutosaveProject(activeProjectId); }, [activeProjectId]);
   const leavingViewRef = useRef(null);
   useEffect(() => {
