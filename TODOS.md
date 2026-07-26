@@ -5,6 +5,48 @@ follow-up implementation passes since. Each still-open item below also has an in
 `// deprecated???` comment at the referenced location. Fixed items keep their original write-up for
 context, with a `Fixed —` note.
 
+## Open milestones (2026-07-26, requested)
+
+Four tracks requested after v0.76.0. Recorded with the shape each needs; **none are started.**
+
+### D. OS integration + a clipboard tool
+
+| Piece | Shape |
+|---|---|
+| Tray icon with a context menu | Tauri 2 ships `tauri::tray::TrayIconBuilder` and `tauri::menu::Menu` — a tray icon with a native menu needs no plugin. The menu carries the app-level actions (open, current project, what the workflow is doing, pause/resume) plus the clipboard section below. |
+| Clipboard history | `tauri-plugin-clipboard-manager` reads and writes the system clipboard but does **not** notify on change, so history means polling (~500ms) and de-duplicating against the last value. History lives in the JSON store so it survives a restart. |
+| The two-clipboard model (the interesting part) | The user asked for a system clipboard the app *syncs* with, plus a **non-destructive** clipboard that never pops. So: `system` (mirrors the OS, supports pop = "consume the top item") and `vault` (append-only; a "pop" there appends a new entry equal to what the system clipboard *would* look like after the pop). That way every historical item is still visible from the user's point of view, and the visible top item is always the next thing that will paste. Both are one collection with a `kind` field and a monotonic sequence number. |
+| Sequenced copy/paste for macros | The macro player needs to paste several prepared items in order, one immediately after the other. So a `clipboard_queue` command: given N items, it sets the system clipboard to item 1, waits for the paste (the macro's own step), then advances. This is what lets a browser macro fill five fields from prepared values. The queue must be a real cursor in the store, not a JS closure, so a page navigation cannot lose it. |
+| Taskbar menu as a clipboard tool | The tray menu shows the last ~10 items (truncated), each a click-to-copy; plus "clear history", "pop top", and the app actions. Deliberately simple — anything more belongs in the in-app view. |
+
+### E. Autosave as real git commits
+
+| Piece | Shape |
+|---|---|
+| `git add` on focus shift | Every blur of an input, every control change that alters a persistable project field, writes the value into that feature's JSON file under the project repo and runs `git add` on it — staged, not committed. `project_sync.rs` already knows the repo layout, so this is a `stage_path` addition, not new machinery. |
+| Commit on tab change | Leaving a view commits whatever is staged, with a generated message naming the view and the fields touched. This is the autosave the user asked for: it happens *because* you navigated away, which is exactly when a person expects their work to be safe. |
+| Commit on manual save | Same commit path, with an explicit message. |
+| Save-and-push | New entry in the save button's dropdown. Only offered when a remote is configured; uses the existing token-injection path from `remote_sync.rs` (tokens never touch `.git/config`). |
+| Risk to respect | A commit per tab change is a lot of commits. The message must carry the view and the changed fields so the log stays readable, and an autosave with nothing staged must be a no-op rather than an empty commit. |
+
+### F. Move actions into the app menubar, viewport-aware
+
+| Piece | Shape |
+|---|---|
+| Global menubar | Every view's main actions belong in the top bar rather than scattered down the page. `PageActionsContext` already exists in `Shell.jsx` and is the seam: a view registers its actions, the Shell renders them. |
+| Viewport-scoped buttons | An action that only makes sense for one section (the big *Generate* on a specific control) should appear in the bar **only while that section is in the viewport**. An `IntersectionObserver` per registered section, registering/unregistering its action as it enters and leaves. |
+| Care needed | Actions appearing and disappearing as you scroll is jarring if done naively — the bar needs a stable order and a fixed slot count, so a button never jumps sideways when a neighbour appears. |
+
+### G. Project switching without stopping the running workflow
+
+| Piece | Shape |
+|---|---|
+| The actual requirement | Switching the active project must not stall the workflow the previous project is running. It has to continue in the background to completion. |
+| Why it currently would | The workflow orchestrator is client-side (`/workflow` chains the pipeline in the page), so its state dies with the view. Backend jobs survive, but the *sequencing* does not. |
+| Shape | Move the run loop behind the backend: a `workflow_runs` document per project holding the step list, the cursor and the current job id, driven by the same tick that runs the scheduler. The GUI then *observes* a run rather than being it — which is also what makes the run survive a switch, a reload and a crash. |
+| Read from JSON, not the GUI | The user's own requirement, and the right one: a run must read the project's saved JSON fields, never live component state. That makes E (staged/committed JSON per field) a prerequisite for G, so E comes first. |
+| Autosave before switching | Switching projects commits first (E's path), then swaps. Non-negotiable: a switch that loses the last edit is the worst possible bug in a studio app. |
+
 ## Open milestones (2026-07-25, requested)
 
 Three feature tracks requested after v0.73.0. **A is built** (v0.75.0) — its research is written up in
@@ -64,7 +106,23 @@ they need per-line timings, which means the analysis step, not the writer.
 | Ebook assembly | **EPUB 3** is the target format, because it is the one that carries audio: `<audio>` in the content documents plus Media Overlays (SMIL) for read-along. That is what "musical digital content" needs — a PDF cannot do it. Assembly is a zip with a mimetype, container.xml, an OPF manifest and the XHTML pages; no external library required. |
 | Store publishing | New tab connecting the stores that accept EPUB directly: Kobo Writing Life, Draft2Digital (aggregates to Apple/Barnes & Noble/Tolino), Google Play Books, Amazon KDP. **Research:** which have real APIs (Google Play Books has a partner API; KDP does not — it is web-only, so a macro), and per-store pricing rules (KDP's 70% royalty band is $2.99–$9.99; Draft2Digital takes 10%). Pricing advice should come from those rules, not from a guess. |
 
-### C. Printify print-on-demand
+### C. Printify print-on-demand — **done in v0.77.0**
+
+Built: `commands/printify.rs` with request shapes taken from Printify's **OpenAPI specification**, not
+from memory — `POST /v1/uploads/images.json` is account-level (the shop-scoped path 404s with no hint),
+products carry `variants[].price` in **integer cents**, and the print area needs every enabled variant
+listed or it prints blank. Plus `pages/PrintOnDemand.jsx`, settings, and a guided flow.
+
+Findings: Printify caps **publishing at 200 per 30 minutes** (600 req/min globally, 100/min on
+catalogue) — paced here rather than discovered as 429s; print areas are 3000–4000px against generated
+art at 1024–2048, so `print_quality()` reports the DPI a buyer would actually see and refuses to call
+77 DPI acceptable; and the **Pop-Up Store is free** while Etsy charges $0.20 a listing, which a daily
+run turns into a monthly bill.
+
+Still open from C: the scheduler hook (`daily_run` returns what to run but is not yet wired into the
+tick), and mockup images are not pulled back from Printify for review in-app.
+
+### C (original write-up). Printify print-on-demand
 
 | Piece | Shape |
 |---|---|

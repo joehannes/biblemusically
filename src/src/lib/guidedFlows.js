@@ -1013,3 +1013,83 @@ export const novelFlow = {
     },
   ],
 };
+
+// ── Print on demand ─────────────────────────────────────────────────────────
+// The only flow here that can genuinely publish by itself, which is why the last question is about
+// whether it should.
+export const podFlow = {
+  id: "pod",
+  title: "Guided print on demand",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), picked: ctx.picked?.length || 0, made: ctx.made?.length || 0 }),
+  steps: [
+    {
+      id: "shop",
+      title: "Shop",
+      question: "Where do the products go?",
+      help: "Printify's own Pop-Up Store is free and needs no external account — the only storefront where publishing something every day costs nothing. Etsy charges $0.20 a listing, which a daily run turns into a monthly bill.",
+      reveals: "shop",
+      options: (ctx) => [
+        {
+          id: "popup",
+          label: "Printify Pop-Up Store — free",
+          hint: "No external account, no listing fee.",
+          recommended: true,
+          apply: (c) => c.setTab?.("shop"),
+        },
+        {
+          id: "existing",
+          label: `Use a shop I already connected (${ctx.shops?.length || 0})`,
+          hint: "Etsy, TikTok Shop, Shopify — whatever is linked in Printify.",
+          when: (c) => (c.shops?.length || 0) > 0,
+          apply: (c) => c.setTab?.("shop"),
+        },
+        {
+          id: "connect",
+          label: "Connect Printify now",
+          hint: "Needs a Personal Access Token from your Printify profile.",
+          apply: (c) => c.connect?.(),
+        },
+      ],
+    },
+    {
+      id: "products",
+      title: "Products",
+      question: "Which products?",
+      help: "Picked once, on purpose: a daily run should apply wording and art, never choose products. Mugs and posters show every flaw in low-resolution art; fabric hides it.",
+      reveals: "products",
+      options: (ctx) => [
+        {
+          id: "have",
+          label: `Keep the ${ctx.picked?.length || 0} already picked`,
+          hint: "Nothing to decide.",
+          when: (c) => (c.picked?.length || 0) > 0,
+          recommended: (ctx.picked?.length || 0) > 0,
+          apply: () => {},
+        },
+        {
+          id: "apparel",
+          label: "Start with apparel",
+          hint: "Shirts and hoodies — the most forgiving surface for generated art.",
+          apply: (c) => c.setTab?.("products"),
+        },
+        {
+          id: "hard",
+          label: "Mugs and posters",
+          hint: "Higher margin, but they need art at full print resolution.",
+          apply: (c) => c.setTab?.("products"),
+        },
+      ],
+    },
+    {
+      id: "publish",
+      title: "Publish",
+      question: "Should it publish, or leave drafts?",
+      help: "A published product is public and priced. Drafts let you look at the mockups first, which is worth doing once before trusting the run.",
+      reveals: "run",
+      options: () => [
+        { id: "draft", label: "Create drafts", hint: "Review the mockups in Printify, publish there.", recommended: true, apply: (c) => c.setTab?.("make") },
+        { id: "live", label: "Create and publish", hint: "Straight to the storefront. Capped at 200 per 30 minutes by Printify.", apply: (c) => c.setTab?.("make") },
+      ],
+    },
+  ],
+};

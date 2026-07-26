@@ -18,6 +18,7 @@ import Composer from "./pages/Composer";
 import Publicity from "./pages/Publicity";
 import Distribution from "./pages/Distribution";
 import GraphicNovels from "./pages/GraphicNovels";
+import PrintOnDemand from "./pages/PrintOnDemand";
 import BibleSources from "./pages/BibleSources";
 import AIComposer from "./pages/AIComposer";
 import FreeformComposer from "./pages/FreeformComposer";
@@ -103,6 +104,7 @@ function RootGate() {
             <Route path="/publicity" element={<Publicity />} />
             <Route path="/distribution" element={<Distribution />} />
             <Route path="/novels" element={<GraphicNovels />} />
+            <Route path="/print" element={<PrintOnDemand />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/characters" element={<Characters />} />
             <Route path="/upload" element={<Upload />} />

@@ -186,6 +186,16 @@ export const api = {
   buildEpub: (payload) => invokeCommand("build_epub", { payload }),
   listEbookStores: () => invokeCommand("list_ebook_stores"),
   ebookPricing: (payload) => invokeCommand("ebook_pricing", { payload }),
+  // ============ Print on demand (Printify) ============
+  // The one integration here with a real API — shapes taken from its OpenAPI spec.
+  printifyStorefronts: () => invokeCommand("printify_storefronts"),
+  printifyConnect: () => invokeCommand("printify_connect"),
+  printifyCatalog: (payload) => invokeCommand("printify_catalog", { payload }),
+  printifyBlueprintDetail: (blueprintId) => invokeCommand("printify_blueprint_detail", { blueprintId }),
+  printifyPickProducts: (payload) => invokeCommand("printify_pick_products", { payload }),
+  printifySelection: () => invokeCommand("printify_selection"),
+  printifyMakeProducts: (payload) => invokeCommand("printify_make_products", { payload }),
+  listPrintifyProducts: (projectId) => invokeCommand("list_printify_products", { projectId: projectId || null }),
   // ============ AI-authored macros ============
   // Command-line steps (ffmpeg, yt-dlp, imagemagick) on this device or on a remote host.
   listCliRunners: () => invokeCommand("list_cli_runners"),

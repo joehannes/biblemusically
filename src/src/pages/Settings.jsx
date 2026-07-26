@@ -167,6 +167,10 @@ const initialSettings = {
   remote_render_provider: "local",
   remote_cli_provider: "local",
   publicity_auto_author: false,
+  printify_api_token: "",
+  printify_shop_id: "",
+  printify_auto_publish: false,
+  printify_daily_run: false,
   cli_worker_url: "",
   modal_cli_endpoint: "",
   modal_endpoint: "",
@@ -1156,6 +1160,42 @@ const SettingsComponent = () => {
             <span className="text-muted-foreground"> One piece per connected platform, written with the
             real YouTube link already in it. Drafts only — nothing is posted without you, and a batch of
             posts that went out unread is not something an apology fixes.</span>
+          </span>
+        </label>
+      </Card>
+
+      {/* ── Print on demand ───────────────────────────────────────────────── */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Sparkles className="w-4 h-4 text-primary" /><h2 className="font-semibold">Print on demand (Printify)</h2></div>
+        <div className="text-sm text-muted-foreground mb-3">
+          The only integration here with a real publishing API. Create a Personal Access Token in
+          Printify under <b>My Profile → Connections</b>. Its free Pop-Up Store needs no other account,
+          which is the only storefront where publishing something every day costs nothing.
+        </div>
+        <input
+          type="password"
+          value={s.printify_api_token || ""}
+          onChange={(e) => updateS("printify_api_token", e.target.value)}
+          placeholder="Printify Personal Access Token"
+          data-testid="settings-printify-token"
+          className="w-full bg-muted/30 border border-border rounded px-3 py-2 text-sm mb-3"
+        />
+        <label className="flex items-start gap-2 text-sm cursor-pointer mb-2">
+          <input type="checkbox" className="mt-1 accent-primary" checked={!!s.printify_daily_run}
+            onChange={(e) => updateS("printify_daily_run", e.target.checked)} />
+          <span>
+            <b>Apply today's wording and art to the picked products daily.</b>
+            <span className="text-muted-foreground"> Same cadence as the chapter schedule. Products are
+            picked once, so the run makes no product decisions.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" className="mt-1 accent-primary" checked={!!s.printify_auto_publish}
+            onChange={(e) => updateS("printify_auto_publish", e.target.checked)} />
+          <span>
+            <b>Publish them, rather than leaving drafts.</b>
+            <span className="text-muted-foreground"> A published product is public and priced. Printify
+            caps publishing at 200 per 30 minutes; past that they stay drafts until the window clears.</span>
           </span>
         </label>
       </Card>

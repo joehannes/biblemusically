@@ -72,6 +72,18 @@ pub struct Settings {
     pub openai_api_key: String,
     #[serde(default = "default_openai_model")]
     pub openai_model: String,
+    /// Printify Personal Access Token (My Profile → Connections). Its API is real and documented,
+    /// unlike every distributor and ebook store in this app.
+    #[serde(default)]
+    pub printify_api_token: String,
+    #[serde(default)]
+    pub printify_shop_id: String,
+    /// Push new products to the connected storefront. Off by default: a listing is public and priced.
+    #[serde(default)]
+    pub printify_auto_publish: bool,
+    /// Apply today's wording and art to the picked products on a schedule.
+    #[serde(default)]
+    pub printify_daily_run: bool,
     #[serde(default)]
     pub openrouter_api_key: String,
     #[serde(default)]
