@@ -51,16 +51,39 @@ existing paid providers) as the sellable Suno path. Keep the cookie path in the 
 self-automation one. Since FLUX, Leonardo, Ideogram and Recraft cover the same ground, this is low
 priority — but it is no longer forbidden.
 
-### Udio — full songs now, has an API, and is still unusable here
+### Udio — re-researched properly, and the first pass was wrong in a material way
 
-- **The 30-second era is over.** Udio v4 (2026) generates up to **10 minutes** without drift; v1.5 was
-  ~2:10.
-- **There is a developer REST API.**
-- **But: Udio's walled garden blocks export entirely** — no downloadable master file. This app has to
-  download audio to build a video, so that is disqualifying, not inconvenient. **Verify this before
-  spending any time on Udio**; if export has since opened up, it becomes a strong candidate given the
-  10-minute length.
-- Settled with Warner and Universal.
+The first pass said "there is a developer REST API". **That was wrong**, and it matters: the source was an
+aggregator's page selling *its own* API under the name "Udio API".
+
+What a more careful check found:
+
+- **There is no official Udio API.** Udio's own help centre: *"We know there's keen interest, but we don't
+  currently offer a public API."* No waitlist, no announced timeline. One secondary source claims Pro and
+  Enterprise API tiers with Python and Node SDKs — uncorroborated, and contradicted by the more
+  authoritative source. Treat it as false until Udio itself says otherwise.
+- **Song length is genuinely solved.** v4 (2026) reaches ~10 minutes without drift, up from ~2:10 on v1.5.
+  The 30-second era is over.
+- **Downloads are disabled right now, but not by design.** Audio, video and stem downloads are
+  *temporarily* disabled across **all** plans including Pro, during the licensed-platform rollout that
+  followed the **October 2025 Universal Music settlement**. Historically WAV and stems were a
+  subscriber-only feature and worked fine. Occasional short download windows get announced; there is no
+  guaranteed export.
+- **Plans:** Free (100 credits/month), Standard ($10 / 2,400), Pro ($30 / 6,000).
+- **Directional signal, not just a pause:** the UMG settlement is pushing Udio toward a consumer streaming
+  experience rather than an open developer platform. That is the part that should temper optimism.
+
+**Verdict: unusable today, for a different reason than first stated.** Not "a walled garden by
+philosophy" — Udio used to allow WAV and stems and may again. It is unusable because there is *no API at
+all*, and because even the aggregators cannot export what Udio is not currently letting anyone export.
+
+**A suspicion worth carrying:** several "Udio API" vendors describe *"Udio-style music generation"*. That
+phrasing suggests some of them are not Udio at all. Before paying one, generate a track and check whether
+the output is actually Udio's.
+
+**Re-check trigger:** when Udio restores downloads on Pro, or announces a public API. At ~10 minutes per
+track, it would then be the strongest option on this list for whole-book compilations — so it is worth
+watching rather than forgetting.
 
 ---
 
