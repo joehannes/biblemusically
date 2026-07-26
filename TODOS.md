@@ -232,6 +232,60 @@ them expose a sampler name or a CFG number.
 - **Shape** — the aspect ratios the app already uses: 16:9 video frames, 9:16 shorts, 2:3 book pages, 1:1
   panels and covers. Never a free-text pixel size.
 
+#### Destination presets — the *applied* half of the controls
+
+The artistic controls above are the **voice**. This is the **intent**. They are separate because the same
+prompt, at the same aspect ratio, is not the same usable image for two destinations — and the differences
+are hard platform constraints, not taste. A user should pick where it is going, once, and never have to
+remember any of the numbers below.
+
+Each preset sets shape, resolution, composition rules and which workflow runs. The artistic controls then
+layer on top unchanged.
+
+| Destination | Shape & size | The constraint that actually bites |
+|---|---|---|
+| **YouTube video frame** | 16:9, ≥1920×1080 | Composition must survive the pan-and-zoom the video assembler applies — a subject at the very edge gets cropped out mid-move. Leave margin on all four sides. |
+| **YouTube thumbnail** | 16:9, 1280×720 | Must read at **120px wide** in a sidebar. One subject, high contrast, no fine detail. This is a different image from the video frame, not a resized one. |
+| **Shorts / Reels / TikTok** | 9:16, 1080×1920 | Platform UI covers roughly the **top 10% and bottom 20%** — captions, handles, buttons. Everything that matters lives in the middle 70%, and the app already burns a link card into the bottom third, so that band must stay visually quiet. |
+| **Instagram feed** | 1:1 or 4:5 | Cropped to 1:1 in grid view whatever you upload — so compose for the square even when delivering 4:5. |
+| **Ebook page** | 2:3, 1600×2400 | The only destination where fine detail survives, since it is read close up. Keep the inner edge clear for the gutter. |
+| **Panel** | 1:1, 1600×1600 | Read on a phone in a stack; needs a single clear focal point per panel. |
+| **Release cover** (Spotify et al.) | 1:1, **≥3000×3000** | **No text at all** — the stores draw the title themselves, and burnt-in text is a common rejection. Must read as a thumbnail at 64px. |
+| **Printify product art** | Per blueprint, from the catalogue API (typically 3000–4000px) | **Transparent PNG, 300 DPI.** Bold shapes only: DTG printing loses thin lines and light-on-light contrast. The real print-area size per variant is already fetched by `printify_blueprint_detail` — use it rather than a guess, and run `print_quality()` before creating anything. |
+| **Publicity cover** | Per platform, from `platform_spec` | Sized for the platform the piece is written for; the article's subject, not the song's cover. |
+
+Two rules that follow from the table and should be enforced, not documented:
+
+- **A destination that forbids text must not receive text.** The release-cover prompt says "no lettering
+  anywhere" for a reason (`generate_release_cover` already does this). Any workflow that could add text must
+  be unavailable for that destination rather than merely discouraged.
+- **A destination with a print resolution must be checked against it before anything is created.** 1024px
+  into a 4000px print area is 77 DPI — a refund, not a product. `print_quality()` exists; the preset should
+  refuse to proceed rather than reporting it afterwards.
+
+#### Packaged intents — what the user actually picks
+
+One choice that sets destination *and* a sensible voice, because "a shirt" and "a chapter opener" want
+different treatment even at the same aspect ratio. These are the presets to ship:
+
+- **Chapter opener** — YouTube frame, dawn light, serene, subtle symbolism, no faces. The workhorse.
+- **The turn** — YouTube frame, storm light, held breath, vast scale. The suspense preset, and the one that
+  proves tension does not need darkness.
+- **Glory** — YouTube frame, shafts through cloud, awe, overt symbolism. For the passage that earns it.
+- **Thumbnail** — one subject, high contrast, readable at 120px, no scripture text baked in.
+- **Short hook** — 9:16, subject in the middle 70%, bottom third kept quiet for the link card.
+- **Wearable phrase** — Printify, transparent, bold shapes, two colours or fewer, sized to the blueprint.
+  Pairs with the eight-word phrase limit `print_phrase()` already enforces.
+- **Mug / hard surface** — Printify, higher DPI demand than fabric, so it refuses low-resolution art rather
+  than warning about it.
+- **Album cover** — 1:1, ≥3000px, no text, reads at thumbnail size.
+- **Book page** — 2:3, fine detail allowed, gutter margin respected.
+- **Study card** — SD 3.5 or Qwen-Image specifically, because this is the one case where text *inside* the
+  image is the point.
+
+Each preset states in one line what it is for and what it will refuse — a preset that silently drops a
+constraint is worse than no preset, because the user stops checking.
+
 #### The workflows — the half that is worth more than checkpoints
 
 - text-to-image at each of the four aspect ratios above;
