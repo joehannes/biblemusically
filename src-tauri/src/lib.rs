@@ -592,6 +592,9 @@ pub fn run() {
             commands::update_publicity_piece,
             commands::delete_publicity_piece,
             // AI-authored browser macros for platforms with no usable posting API
+            commands::list_cli_runners,
+            commands::remote_exec,
+            commands::build_short,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

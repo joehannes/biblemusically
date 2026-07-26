@@ -137,6 +137,16 @@ async fn remote_repo(state: &AppState, project_id: &str) -> Res<RemoteRepo> {
     })
 }
 
+/// Resolve one local path to a URL a remote host can fetch, using this project's sync remote.
+///
+/// Public so other steps that move work off the device (see commands/shorts.rs) use the same rule
+/// rather than a second, drifting copy of it.
+pub async fn public_url_for(state: &State<'_, AppState>, project_id: &str, path: &str) -> Res<String> {
+    let remote = remote_repo(state, project_id).await?;
+    let folder = crate::project_sync::project_folder(&state.db, project_id).await;
+    public_asset_url(path, folder.as_deref(), &remote)
+}
+
 // ── Job spec ─────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize, Default)]

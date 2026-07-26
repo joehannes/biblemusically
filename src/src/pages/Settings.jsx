@@ -165,6 +165,9 @@ const initialSettings = {
   google_client_secret: "",
   google_redirect_uri: "",
   remote_render_provider: "local",
+  remote_cli_provider: "local",
+  cli_worker_url: "",
+  modal_cli_endpoint: "",
   modal_endpoint: "",
   render_worker_url: "",
   ffmpeg_path: "ffmpeg",
@@ -275,6 +278,8 @@ const SettingsComponent = () => {
   // in one place next to the launchers that implement them.
   const [renderProviders, setRenderProviders] = useState([]);
   // Live model list for the selected paid provider (empty until "List models" is pressed).
+  const [cliRunners, setCliRunners] = useState([]);
+  useEffect(() => { api.listCliRunners().then((r) => setCliRunners(r?.runners || [])).catch(() => {}); }, []);
   const [paidModels, setPaidModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   useEffect(() => { api.listRenderProviders().then((r) => setRenderProviders(r?.providers || [])).catch(() => {}); }, []);
@@ -1136,6 +1141,45 @@ const SettingsComponent = () => {
           Gemini key and every line is cached, so a repeated question costs nothing.
         </div>
         <VoicePicker />
+      </Card>
+
+      {/* ── Remote commands ───────────────────────────────────────────────────
+          Every command-line step (ffmpeg cuts, probes, downloads) can run somewhere other than this
+          device. That is what a phone needs: it carries no ffmpeg, and pulling a video down to cut it
+          and pushing it back would be the whole point thrown away. */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Gauge className="w-4 h-4 text-primary" /><h2 className="font-semibold">Remote commands (ffmpeg and friends)</h2></div>
+        <div className="text-sm text-muted-foreground mb-3">
+          Command-line steps run where you choose. Remote runners receive the tool name, its arguments
+          and URLs for the inputs — never a shell line and never a path on this machine — and send back
+          the exit code plus where the output landed.
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+          {(cliRunners || []).map((r) => (
+            <button key={r.id} onClick={() => updateS("remote_cli_provider", r.id)}
+              className={`text-left rounded-lg border p-2.5 transition-all hover:border-primary/60 ${s.remote_cli_provider === r.id ? "border-primary/60 bg-primary/5" : "border-border"}`}>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium">{r.label}</span>
+                <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{r.cost}</span>
+                {r.mobile === false && <span className="text-[9px] uppercase tracking-wide text-amber-400">desktop only</span>}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{r.detail}</div>
+            </button>
+          ))}
+        </div>
+        {s.remote_cli_provider === "modal" && (
+          <Field k="modal_cli_endpoint" label="Modal command endpoint" placeholder="https://you--bm-render-cli.modal.run"
+            testid="settings-modal-cli" value={s.modal_cli_endpoint} onValueChange={updateS} />
+        )}
+        {s.remote_cli_provider === "http" && (
+          <Field k="cli_worker_url" label="Worker URL" placeholder="https://worker.example.com/cli"
+            testid="settings-cli-worker" value={s.cli_worker_url} onValueChange={updateS} />
+        )}
+        <div className="mt-3 text-xs text-muted-foreground">
+          Deploy both endpoints at once with <code>modal deploy scripts/remote/modal_app.py</code>, or run
+          <code> python3 scripts/remote/cli_worker.py job.json</code> behind any HTTP handler you like.
+          A remote runner needs the project synced (Data &amp; Sync) so it can fetch the media by URL.
+        </div>
       </Card>
 
       {/* ── Remote rendering ─────────────────────────────────────────────────

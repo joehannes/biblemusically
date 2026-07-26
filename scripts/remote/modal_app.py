@@ -29,6 +29,10 @@ image = (
         os.path.join(os.path.dirname(__file__), "render_worker.py"),
         remote_path="/app/render_worker.py",
     )
+    .add_local_file(
+        os.path.join(os.path.dirname(__file__), "cli_worker.py"),
+        remote_path="/app/cli_worker.py",
+    )
 )
 
 app = modal.App("bm-render")
@@ -71,3 +75,40 @@ def submit(job: dict, authorization: str = ""):
         return {"status": "rejected", "error": "bad or missing bearer token"}
     call = render.spawn(job)
     return {"status": "accepted", "call_id": call.object_id, "job_id": job.get("job_id")}
+
+
+# ── Generic command runner ────────────────────────────────────────────────────
+# The render function above is one fixed pipeline. This one runs any allowlisted command-line job the
+# app describes — the primitive a phone needs, since it carries no ffmpeg of its own. The allowlist
+# and the placeholder-only path handling live in cli_worker.py, so this wrapper adds no authority.
+
+
+@app.function(image=image, cpu=2.0, memory=4096, timeout=60 * 60, max_containers=10)
+def run_cli(job: dict) -> dict:
+    """Run one command-line job. Returns the worker's result dict."""
+    with tempfile.TemporaryDirectory() as work:
+        spec = os.path.join(work, "job.json")
+        with open(spec, "w", encoding="utf-8") as fh:
+            json.dump(job, fh)
+        proc = subprocess.run(
+            ["python3", "/app/cli_worker.py", spec],
+            capture_output=True, text=True, cwd=work,
+        )
+        for line in reversed((proc.stdout or "").splitlines()):
+            if line.startswith("BM_CLI_RESULT "):
+                return json.loads(line[len("BM_CLI_RESULT "):])
+        return {
+            "status": "failed",
+            "error": f"worker exited {proc.returncode} without a result",
+            "stderr": (proc.stderr or "")[-1500:],
+        }
+
+
+@app.function(image=image, secrets=[modal.Secret.from_name("bm-render", required_keys=[])])
+@modal.fastapi_endpoint(method="POST", docs=False)
+def cli(job: dict, authorization: str = ""):
+    """HTTP entry point for command jobs. Runs synchronously — callers want the result."""
+    expected = os.environ.get("BM_WORKER_TOKEN", "")
+    if expected and authorization.removeprefix("Bearer ").strip() != expected:
+        return {"status": "rejected", "error": "bad or missing bearer token"}
+    return run_cli.remote(job)

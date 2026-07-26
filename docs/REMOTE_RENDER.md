@@ -140,3 +140,73 @@ BM_KEEP_OUTPUT=1 python3 scripts/remote/render_worker.py job.json    # keep the 
 - [Hugging Face Spaces overview / plan requirements](https://huggingface.co/docs/hub/en/spaces-overview)
 - [YouTube Data API quota system](https://developers.google.com/youtube/v3/getting-started)
 - [YouTube API quota changes and upload costs, 2026](https://www.getphyllo.com/post/youtube-api-limits-how-to-calculate-api-usage-cost-and-fix-exceeded-api-quota)
+
+
+---
+
+## 7. Running individual commands remotely (v0.73.0)
+
+Rendering a whole video is one fixed pipeline. The broader goal — **a phone that runs the studio with
+no local sidecars** — needs the smaller primitive too: any single command-line step (an ffmpeg cut, a
+probe, a download) executed somewhere that has the binary, close to where the media already is.
+
+### The job contract
+
+```json
+{
+  "tool": "ffmpeg",
+  "args": ["-i", "{in:source}", "-vf", "scale=1080:1920", "{out:short}"],
+  "inputs":  { "source": "https://…/video.mp4" },
+  "outputs": { "short": { "name": "short.mp4", "upload": "https://…/put-url" } },
+  "timeout_s": 900
+}
+```
+
+Three properties make this safe to run on a host that has credentials on it:
+
+- **A tool name from an allowlist** (`ffmpeg`, `ffprobe`, `yt-dlp`, `magick`, `convert`, `python3`) —
+  never a path, never a shell line.
+- **Arguments as a list**, so nothing can chain a second command. A semicolon in a filter graph is
+  just a character; there is no shell to interpret it.
+- **Paths only as `{in:name}` / `{out:name}`**, resolved by the worker inside a directory it owns.
+  An output name containing `/` or `..` is refused. Both ends check — `commands/remote_exec.rs` and
+  `scripts/remote/cli_worker.py` — because either could be reached first.
+
+### Where it can run
+
+| Runner | Cost | Mobile | Notes |
+| --- | --- | --- | --- |
+| `local` | free | ✗ | The installed binary. The only option needing no network, and the one a phone cannot use. |
+| `modal` | $30/mo credits, then ~$0.05/core-hour | ✓ | Per-job containers with ffmpeg baked in; nothing bills between jobs. `modal deploy scripts/remote/modal_app.py` exposes both `/submit` (render) and `/cli` (commands). Modal also offers `Sandbox.exec()` for arbitrary commands — not used here, since an allowlisted argv in a plain function is cheaper and needs no gVisor sandbox. |
+| `http` | your hosting | ✓ | Any endpoint running `cli_worker.py`: a $5 VPS, a **Cloudflare Container** (10 ms billing, sleeps to zero, 1 TB egress included, native binaries supported), a **Fly Machine** (~$31/mo always-on, or auto-stop with a cold start), a spare box at home. |
+| `kaggle` | free | ✓ | Goes through the render notebook rather than one-off commands. |
+
+### Why not a single "best" provider
+
+The three remote options fail differently, and the right one depends on what is being optimised:
+
+- **Modal** — cheapest per job at this volume and nothing to keep alive, but a cold container start is
+  seconds and the free credits are a monthly budget rather than a guarantee.
+- **Cloudflare Containers** — the closest fit to "minimal traffic from the client": it runs at the
+  edge, bills in 10 ms slices, sleeps to zero, and includes 1 TB of egress. Best choice when the media
+  already lives in R2.
+- **Fly Machines** — predictable cost and no per-request billing surprises, but always-on pricing
+  unless you accept auto-stop cold starts.
+
+So the app does not pick: `http` accepts any of them by URL, and the job contract is identical.
+
+### What is wired up
+
+- `commands/remote_exec.rs` — validation, the four runners, and `exec_job` for other modules.
+- `scripts/remote/cli_worker.py` — fetch inputs → run → upload outputs → report exit code and a log
+  tail. Stdlib only, so every host runs it unchanged.
+- `commands/shorts.rs` — the first step routed through it: the vertical cut runs locally or remotely
+  from the same argv, and refuses rather than silently falling back to the device the user asked to
+  move work off.
+- Settings → Remote commands.
+
+### Still local
+
+The video/overlay compose path in `jobs.rs` still shells out to ffmpeg directly. Moving it over is
+mechanical now that the contract exists — each call site becomes a `CliJob` — but it is a bigger diff
+than one increment should carry, and every asset it touches has to resolve to a URL first.

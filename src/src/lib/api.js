@@ -158,6 +158,11 @@ export const api = {
   updatePublicityPiece: (id, patch) => invokeCommand("update_publicity_piece", { id, patch }),
   deletePublicityPiece: (id) => invokeCommand("delete_publicity_piece", { id }),
   // ============ AI-authored macros ============
+  // Command-line steps (ffmpeg, yt-dlp, imagemagick) on this device or on a remote host.
+  listCliRunners: () => invokeCommand("list_cli_runners"),
+  remoteExec: (job) => invokeCommand("remote_exec", { job }),
+  // Vertical cut from the hook, with a link card back to the full video.
+  buildShort: (payload) => invokeCommand("build_short", { payload }),
   authorMacro: (payload) => invokeCommand("author_macro", { payload }),
   listAuthoredMacros: () => invokeCommand("list_authored_macros"),
   deleteAuthoredMacro: (id) => invokeCommand("delete_authored_macro", { id }),
