@@ -125,11 +125,24 @@ The owner's instruction, and the right call: their terms may change, and Suno ha
 the section below. Each engine's own features (aspect ratio, style presets, negative prompts, SVG output,
 upscale) reach the GUI through `lib/engineCapabilities.js` — the seam exists, do not invent a second one.
 
-### 4. Aggregator-backed music engines
+### 4. Music engines — the decided order
 
-A `suno_api` engine (aggregator key + base URL) and **ElevenLabs Music** as the licensed option. Keep
-ACE-Step as the default. `music_engine_fallback` already handles one engine being down; make sure a new
-engine registers with it.
+**Owner's decision, 2026-07-26. Not a recommendation to weigh up: this is the order.**
+
+| Rank | Engine | Kind | Notes |
+|---|---|---|---|
+| 1 | **HeartMuLa** | free, open weights | **The default.** Nothing to breach, no account to lose, runs on a free Kaggle GPU. Defaults already moved (v0.88.x). |
+| 2 | **ACE-Step** | free, Apache-2.0 | Right after HeartMuLa. Already integrated. |
+| 3 | *other free engines* | free | Riffusion is the obvious next one — it has a real API, and `scripts/kaggle_riffusion/` scaffolding already exists. Stable Audio Open is worth a look. |
+| — | **ElevenLabs Music** | **PAID** | Fine as a paid option, and it must be **visibly differentiated as paid** in the picker — a badge and a per-track cost, not just another row in a list. Genuine public API, commercial licensing. |
+| ✗ | **Suno** | hidden | Not offered for now. Code stays (see task 2); an official API is reportedly in progress, so this may return. |
+| ✗ | **Udio** | rejected | No public API at all, and downloads disabled platform-wide. See the research section. |
+
+The picker must make the free/paid split obvious at a glance. Somebody who picked a paid engine by accident
+and found out from an invoice has been treated badly.
+
+`music_engine_fallback` already retries on another engine when one is down — any new engine must register
+with it, and the fallback must never silently move somebody from a free engine to a paid one.
 
 ### 5. Mobile: the four things that make it whole
 
@@ -145,11 +158,43 @@ engine registers with it.
   desktop implementation (shell out, unchanged) and a mobile one (`git2`). The NDK C-compilation wiring
   already exists from `ring`.
 
-### 6. ComfyUI on Kaggle — expand the catalogue
+### 6. ComfyUI on Kaggle — more models, more workflows, described in artist language
 
-More preconfigured checkpoints, each described in **artist language**: what it is good at, what it is bad
-at, how long it takes. Selectable in the GUI. The per-model config plumbing exists (v0.51.0); this is
-catalogue work and honest copy, not architecture.
+The owner wants this properly expanded: **more preconfigured image models and more workflow templates**,
+all free and professional quality, all reflected in the GUI as selectable options with human, artsy wording
+that is transparent about what each one can and cannot do.
+
+**Researched starting set (2026-07-26).** All free, all on CivitAI or Hugging Face, all `.safetensors` —
+which is the format to insist on: it loads faster and cannot contain executable code, so a model download
+is never a code download.
+
+| Model | What it is genuinely good at | Watch out for |
+|---|---|---|
+| **FLUX.1 Dev** | Cinematic, high detail, best prompt adherence of the free options. The current default. | Ships UNet, CLIP and VAE as **separate files** — the loader config differs from a single checkpoint |
+| **Juggernaut XL** (SDXL) | Photorealism; portraits and people. The safest first choice. | Less literal about long prompts than FLUX |
+| **Krea 2 RAW / Krea 2 Turbo** | New in 2026, open weights, unusually varied aesthetics. Turbo is the fast one. | Newest, so the least documented |
+| **Pony Diffusion** | Illustration, anime, stylised character work | Style is strong and hard to talk out of |
+| **Stable Diffusion 3.5** | Solid all-rounder, good text rendering for an open model | Heavier than SDXL for the quality gained |
+
+Worth investigating and adding beyond these: **Qwen-Image** (strong at text in images), and SDXL fine-tunes
+aimed at illustration and painterly work, since this app makes a lot of devotional and storybook imagery.
+
+**Workflow templates**, not just checkpoints — the second half of this task and the more valuable one:
+
+- plain text-to-image at each aspect ratio the app uses (16:9 video frames, 2:3 book pages, 1:1 panels
+  and covers, 9:16 shorts);
+- **character-consistent** generation using the existing `appearance_tags`, so a face survives a whole
+  book;
+- upscale and detail passes for the 300-DPI print path, where a 1024 image is currently 77 DPI and a refund;
+- img2img and inpainting for fixing one panel without regenerating a chapter;
+- a **transparent-background** workflow for the Printify art path.
+
+The per-model config plumbing already exists (v0.51.0 checkpoint auto-resolve). This is catalogue work,
+workflow JSON, and honest copy — not architecture.
+
+**The copy is half the job.** "Juggernaut XL" tells an artist nothing. "Photographic, best for faces and
+skin; slower; ignores long instructions" tells them everything. Each entry needs: what it is for, what it
+is bad at, roughly how long it takes on the free GPU, and its aspect-ratio sweet spot.
 
 ### 7. The rest of the subscription surface
 

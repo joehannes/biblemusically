@@ -724,7 +724,7 @@ pub(crate) async fn sample_image(style_prompt: &str, settings: &Value, db: &crat
 /// Generate ONE short music sample for a genre descriptor, using the configured music engine.
 /// Returns the audio URL. Short + lyric-light so it renders fast.
 pub(crate) async fn sample_music(genre: &str, settings: &Value, db: &crate::store::Db, cancelled: &CancelSet) -> Option<String> {
-    let engine = settings["music_engine"].as_str().unwrap_or("suno");
+    let engine = settings["music_engine"].as_str().unwrap_or("heartmula");
     let song = serde_json::json!({
         "styles": genre, "title": "style sample", "lyrics": "[Verse]\nlight and sound\n", "duration": 20.0
     });
@@ -2286,7 +2286,10 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
             // ── MUSIC ──────────────────────────────────────────────────
             "music" => {
                 let song = fetch_doc(db, "songs", "id", tgt).await;
-                let engine = settings_doc.get("music_engine").and_then(|v| v.as_str()).unwrap_or("suno");
+                // HeartMuLa by default: open weights on a free GPU, nothing to breach and no account to lose.
+                // Suno stays in the code and stays hidden — its terms may change, and an official API is
+                // reportedly in progress.
+                let engine = settings_doc.get("music_engine").and_then(|v| v.as_str()).unwrap_or("heartmula");
 
                 // Try the chosen engine, then the configured fallback. The whole pipeline rides on
                 // an unofficial Suno session cookie; when it expires overnight every queued song

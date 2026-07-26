@@ -50,14 +50,14 @@ const ENGINE_PRESETS = [
   {
     id: "free-acestep-flux",
     label: "Free & unattended — ACE-Step + FLUX",
-    music_engine: "acestep", image_engine: "flux",
+    music_engine: "heartmula", image_engine: "flux",
     browserFree: true,
     hint: "The other free pair — ACE-Step for music, FLUX.1 schnell for images. FLUX needs a one-time Hugging Face token (see the FLUX section below).",
   },
   {
     id: "premium-suno-mj",
     label: "Premium — Suno + Midjourney",
-    music_engine: "acestep", image_engine: "flux",
+    music_engine: "heartmula", image_engine: "flux",
     browserFree: false,
     hint: "Best output quality, but Suno has no public API — it's driven by the embedded Browser tab, so expect the app to switch you there during music generation. Midjourney itself runs through a proxy, not the browser.",
   },
