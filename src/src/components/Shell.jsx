@@ -63,6 +63,9 @@ import {
 import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PageActionsContext } from "../lib/pageActions";
+import {
+  installAutosave, setAutosaveProject, setAutosaveView, commitPending,
+} from "../lib/autosave";
 import { subscribePipeline } from "../lib/genPipeline";
 
 // ── Navigation configuration with groups ──
@@ -671,6 +674,26 @@ export default function Shell({ children }) {
   // every pipeline state tick or unrelated route change — so a user who manually navigates
   // elsewhere mid-run isn't fought back to the Browser tab until the pipeline actually needs it
   // to change again.
+  // ── Autosave ───────────────────────────────────────────────────────────────
+  // Values are staged as they lose focus (see lib/autosave.js); the commit happens when the view
+  // changes, because that is the moment a person believes their work is safe. The view committed is the
+  // one being LEFT, not the one arriving — a commit labelled with the destination would be a lie about
+  // where the edits came from.
+  useEffect(() => { installAutosave(); }, []);
+  useEffect(() => { setAutosaveProject(activeProjectId); }, [activeProjectId]);
+  const leavingViewRef = useRef(null);
+  useEffect(() => {
+    const label = (NAV.find((n) => n.to === loc.pathname)?.label) || loc.pathname.replace(/^\//, "") || "dashboard";
+    const previous = leavingViewRef.current;
+    leavingViewRef.current = label;
+    setAutosaveView(label);
+    if (previous && previous !== label) {
+      commitPending("autosave", previous).then((r) => {
+        if (r?.committed) toast.success(`Saved ${previous} — ${r.commit}`, { duration: 2000 });
+      });
+    }
+  }, [loc.pathname]);
+
   const lastNeedsViewRef = useRef(null);
   useEffect(() => subscribePipeline((s) => {
     if (s.needsView === lastNeedsViewRef.current) return;
@@ -793,6 +816,9 @@ export default function Shell({ children }) {
     setSaving(true);
     setSaveOpen(false);
     try {
+      // Commit whatever is staged first, so the tagged version actually contains the last edit rather
+      // than everything up to it.
+      await commitPending("manual", leavingViewRef.current || "app");
       const res = await api.saveProjectVersion(activeProjectId, saveType, opts.branchToCreate || null);
 
       if (res.status === "needs_path") {
@@ -836,6 +862,31 @@ export default function Shell({ children }) {
     } finally {
       setSaving(false);
     }
+  }, [activeProjectId]);
+
+  /// Commit everything pending and push to the project's git remote.
+  ///
+  /// Separate from Save because pushing is a different promise: it puts the work somewhere the user does
+  /// not control. So it is an explicit choice, and it says plainly when no remote is configured instead
+  /// of looking like it worked.
+  const doSaveAndPush = useCallback(async () => {
+    if (!activeProjectId) { toast.error("No active project selected."); return; }
+    setSaving(true);
+    setSaveOpen(false);
+    const t = toast.loading("Committing and pushing…");
+    try {
+      await commitPending("manual", leavingViewRef.current || "app");
+      const res = await api.saveAndPush(activeProjectId, leavingViewRef.current || "app");
+      if (res?.pushed) {
+        toast.success(`Pushed${res.committed ? ` — commit ${res.committed}` : ""}.`, { id: t });
+        setSaveFeedback("saved");
+        setTimeout(() => setSaveFeedback(null), 2000);
+      } else {
+        toast.warning(res?.reason || "Nothing was pushed.", { id: t, duration: 9000 });
+      }
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : (err?.message || "Push failed."), { id: t });
+    } finally { setSaving(false); }
   }, [activeProjectId]);
 
   const handleBranchConfirm = useCallback(async () => {
@@ -1253,6 +1304,19 @@ export default function Shell({ children }) {
                     <div>
                       <div className="font-medium">Save to Google Drive (Full)</div>
                       <div className="text-[11px] text-muted-foreground">Everything incl. media files</div>
+                    </div>
+                  </button>
+                  <div className="h-px bg-border/50 mx-2 my-1" />
+                  <button
+                    onClick={doSaveAndPush}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm hover:bg-accent transition-colors text-left"
+                  >
+                    <GitBranch className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <div className="font-medium">Save &amp; Push</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Commit, then push to this project's git remote
+                      </div>
                     </div>
                   </button>
                   <div className="h-px bg-border/50 mx-2 my-1" />

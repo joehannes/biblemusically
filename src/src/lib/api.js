@@ -196,6 +196,11 @@ export const api = {
   printifySelection: () => invokeCommand("printify_selection"),
   printifyMakeProducts: (payload) => invokeCommand("printify_make_products", { payload }),
   listPrintifyProducts: (projectId) => invokeCommand("list_printify_products", { projectId: projectId || null }),
+  // ============ Autosave: staged on blur, committed on view change ============
+  stageField: (payload) => invokeCommand("stage_field", { payload }),
+  autosaveCommit: (payload) => invokeCommand("autosave_commit", { payload }),
+  autosaveStatus: (projectId) => invokeCommand("autosave_status", { projectId }),
+  saveAndPush: (projectId, view) => invokeCommand("save_and_push", { projectId, view: view || null }),
   // ============ Clipboard: system mirror, append-only vault, paste queue ============
   clipboardSync: () => invokeCommand("clipboard_sync"),
   clipboardHistory: (kind, limit) => invokeCommand("clipboard_history", { kind: kind || null, limit: limit || null }),

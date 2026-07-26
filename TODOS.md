@@ -31,7 +31,24 @@ macro player call at the moment it is about to be used.
 | Sequenced copy/paste for macros | The macro player needs to paste several prepared items in order, one immediately after the other. So a `clipboard_queue` command: given N items, it sets the system clipboard to item 1, waits for the paste (the macro's own step), then advances. This is what lets a browser macro fill five fields from prepared values. The queue must be a real cursor in the store, not a JS closure, so a page navigation cannot lose it. |
 | Taskbar menu as a clipboard tool | The tray menu shows the last ~10 items (truncated), each a click-to-copy; plus "clear history", "pop top", and the app actions. Deliberately simple — anything more belongs in the in-app view. |
 
-### E. Autosave as real git commits
+### E. Autosave as real git commits — **done in v0.79.0**
+
+Built: `commands/autosave.rs` (`stage_field` writes one value into `data/fields/<feature>.json` in the
+project repo and `git add`s just that file; `autosave_commit` commits **the index only** — not `add -A`,
+so an unrelated working-tree change is never swept into someone's autosave; `save_and_push` reuses the
+sync path so there is one place to be right about credentials), `lib/autosave.js` (opt-in via
+`data-autosave="feature:field"`, debounced per field, `focusout` in the capture phase so a component
+that stops propagation cannot silently disable saving), and the Shell lifecycle: the view **being left**
+is the one committed, a project switch commits first, and `visibilitychange` catches the last edit
+before a quit.
+
+An autosave with nothing staged is a no-op rather than an empty commit — otherwise `git log` fills with
+noise and stops being usable for the thing it exists for.
+
+Still open from E: only the Project Brief opts in so far. Every other view needs its persisted controls
+marked with `data-autosave`; the mechanism is done, the annotation is per-view work.
+
+### E (original write-up). Autosave as real git commits
 
 | Piece | Shape |
 |---|---|

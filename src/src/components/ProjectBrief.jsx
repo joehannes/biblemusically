@@ -125,10 +125,12 @@ export default function ProjectBrief({ project, onSaved }) {
                 <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</Label>
                 {rows > 1 ? (
                   <Textarea rows={rows} value={brief[key] || ""} onChange={(e) => set(key, e.target.value)}
-                    placeholder={ph} className="text-sm" data-testid={`brief-${key}`} />
+                    placeholder={ph} className="text-sm" data-testid={`brief-${key}`}
+                    data-autosave={`brief:${key}`} />
                 ) : (
                   <Input value={brief[key] || ""} onChange={(e) => set(key, e.target.value)}
-                    placeholder={ph} className="text-sm" data-testid={`brief-${key}`} />
+                    placeholder={ph} className="text-sm" data-testid={`brief-${key}`}
+                    data-autosave={`brief:${key}`} />
                 )}
               </div>
             ))}
@@ -139,7 +141,8 @@ export default function ProjectBrief({ project, onSaved }) {
               <Sparkles className="w-3 h-3" />Daily topic (today's angle — feeds every generation today)
             </Label>
             <Input value={dailyTopic} onChange={(e) => setDailyTopic(e.target.value)}
-              placeholder="e.g. gratitude in hard seasons; Psalm 23 as shelter" className="text-sm" data-testid="brief-daily-topic" />
+              placeholder="e.g. gratitude in hard seasons; Psalm 23 as shelter" className="text-sm"
+              data-testid="brief-daily-topic" data-autosave="brief:daily_topic" />
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">

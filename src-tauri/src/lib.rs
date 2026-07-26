@@ -664,6 +664,11 @@ pub fn run() {
             commands::clipboard_queue_next,
             commands::clipboard_queue_take,
             commands::clipboard_queue_status,
+            // Autosave: staged on focus shift, committed on view change, pushed on request
+            commands::stage_field,
+            commands::autosave_commit,
+            commands::autosave_status,
+            commands::save_and_push,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

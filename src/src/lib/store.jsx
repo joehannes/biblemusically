@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { api } from "./api";
+import { commitPending } from "./autosave";
 
 const Ctx = createContext(null);
 
@@ -33,6 +34,12 @@ export function StudioProvider({ children }) {
 
   const selectProject = async (id) => {
     const prev = activeProjectId;
+    if (prev && prev !== id) {
+      // Commit before swapping. A switch that loses the last edit is the worst bug a studio app can
+      // have, and the commit is labelled "before switching project" so the log says why it exists.
+      try { await commitPending("switch"); }
+      catch (err) { console.warn("autosave before project switch failed", err); }
+    }
     // persist relevant drafts for previous project
     try {
       if (prev) {
