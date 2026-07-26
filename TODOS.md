@@ -193,10 +193,17 @@ tick), and mockup images are not pulled back from Printify for review in-app.
 | Storefronts | **Research:** Printify's own **Pop-Up Store** is free and needs no external account — the obvious default. Etsy charges $0.20 per listing (so a daily run has a real cost); Shopify is a monthly fee; TikTok Shop and eBay are commission-only. Check current terms before recommending. |
 | Daily run | Same shape as the chapter scheduler: a scheduled sweep applies the day's phrasing/art to the pre-picked products and publishes to the connected store, with the same deliberate stop — nothing goes live without the toggle being on. |
 
-## Open (2026-07-25) — asked for, not yet built
+## Cleared (2026-07-25 requests) — both shipped
 
-Two requests from the same session as the OAuth/i18n fixes. Both are large enough that starting them
-badly would be worse than starting them next, so they are recorded here with the intended shape.
+**This section said "not yet built" long after both items shipped.** Corrected 2026-07-26: a stale
+"open" entry is worse than no entry, because the next session plans around it.
+
+| # | Item | Outcome |
+|---|---|---|
+| 1 | Guided, adaptive workflow layer | **Done**, v0.69.0–v0.81.0. Fourteen flows in `lib/guidedFlows.js` — stateful templates, sections that manifest progressively, traffic-light status, resumable sessions, engine-capability gating, and a speaking/listening assistant. |
+| 2 | Run all rendering and uploading on remote computers | **Done**, v0.68.0–v0.73.0. `commands/remote_render.rs` + `remote_exec.rs`, Kaggle/Actions/Modal/HTTP adapters, and an allowlisted CLI job contract so a phone can produce a short without carrying ffmpeg. See [docs/REMOTE_RENDER.md](docs/REMOTE_RENDER.md). |
+
+### The original write-up, for the reasoning
 
 | # | Item | Shape |
 |---|---|---|
