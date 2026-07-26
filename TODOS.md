@@ -5,6 +5,84 @@ follow-up implementation passes since. Each still-open item below also has an in
 `// deprecated???` comment at the referenced location. Fixed items keep their original write-up for
 context, with a `Fixed —` note.
 
+## Open milestones (2026-07-26, decided) — the commercial pass
+
+Decisions already taken, so a new session does not re-litigate them.
+
+### Removed on purpose: Midjourney. Under review: Suno.
+
+**Midjourney is out.** Every route to it (trueai-org/midjourney-proxy, novicezk/midjourney-proxy,
+imagineapi, midjourney-ui) drives Midjourney's Discord channel with a Discord **user** token. That is
+self-botting, against Discord's terms, and a termination takes the Midjourney subscription with it. Not a
+risk to ship inside a product sold publicly. Defaults moved to FLUX (v0.88.x); the remaining work is
+removing the Playwright path (`packaging/midjourney-generator.js`, the `midjourney` job branch, the
+`mj_*` settings) rather than leaving dead code that looks supported.
+
+**Suno carries the same class of risk** and the same reasoning applies — its terms restrict access to its
+own interface, and the cookie path is outside that. The difference is whose account dies: the user's Suno
+subscription rather than a Discord account. Owner's decision pending. The recommendation on the table:
+keep it, **off by default, opt-in, warned in the UI**, with ACE-Step as the default and a licensed API as
+the premium tier — or remove it for consistency with Midjourney.
+
+Legitimate music alternatives, in order of readiness: **ACE-Step** (Apache-2.0, already integrated),
+**HeartMuLa** (integrated), **Riffusion** (real API now; `scripts/kaggle_riffusion/` scaffolding exists),
+**ElevenLabs Music** (public API, commercial licensing — the strongest paid candidate).
+
+### Paid image engines to add
+
+Researched July 2026.
+
+| Engine | Why | Cost |
+|---|---|---|
+| **Leonardo** — primary | A meta-platform with one API: Flux.2 Pro, Ideogram 3.0, Recraft, Nano Banana Pro, Seedream 4.5 plus its own Lucid/Phoenix. One subscription instead of six accounts. | $12/mo for 8,500 credits ≈ **$0.007/image**; API from a $5 non-expiring credit |
+| **fal.ai** — pay-per-use | No subscription, widest model list, free starter credits | ~$0.06/image Flux Pro, $0.03 Seedream V4 |
+| **Ideogram 3.0** — specialist | Best text *inside* images by a distance | $0.03–0.09 |
+| **Recraft V4** — specialist | #1 for logos, and real SVG output | $0.04 raster / $0.08 vector |
+
+Each engine's own features (aspect ratios, style presets, negative prompts, vector output, upscale)
+should reach the GUI through the existing `engineCapabilities.js` seam rather than a new mechanism.
+
+### ComfyUI on Kaggle — expand it
+
+More preconfigured checkpoints with **artist-readable** descriptions: what each one is actually good at,
+what it is bad at, and what it costs in time. Selectable in the GUI, transparent about ability rather than
+listing model names. The per-model config already exists (v0.51.0 checkpoint auto-resolve); this is
+catalogue work plus honest copy.
+
+### Markdown links on mobile — split screen, with a fallback that admits the limit
+
+Side-by-side beats jumping back and forth, so: try an **iframe split-screen** (lower/upper on portrait,
+left/right on landscape), detect the refusal, and fall back to the system browser with one line of
+explanation. A setting picks the default.
+
+The limit is real and must not be hidden: Google, Kaggle, Meta and GitHub all send `X-Frame-Options:
+DENY`. A blank half-screen with no explanation is worse than a browser jump.
+
+### Logins on mobile — deep links, decided
+
+System browser plus a deep link back, per RFC 8252. This is what makes Kaggle and the social connections
+work on Android. An iframe cannot: those pages refuse framing by design.
+
+### Still open from earlier passes
+
+1. **Gate the export/save call sites.** The highest-value item: `require()` and the entitlement-derived
+   cache key exist, but `save_project_version`, `sync_project_now`, `export_release_package`, `build_epub`
+   and the data export do not call them yet — so the trial restriction is *described* in the terms and not
+   *enforced* in the app. Fix this before anything else.
+2. **Encrypt the project cache** with `cache_key_material()`, which closes the "new trial, re-import"
+   route the whole design rests on.
+3. **Mobile git via `git2`.** One function, `project_sync::git`, already `#[cfg]`-split; 26 call sites all
+   funnel through it. Becomes a typed API (commit/add/status/log/clone/pull/push/checkout_paths) with a
+   desktop and a mobile implementation.
+4. **Android SAF folder picking.**
+5. **Feedback view** with templates and share-to-social; **T&C in the Welcome Guide**; **analytics event
+   wiring**; **Hotjar opt-in**.
+6. **Catalogues at 93%** — to be finished by hand, not by Gemini.
+7. **Android build** — never yet attempted; signed AAB and Play Store submission need the owner's
+   developer account.
+8. **A short link** needs a domain (~$10/yr, free to attach to the Worker). `workers.dev` subdomains are
+   fixed to the account name and cannot be short.
+
 ## Open milestones (2026-07-26, requested)
 
 Four tracks requested after v0.76.0. Recorded with the shape each needs; **none are started.**

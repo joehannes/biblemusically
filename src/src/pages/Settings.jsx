@@ -57,7 +57,7 @@ const ENGINE_PRESETS = [
   {
     id: "premium-suno-mj",
     label: "Premium — Suno + Midjourney",
-    music_engine: "suno", image_engine: "midjourney",
+    music_engine: "acestep", image_engine: "flux",
     browserFree: false,
     hint: "Best output quality, but Suno has no public API — it's driven by the embedded Browser tab, so expect the app to switch you there during music generation. Midjourney itself runs through a proxy, not the browser.",
   },
@@ -129,7 +129,7 @@ const initialSettings = {
   ai_timeout_s: "",
   gemini_api_key: "",
   gemini_model: "gemini-3.5-flash",
-  image_engine: "midjourney",
+  image_engine: "flux",
   flux_api_url: "",
   flux_api_key: "",
   comfyui_api_url: "",
@@ -1042,7 +1042,7 @@ const SettingsComponent = () => {
         <div className="flex items-center gap-2 mb-4"><Img className="w-4 h-4 text-primary" /><h2 className="font-semibold">Image engine</h2></div>
         <div className="space-y-1 max-w-sm">
           <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Which backend generates images</Label>
-          <Select value={s.image_engine || "midjourney"} onValueChange={(val) => updateS({ image_engine: val })}>
+          <Select value={s.image_engine || "flux"} onValueChange={(val) => updateS({ image_engine: val })}>
             <SelectTrigger className="w-full" data-testid="settings-image-engine"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="midjourney">Midjourney (browser automation)</SelectItem>

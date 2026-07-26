@@ -1348,7 +1348,11 @@ async fn gen_images(
     db: &crate::store::Db,
     cancelled: &CancelSet,
 ) -> Option<Vec<String>> {
-    match settings.get("image_engine").and_then(|v| v.as_str()).unwrap_or("midjourney") {
+    // FLUX by default, not Midjourney. Midjourney has no official API, and every route to it drives a
+    // Discord account with a user token — self-botting, against Discord's terms, and a terminated account
+    // takes the Midjourney subscription with it. That is not a risk to ship inside something sold
+    // publicly, so the default is an engine with a real API and no terms to breach.
+    match settings.get("image_engine").and_then(|v| v.as_str()).unwrap_or("flux") {
         "comfyui" => real_comfy(prompt, ref_image, settings, job_id, db, cancelled).await,
         "flux" => real_flux(prompt, settings, job_id, db, cancelled).await,
         _ => real_mj(prompt, settings, job_id, db, cancelled).await,
