@@ -1,0 +1,4 @@
+# The Cloudflare token and the signing key never belong in the repo.
+.env
+.secrets
+*.key

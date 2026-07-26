@@ -1,6 +1,6 @@
     [package]
 name = "ai-music-video-studio"
-version = "0.87.0"
+version = "0.88.0"
 edition = "2021"
 
 [lib]
@@ -73,6 +73,7 @@ url = "2"
 open = "3"
 urlencoding = "2"
 tar = "0.4.40"
+ed25519-dalek = { version = "2", default-features = false, features = ["alloc"] }
 
 # Native file/message dialogs. No Android backend exists, and mobile has its own dialog plugin,
 # so this is desktop-only — an unconditional dependency is a hard failure on the Android target.

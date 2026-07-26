@@ -1,0 +1,202 @@
+# Build every platform and attach the results to a GitHub release.
+#
+#   git tag v0.88.0 && git push origin v0.88.0
+#
+# The release is created as a **draft** and the app's update endpoint ignores drafts, so a half-finished
+# matrix can never be offered to anybody as an update. Publish it by hand once the assets you care about
+# are there.
+#
+# TWO THINGS TO KNOW BEFORE RELYING ON THIS:
+#
+# 1. macOS and iOS need macOS runners, and on a private repository GitHub bills macOS minutes at **10×**.
+#    A 12-minute macOS build spends 120 minutes of a 2,000-minute monthly allowance. Two platforms, a few
+#    releases a month, and the allowance is gone. If that bites, build the Apple targets locally and
+#    upload them to the same release with `gh release upload`.
+#
+# 2. **An unsigned iOS build cannot be installed on a stock iPhone.** Apple requires a signature; there is
+#    no "allow unknown sources" on iOS. The honest routes are TestFlight (Apple Developer Program, a
+#    review, then it installs like any app) or AltStore/SideStore, where the user signs the IPA with their
+#    own Apple ID — free accounts must re-sign every 7 days, paid ones last a year. This workflow produces
+#    the unsigned IPA; docs/INSTALL.md explains both routes plainly rather than implying it just works.
+#    Android has no such problem: an APK plus one system toggle is genuinely enough.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (existing or new)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Made first and separately so every platform job attaches to the same release rather than racing to
+  # create it — which is how you end up with five releases for one tag.
+  draft:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - name: Create or reuse the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.pick.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "reusing $TAG"
+          else
+            # The notes become what the app shows in its update prompt, so they are worth writing.
+            gh release create "$TAG" --draft --title "$TAG" \
+              --notes "Studio Lightkid $TAG
+
+          Installing: see docs/INSTALL.md. Android needs one system toggle; iOS needs TestFlight or
+          AltStore, because Apple does not allow unsigned installs."
+          fi
+
+  desktop:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux
+          - os: macos-latest
+            name: macos
+          - os: windows-latest
+            name: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Ubuntu 22.04 rather than latest: Tauri 2 links against webkit2gtk-4.1, and the app pins
+      # webkit2gtk/javascriptcore to the exact versions wry itself pins. A newer runner drifts off that.
+      - name: Linux build dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+                                  patchelf libssl-dev build-essential curl wget file
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ matrix.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build the app
+        run: npx tauri build
+        env:
+          # Unsigned on macOS: signing needs a Developer ID certificate, which is a paid account and a
+          # secret this workflow deliberately does not assume exists. Users will see Gatekeeper's warning
+          # and need right-click → Open once; docs/INSTALL.md says so.
+          CI: true
+
+      - name: Collect the artefacts
+        shell: bash
+        run: |
+          mkdir -p out
+          # Copy whatever this platform actually produced rather than guessing at paths per OS.
+          find src-tauri/target/release/bundle -type f \
+            \( -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' -o -name '*.dmg' \
+               -o -name '*.msi' -o -name '*.exe' \) -exec cp {} out/ \; 2>/dev/null || true
+          ls -la out/
+
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.draft.outputs.tag }}" out/* --clobber
+
+  android:
+    needs: draft
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: actions/setup-java@v4
+        # JDK 17: AGP rejects 21+ outright, and the system default on most images is newer.
+        with: { distribution: temurin, java-version: "17" }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-linux-android,armv7-linux-androideabi" }
+      - uses: android-actions/setup-android@v3
+
+      - name: NDK
+        run: |
+          sdkmanager --install "ndk;29.0.13846066" "platforms;android-36" "build-tools;36.0.0"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13846066" >> "$GITHUB_ENV"
+
+      - run: npm ci
+      - run: npm run build
+
+      # ring compiles C under rustls, and the NDK only ships API-versioned clang wrappers while cc-rs
+      # looks for an unversioned name. Without these the build fails on a missing compiler that is
+      # actually present under a different name.
+      - name: Build the APK
+        run: |
+          TOOLS="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$TOOLS/aarch64-linux-android24-clang"
+          export AR_aarch64_linux_android="$TOOLS/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLS/aarch64-linux-android24-clang"
+          npx tauri android build --apk --target aarch64 || npx tauri android build --apk
+
+      - name: Attach the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Unsigned, or signed with a debug key — either way it installs after one system toggle, and
+          # docs/INSTALL.md explains that toggle.
+          find src-tauri/gen/android -name '*.apk' -print
+          find src-tauri/gen/android -name '*.apk' -exec \
+            gh release upload "${{ needs.draft.outputs.tag }}" {} --clobber \;
+
+  ios:
+    needs: draft
+    runs-on: macos-latest
+    # Allowed to fail without failing the release: an unsigned iOS build is the least reliable job here,
+    # and it must not stop the four platforms that install without ceremony.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-apple-ios" }
+      - run: npm ci
+      - run: npm run build
+
+      - name: Build an unsigned IPA
+        run: |
+          npx tauri ios init --ci || true
+          # No signing identity in CI, so this produces an unsigned archive. It cannot be installed on a
+          # stock device as-is — see the note at the top of this file and docs/INSTALL.md.
+          npx tauri ios build --export-method debugging || \
+          xcodebuild -workspace src-tauri/gen/apple/*.xcodeproj/project.xcworkspace \
+            -scheme "*" -configuration Release -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO archive || true
+
+      - name: Attach whatever built
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find src-tauri/gen/apple -name '*.ipa' -o -name '*.xcarchive' | head -5
+          find src-tauri/gen/apple -name '*.ipa' -exec \
+            gh release upload "${{ needs.draft.outputs.tag }}" {} --clobber \; || \
+            echo "No IPA produced — expected without a signing identity."

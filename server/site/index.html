@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio Lightkid — scripture, set to music</title>
+<meta name="description" content="Turn scripture into finished music videos, ebooks and products. Seven days free.">
+<!--
+  The public face: what it is, what it costs, and a download that works.
+
+  Why this is a page and not the app: the app's whole backend is native — the filesystem, ffmpeg, git, a
+  local encrypted store, an embedded browser for the sites that have no API. A web build would be the
+  interface with nothing behind it, which is worse than no web build at all. So this page does the two
+  things a website genuinely does better: explain, and hand over the installer.
+
+  Served from the same Worker as the API, so there is no second deployment to keep in step and the
+  download endpoint is same-origin.
+-->
+<style>
+  :root { --bg:#0d1017; --panel:#151a23; --line:#242b38; --text:#e8eaef; --dim:#98a1b0; --accent:#8ad4ff; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#fbfcfe; --panel:#fff; --line:#e4e8ee; --text:#141821; --dim:#5f6875; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:16px/1.65 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height:1.15; margin:0 0 12px; letter-spacing:-0.02em; }
+  h2 { font-size: 15px; text-transform:uppercase; letter-spacing:.09em; color:var(--dim);
+       margin: 40px 0 14px; }
+  p { margin: 0 0 14px; }
+  .lead { font-size: 18px; color: var(--dim); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px;
+          margin-bottom:14px; }
+  .plans { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .plan { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .plan b { display:block; font-size:24px; letter-spacing:-.02em; }
+  .plan span { color:var(--dim); font-size:13px; }
+  button, .btn { font:inherit; cursor:pointer; border:1px solid transparent; border-radius:8px;
+                 padding:10px 16px; background:var(--accent); color:#05121b; font-weight:650;
+                 text-decoration:none; display:inline-block; }
+  button.ghost { background:transparent; border-color:var(--line); color:var(--text); font-weight:500; }
+  code { font-family:ui-monospace,Menlo,monospace; background:rgba(138,212,255,.12); padding:1px 6px;
+         border-radius:4px; font-size:.9em; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  ul { margin:0 0 14px; padding-left:20px; }
+  li { margin-bottom:6px; }
+  .dim { color:var(--dim); }
+  .small { font-size:13px; }
+  footer { border-top:1px solid var(--line); margin-top:50px; padding-top:18px; color:var(--dim);
+           font-size:13px; }
+  a { color: var(--accent); }
+  #otp { font-family:ui-monospace,monospace; font-size:22px; letter-spacing:.06em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Scripture, set to music — and finished.</h1>
+  <p class="lead">
+    Studio Lightkid turns a chapter of text into a song, a video, a short, an illustrated ebook and a
+    printed product. It drives the AI services you already pay for, with your own keys, on your own
+    machine.
+  </p>
+
+  <div class="card">
+    <h2 style="margin-top:0">Seven days free, no card</h2>
+    <p>The trial is the whole application. Two things wait for a subscription: exporting your projects,
+      and saving copies out of the app. Everything you make during the trial is kept safe inside it, and
+      subscribing unlocks it where it already is — nothing to redo.</p>
+    <div class="row">
+      <button id="get">Get the download link</button>
+      <a class="btn ghost" href="#what">What it actually does</a>
+    </div>
+    <div id="dl" style="display:none;margin-top:16px"></div>
+  </div>
+
+  <h2 id="pricing">What it costs</h2>
+  <div class="plans" id="plans"><p class="dim small">Loading…</p></div>
+  <p class="small dim">Paid through Lemon Squeezy, who are the merchant of record — they handle tax
+    wherever you are, and the receipt comes from them. A <b>lifetime</b> licence covers the major version
+    you bought and every update to it; a future major version is a separate purchase, and your licence
+    never stops working when one appears.</p>
+
+  <h2 id="what">What it actually does</h2>
+  <ul>
+    <li>Writes lyrics from a chapter, in any language, in a style you pick or one it learns from you.</li>
+    <li>Generates the music — Suno through your own session, or ACE-Step and HeartMuLa on a free GPU.</li>
+    <li>Analyses the audio, generates an image per section, assembles the video, and uploads it.</li>
+    <li>Cuts a vertical short with a card pointing back at the full video — over a minute, because
+      TikTok pays nothing below that.</li>
+    <li>Writes the publicity for each platform in that platform's own register, with its own cover art.</li>
+    <li>Joins a whole book of chapters into one long compilation with chapter markers.</li>
+    <li>Makes an illustrated, poetic edition as an EPUB that <em>plays the song</em> — the only ebook
+      format that can.</li>
+    <li>Puts phrases and art on real products through Printify, and publishes them.</li>
+    <li>Runs the heavy work on somebody else's computer, so a phone can do all of it.</li>
+  </ul>
+
+  <h2>Guided, and it talks</h2>
+  <p>Every screen has a guide that asks a few questions with sensible answers already chosen, and reveals
+    only the part that matters now. It reads the questions aloud and takes spoken answers, in whichever of
+    sixteen built-in languages you use — or one you type in yourself.</p>
+
+  <h2>Honest about the parts that are awkward</h2>
+  <ul>
+    <li><b>The builds are unsigned.</b> Windows and macOS will warn you. Check the SHA-256 on the release
+      page — with an unsigned build that is the only thing that really tells you it is the right file.</li>
+    <li><b>iOS cannot be sideloaded like Android.</b> Apple requires a signature; there is no
+      "allow unknown sources". TestFlight or AltStore, both explained in the install notes.</li>
+    <li><b>Suno has no official API.</b> The app uses your own signed-in session. It expires from time to
+      time and needs re-capturing, and it can break when Suno changes their site — so there is an
+      automatic fallback for exactly that.</li>
+    <li><b>Free AI tiers run out.</b> OpenRouter allows fifty requests a day for a whole account. The app
+      budgets against that rather than discovering it at midnight.</li>
+  </ul>
+
+  <h2>Your work and your data</h2>
+  <p>Projects, media and API keys stay on your machine and in remotes you configure. What reaches the
+    server is your account, your entitlement, anonymous usage counters, and anything you type into a bug
+    report. Not your lyrics, not your songs, not your files. During the trial the anonymous measurement is
+    part of the deal; once you are paying it is off unless you turn it on.</p>
+
+  <footer>
+    <div class="row">
+      <a href="/terms">Terms &amp; privacy</a>
+      <a href="mailto:johannes.neugschwentner@gmail.com">johannes.neugschwentner@gmail.com</a>
+    </div>
+    <p style="margin-top:10px">© 2026 Johannes Neugschwentner. Proprietary software; what you make with it
+      is yours.</p>
+  </footer>
+</div>
+
+<script>
+// Prices come from the same config the app and the admin page read, so a change in one place is a change
+// everywhere.
+fetch("/v1/pricing").then((r) => r.json()).then((p) => {
+  const order = ["monthly", "quarterly", "annual", "lifetime"];
+  const el = document.getElementById("plans");
+  el.innerHTML = order.filter((k) => p.plans?.[k]).map((k) => {
+    const plan = p.plans[k];
+    const per = plan.months > 1 ? ` · ${(plan.cents / plan.months / 100).toFixed(2)}/mo` : "";
+    return `<div class="plan"><b>${(plan.cents / 100).toFixed(2)} <span style="font-size:14px">${p.currency}</span></b>
+      <span>${plan.label}${per}</span></div>`;
+  }).join("");
+}).catch(() => {
+  document.getElementById("plans").innerHTML = '<p class="dim small">Prices are unavailable right now.</p>';
+});
+
+// The download code is granted without asking anything. Making somebody sign up before they can even see
+// whether the thing runs on their machine is a way to lose people who would have paid.
+document.getElementById("get").onclick = async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  btn.textContent = "Preparing…";
+  try {
+    const r = await fetch("/v1/download/otp", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    }).then((x) => x.json());
+    const box = document.getElementById("dl");
+    const platforms = (r.platforms || []);
+    const label = { linux: "Linux (.deb)", "linux-appimage": "Linux (AppImage)", "linux-rpm": "Linux (.rpm)",
+                    windows: "Windows", macos: "macOS", android: "Android (.apk)", ios: "iOS (.ipa)" };
+    box.style.display = "block";
+    box.innerHTML = platforms.length ? `
+      <p class="small">Your code is <span id="otp">${r.code}</span> — good for fifteen minutes, one use.</p>
+      <div class="row">${platforms.map((p) =>
+        `<a class="btn" href="/v1/download?code=${r.code}&platform=${p}">${label[p] || p}</a>`).join("")}</div>
+      <p class="small dim" style="margin-top:10px">Version ${r.version}. Install notes are in the
+        release; on Android you will need to allow installs from your browser once, and iOS needs
+        TestFlight or AltStore because Apple does not permit unsigned installs.</p>`
+      : `<p class="small">A code is ready (<span id="otp">${r.code}</span>) but no build has been published
+         yet. Try again shortly.</p>`;
+  } catch {
+    document.getElementById("dl").style.display = "block";
+    document.getElementById("dl").innerHTML =
+      '<p class="small">That did not work. Write to me and I will send it directly.</p>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Get the download link";
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio Lightkid — admin</title>
+<!--
+  Deliberately one file, no build step, no framework.
+
+  This page exists so its owner can answer a question or fix somebody's account at 2am. A dependency
+  that needs installing, or a build that needs running, is a thing standing between a broken customer
+  and the fix. Vanilla JS against the Worker's own /admin/api/* means the page can never be out of date
+  with the server it is served from.
+
+  The admin token is held in sessionStorage only — closing the tab forgets it. It is never in the URL,
+  because URLs end up in history, screenshots and support chats.
+-->
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e8ec; --dim: #9aa1ad;
+    --accent: #7dd3fc; --good: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f7f8fa; --panel: #fff; --line: #e3e6eb; --text: #16181d; --dim: #6b7280; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex;
+           gap: 12px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .02em; }
+  main { padding: 18px; max-width: 1180px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 14px; margin-bottom: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim);
+             margin: 0 0 10px; font-weight: 600; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, textarea, button {
+    font: inherit; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px;
+  }
+  button { cursor: pointer; background: #222835; }
+  button.primary { background: var(--accent); color: #06121a; border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--dim); font-weight: 600; padding: 6px 8px;
+       border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+  .tile { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .tile b { display: block; font-size: 22px; font-weight: 650; }
+  .tile span { color: var(--dim); font-size: 12px; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
+  .trial { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .active, .lifetime { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+  .expired { color: var(--dim); }
+  .blocked { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+  .bars { display: flex; gap: 3px; align-items: flex-end; height: 54px; }
+  .bars div { flex: 1; background: var(--accent); opacity: .75; border-radius: 2px 2px 0 0; min-height: 2px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .dim { color: var(--dim); }
+  nav button.on { background: var(--accent); color: #06121a; font-weight: 600; }
+  .hint { color: var(--dim); font-size: 12px; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Studio Lightkid — admin</h1>
+  <nav class="row" id="nav"></nav>
+  <span style="flex:1"></span>
+  <input id="token" type="password" placeholder="admin token" style="width:220px">
+  <button id="connect" class="primary">Connect</button>
+</header>
+
+<main>
+  <div id="gate" class="card">
+    <h2>Sign in</h2>
+    <p class="hint">Paste the admin token. It is kept for this tab only — closing the tab forgets it, and
+      it never goes in the URL, because URLs end up in screenshots and support chats.</p>
+  </div>
+  <div id="view"></div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let TOKEN = sessionStorage.getItem("slk_admin") || "";
+let TAB = "overview";
+let DATA = {};
+
+async function api(route, body) {
+  const r = await fetch(`/admin/api/${route}`, {
+    method: body ? "POST" : "GET",
+    headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const j = await r.json().catch(() => ({ ok: false, error: "unreadable answer" }));
+  if (!j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+const when = (iso) => iso ? new Date(iso).toLocaleDateString() : "—";
+
+const TABS = [
+  ["overview", "Overview"],
+  ["users", "Users"],
+  ["funnel", "Funnel"],
+  ["reports", "Reports"],
+  ["pricing", "Pricing"],
+  ["gifts", "Gifts"],
+  ["terms", "Terms"],
+];
+
+function renderNav() {
+  $("#nav").innerHTML = TABS.map(([id, label]) =>
+    `<button data-tab="${id}" class="${TAB === id ? "on" : ""}">${label}</button>`).join("");
+  $("#nav").querySelectorAll("button").forEach((b) =>
+    b.onclick = () => { TAB = b.dataset.tab; renderNav(); render(); });
+}
+
+async function connect() {
+  TOKEN = $("#token").value.trim() || TOKEN;
+  if (!TOKEN) return;
+  sessionStorage.setItem("slk_admin", TOKEN);
+  try {
+    DATA.overview = await api("overview");
+    DATA.config = (await api("config")).config;
+    $("#gate").style.display = "none";
+    renderNav();
+    render();
+  } catch (e) {
+    $("#gate").innerHTML = `<h2>Sign in</h2><p style="color:var(--bad)">${esc(e.message)}</p>`;
+  }
+}
+
+async function render() {
+  const v = $("#view");
+  if (TAB === "overview") {
+    const t = DATA.overview.totals;
+    // The signup → subscribe funnel, from the day counters. Shown as a rate rather than two numbers
+    // because the rate is the thing that either moves or does not.
+    const sum = (name) => (DATA.overview.days || []).reduce((a, d) => a + (d.counters[name] || 0), 0);
+    const signups = sum("signup"), subs = sum("subscription_active");
+    v.innerHTML = `
+      <div class="card"><h2>Right now</h2><div class="tiles">
+        <div class="tile"><b>${t.trial}</b><span>on trial</span></div>
+        <div class="tile"><b>${t.active}</b><span>subscribed</span></div>
+        <div class="tile"><b>${t.lifetime}</b><span>bought for life</span></div>
+        <div class="tile"><b>${t.expired}</b><span>lapsed</span></div>
+        <div class="tile"><b>${t.blocked}</b><span>blocked</span></div>
+        <div class="tile"><b>${signups ? Math.round(100 * subs / signups) : 0}%</b>
+          <span>signup → paid (30d)</span></div>
+      </div>
+      <p class="hint">${signups} signups and ${subs} subscriptions in the last 30 days. A lapsed trial is
+        not a lost customer — the app keeps their work in its cache, so they can come back to it.</p>
+      </div>
+      <div class="card"><h2>Last 30 days</h2>
+        ${bars(DATA.overview.days, "signup")}
+        <p class="hint">Signups per day. Hover a bar for the date.</p>
+      </div>`;
+  }
+
+  if (TAB === "users") {
+    const rows = (DATA.overview.users || []).map((u) => `
+      <tr>
+        <td class="mono">${esc(u.email)}</td>
+        <td>${esc(u.username || "")}</td>
+        <td><span class="pill ${u.status}">${u.status}</span></td>
+        <td>${esc(u.plan || "")}</td>
+        <td>${when(u.trial_ends)}</td>
+        <td>${when(u.period_ends)}</td>
+        <td>${u.devices}</td>
+        <td class="row">
+          <button data-act="grant" data-email="${esc(u.email)}">+1 month</button>
+          <button data-act="life" data-email="${esc(u.email)}">for life</button>
+          <button data-act="trial" data-email="${esc(u.email)}">+7d trial</button>
+          <button data-act="block" data-email="${esc(u.email)}">${u.status === "blocked" ? "unblock" : "block"}</button>
+        </td>
+      </tr>`).join("");
+    v.innerHTML = `<div class="card"><h2>Everyone</h2>
+      <table><thead><tr><th>email</th><th>username</th><th>state</th><th>plan</th>
+      <th>trial ends</th><th>paid to</th><th>devices</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="8" class="dim">Nobody yet.</td></tr>'}</tbody></table>
+      <p class="hint">"For life" covers the current major version — a later one is a new purchase, and the
+        app says so rather than quietly withdrawing anything.</p></div>`;
+
+    v.querySelectorAll("button[data-act]").forEach((b) => b.onclick = async () => {
+      const email = b.dataset.email;
+      const patch = { email };
+      if (b.dataset.act === "grant") patch.grant_months = 1;
+      if (b.dataset.act === "life") patch.grant_lifetime = true;
+      if (b.dataset.act === "trial") patch.extend_trial_days = 7;
+      if (b.dataset.act === "block") {
+        const u = DATA.overview.users.find((x) => x.email === email);
+        patch.blocked = u.status !== "blocked";
+      }
+      b.disabled = true;
+      try { await api("user", patch); DATA.overview = await api("overview"); render(); }
+      catch (e) { alert(e.message); b.disabled = false; }
+    });
+  }
+
+  if (TAB === "funnel") {
+    if (!DATA.sessions) DATA.sessions = (await api("sessions")).sessions;
+    // The last thing before someone stopped is the interesting column — that is the answer to "where do
+    // people decide", and it is why the path is stored in order.
+    const rows = DATA.sessions.map((s) => `
+      <tr>
+        <td>${when(s.at)}</td>
+        <td><span class="pill ${s.status || "trial"}">${esc(s.status || "?")}</span></td>
+        <td class="mono">${esc(s.version || "")} ${esc(s.platform || "")}</td>
+        <td class="mono dim">${esc((s.path || []).slice(-6).join(" → "))}</td>
+        <td>${(s.path || []).length}</td>
+      </tr>`).join("");
+    v.innerHTML = `<div class="card"><h2>What people did</h2>
+      <table><thead><tr><th>when</th><th>state</th><th>build</th>
+      <th>last steps before they stopped</th><th>steps</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" class="dim">No sessions yet.</td></tr>'}</tbody></table>
+      <p class="hint">Batched to one write per session, so this stays inside the free tier however many
+        people arrive. First-party — nothing is sent to a third party unless a user opts into session
+        recording as well.</p></div>`;
+  }
+
+  if (TAB === "reports") {
+    if (!DATA.reports) DATA.reports = (await api("reports")).reports;
+    const rows = DATA.reports.map((r) => `
+      <tr>
+        <td>${when(r.created_at)}</td>
+        <td><span class="pill">${esc(r.kind)}</span></td>
+        <td>${esc(r.title || r.message?.slice(0, 80) || "")}</td>
+        <td>${r.count > 1 ? `×${r.count}` : ""}</td>
+        <td class="mono">${esc(r.version)}</td>
+        <td class="mono dim">${esc(r.email || "")}</td>
+      </tr>`).join("");
+    v.innerHTML = `<div class="card"><h2>Bugs and feedback</h2>
+      <table><thead><tr><th>when</th><th>kind</th><th>what</th><th>seen</th><th>build</th><th>who</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" class="dim">Nothing reported.</td></tr>'}</tbody></table>
+      <p class="hint">Repeat crashes are counted rather than re-filed — twenty copies of one stack trace
+        buries the report that matters.</p></div>`;
+  }
+
+  if (TAB === "pricing") {
+    const c = DATA.config;
+    const plan = (id, p) => `
+      <tr><td>${esc(p.label)}</td>
+        <td><input data-plan="${id}" data-field="cents" value="${p.cents}" style="width:90px"> cents</td>
+        <td class="dim">${(p.cents / 100).toFixed(2)} ${esc(c.currency)}</td>
+        <td class="dim">${esc(p.interval)}</td></tr>`;
+    v.innerHTML = `<div class="card"><h2>What it costs</h2>
+      <table><thead><tr><th>plan</th><th>price</th><th></th><th>billing</th></tr></thead>
+      <tbody>${Object.entries(c.plans).map(([id, p]) => plan(id, p)).join("")}</tbody></table>
+      <div class="row" style="margin-top:10px">
+        <label>trial days <input id="cfg-trial" value="${c.trial_days}" style="width:60px"></label>
+        <label>current major <input id="cfg-major" value="${c.lifetime_major}" style="width:60px"></label>
+        <label>currency <input id="cfg-cur" value="${esc(c.currency)}" style="width:70px"></label>
+        <label>Hotjar site id <input id="cfg-hotjar" value="${esc(c.hotjar_site_id)}" style="width:120px"></label>
+        <label><input id="cfg-open" type="checkbox" ${c.signups_open ? "checked" : ""}> signups open</label>
+        <button id="save-cfg" class="primary">Save</button>
+      </div>
+      <p class="hint">Prices are in cents because a float price is a rounding bug waiting for a customer
+        to find it. Raising "current major" means existing lifetime licences cover the previous version —
+        they keep working, and the app tells those users plainly rather than just locking them out.</p>
+      </div>`;
+    $("#save-cfg").onclick = async () => {
+      const plans = { ...c.plans };
+      v.querySelectorAll("input[data-plan]").forEach((i) => {
+        plans[i.dataset.plan] = { ...plans[i.dataset.plan], cents: Number(i.value) || 0 };
+      });
+      await api("config", {
+        plans, currency: $("#cfg-cur").value.trim() || "USD",
+        trial_days: Number($("#cfg-trial").value) || 7,
+        lifetime_major: Number($("#cfg-major").value) || 1,
+        hotjar_site_id: $("#cfg-hotjar").value.trim(),
+        signups_open: $("#cfg-open").checked,
+      });
+      DATA.config = (await api("config")).config;
+      render();
+    };
+  }
+
+  if (TAB === "gifts") {
+    if (!DATA.gifts) DATA.gifts = (await api("gifts")).gifts;
+    const rows = DATA.gifts.map((g) => `
+      <tr><td class="mono">${esc(g.code)}</td><td>${esc(g.plan)}</td>
+      <td>${esc(g.note || "")}</td>
+      <td>${g.redeemed_by ? esc(g.redeemed_by) : '<span class="dim">unclaimed</span>'}</td>
+      <td>${when(g.created_at)}</td></tr>`).join("");
+    v.innerHTML = `<div class="card"><h2>Gift codes</h2>
+      <div class="row" style="margin-bottom:10px">
+        <select id="gift-plan">${Object.entries(DATA.config.plans)
+          .map(([id, p]) => `<option value="${id}">${esc(p.label)}</option>`).join("")}</select>
+        <input id="gift-note" placeholder="who it is for, or why" style="flex:1;min-width:12rem">
+        <button id="make-gift" class="primary">Make one</button>
+      </div>
+      <table><thead><tr><th>code</th><th>plan</th><th>note</th><th>claimed by</th><th>made</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" class="dim">None yet.</td></tr>'}</tbody></table>
+      <p class="hint">Codes avoid I, O, 0 and 1 — they get typed by hand and misread otherwise. A gift on
+        top of a paid month extends it rather than replacing it.</p></div>`;
+    $("#make-gift").onclick = async () => {
+      const r = await api("gift", { plan: $("#gift-plan").value, note: $("#gift-note").value });
+      DATA.gifts = null;
+      alert(`Code: ${r.licence.code}`);
+      render();
+    };
+  }
+
+  if (TAB === "terms") {
+    const t = await fetch("/v1/terms").then((r) => r.json());
+    v.innerHTML = `<div class="card"><h2>Terms shown in the app</h2>
+      <textarea id="terms" style="width:100%;height:420px" class="mono">${esc(t.markdown || "")}</textarea>
+      <div class="row" style="margin-top:8px"><button id="save-terms" class="primary">Save</button></div>
+      <p class="hint">The app fetches this and renders it in the Welcome Guide. Editing here changes what
+        every user sees on next launch — which also means a correction reaches them without a release.</p>
+      </div>`;
+    $("#save-terms").onclick = async () => {
+      await api("terms", { markdown: $("#terms").value });
+      alert("Saved.");
+    };
+  }
+}
+
+function bars(days, name) {
+  const series = [...(days || [])].reverse();
+  const max = Math.max(1, ...series.map((d) => d.counters[name] || 0));
+  return `<div class="bars">${series.map((d) =>
+    `<div title="${d.day}: ${d.counters[name] || 0}" style="height:${Math.round(100 * (d.counters[name] || 0) / max)}%"></div>`
+  ).join("")}</div>`;
+}
+
+$("#connect").onclick = connect;
+$("#token").onkeydown = (e) => { if (e.key === "Enter") connect(); };
+if (TOKEN) { $("#token").value = TOKEN; connect(); }
+</script>
+</body>
+</html>
