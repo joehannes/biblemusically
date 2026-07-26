@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import YouTubeStepBody from "./guideYouTube";
 import VoicePicker from "../components/VoicePicker";
-import { UI_LANGUAGES, setUiLanguage, getUiLanguage, isBundledLanguage } from "./uiTranslate";
+import {
+  UI_LANGUAGES, setUiLanguage, getUiLanguage, isBundledLanguage,
+  customLanguages, addCustomLanguage,
+} from "./uiTranslate";
 import { openLoginUrl } from "./openLogin";
 import { useNavigate } from "react-router-dom";
 
@@ -328,11 +331,14 @@ function FilesStepBody({ settings, onDone }) {
 }
 
 // ── Step: interface language ─────────────────────────────────────────────────
-// First, because everything after it is easier to read in your own language. The four bundled
-// catalogues switch instantly and offline; the rest are translated once by the AI and cached.
+// First, because everything after it is easier to read in your own language. Every listed language
+// ships a catalogue and switches instantly and offline; a language you type yourself is translated
+// once by the AI and cached.
 function LanguageStepBody({ onDone }) {
   const [current, setCurrent] = useState(getUiLanguage());
   const [busy, setBusy] = useState("");
+  const [custom, setCustom] = useState(() => customLanguages());
+  const [typed, setTyped] = useState("");
 
   const pick = async (code) => {
     setBusy(code);
@@ -345,15 +351,23 @@ function LanguageStepBody({ onDone }) {
     } finally { setBusy(""); }
   };
 
+  const addOwn = async () => {
+    const r = addCustomLanguage(typed);
+    if (!r.ok) { toast.error(r.error); return; }
+    setTyped("");
+    setCustom(customLanguages());
+    await pick(r.code);
+  };
+
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground text-sm">
-        Pick the language you want the app in. German, Spanish, Portuguese and Russian ship with the app,
-        so they switch instantly and work offline. Any other language is translated once by your AI
-        provider and then cached.
+        Pick the language you want the app in. All of these ship with the app, so they switch instantly
+        and work offline. If yours isn't here, type it below — the AI translates the interface into it
+        once and then remembers it.
       </p>
       <div className="grid sm:grid-cols-3 gap-2">
-        {UI_LANGUAGES.map((l) => (
+        {[...UI_LANGUAGES, ...custom].map((l) => (
           <button key={l.code} onClick={() => pick(l.code)} disabled={busy === l.code}
             className={`text-left rounded-lg border p-2.5 transition-all hover:border-primary/60 ${current === l.code ? "border-primary/60 bg-primary/5" : "border-border"}`}>
             <div className="text-sm font-medium flex items-center gap-1.5">
@@ -366,6 +380,23 @@ function LanguageStepBody({ onDone }) {
             </div>
           </button>
         ))}
+      </div>
+      {/* Sixteen languages is not every language, and the missing ones are the ones nobody ships. */}
+      <div className="rounded-lg border border-border p-2.5 space-y-1.5">
+        <div className="text-xs font-medium">Your own language</div>
+        <div className="flex gap-2">
+          <input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addOwn(); }}
+            placeholder="Name any language — e.g. Tagalog, Swiss German, Afrikaans"
+            className="flex-1 bg-muted/30 border border-border rounded px-2 py-1.5 text-sm"
+          />
+          <Button variant="secondary" onClick={addOwn} disabled={!!busy || typed.trim().length < 2}>Translate</Button>
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          Needs an AI provider (the next step) and takes a minute the first time.
+        </div>
       </div>
       <Button onClick={() => onDone?.()}>Continue</Button>
     </div>

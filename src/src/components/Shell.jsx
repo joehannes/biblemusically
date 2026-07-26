@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
-import { UI_LANGUAGES, getUiLanguage, setUiLanguage, subscribeLanguage, initUiLanguage, isBundledLanguage } from "../lib/uiTranslate";
+import {
+  UI_LANGUAGES, getUiLanguage, setUiLanguage, subscribeLanguage, initUiLanguage, isBundledLanguage,
+  allLanguages, customLanguages, addCustomLanguage, removeCustomLanguage,
+} from "../lib/uiTranslate";
 import { useRequireGuideStep } from "./GuideStepDialog";
 import ToursFab from "./Tours";
 import HealthBanner from "./HealthBanner";
@@ -56,7 +59,7 @@ import {
   Folder,
   Globe,
   Wand2,
-  Workflow as WorkflowIcon, Megaphone} from "lucide-react";
+  Workflow as WorkflowIcon, Megaphone, Plus} from "lucide-react";
 import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PageActionsContext } from "../lib/pageActions";
@@ -391,6 +394,8 @@ function LanguageFab() {
   const [open, setOpen] = useState(false);
   const [lang, setLang] = useState(getUiLanguage());
   const [busy, setBusy] = useState(false);
+  const [custom, setCustom] = useState(() => customLanguages());
+  const [typed, setTyped] = useState("");
   const ref = useRef(null);
 
   useEffect(() => subscribeLanguage(setLang), []);
@@ -431,7 +436,21 @@ function LanguageFab() {
     } finally { setBusy(false); }
   };
 
-  const cur = UI_LANGUAGES.find((l) => l.code === lang) || UI_LANGUAGES[0];
+  const cur = allLanguages().find((l) => l.code === lang) || UI_LANGUAGES[0];
+  const addOwn = async () => {
+    const r = addCustomLanguage(typed);
+    if (!r.ok) { toast.error(r.error); return; }
+    setTyped("");
+    setCustom(customLanguages());
+    if (r.existing === "bundled") toast.message("That one already ships with the app — switching to it.");
+    await pick(r.code);
+  };
+  const drop = (l) => (e) => {
+    e.stopPropagation();
+    removeCustomLanguage(l.code);
+    setCustom(customLanguages());
+    if (l.code === lang) pick("en");
+  };
   return (
     <div className="relative" ref={ref} data-no-i18n>
       <button
@@ -450,25 +469,55 @@ function LanguageFab() {
           <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1.5 pb-1 flex items-center gap-1.5">
             <Languages className="w-3 h-3" /> Interface language
           </div>
-          {UI_LANGUAGES.map((l) => (
+          {[...UI_LANGUAGES, ...custom].map((l) => (
             <button
               key={l.code}
               onClick={() => pick(l.code)}
               className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-muted/50 flex items-center justify-between gap-2 ${l.code === lang ? "text-primary font-medium" : ""}`}
             >
-              <span>{l.native}</span>
-              <span className="flex items-center gap-1.5">
+              <span className="truncate">{l.native}</span>
+              <span className="flex items-center gap-1.5 shrink-0">
                 {/* Built-in means the catalog ships with the app: instant, offline, no AI request. */}
                 {isBundledLanguage(l.code) && l.code !== lang && (
                   <span className="text-[9px] uppercase tracking-wide text-muted-foreground">built-in</span>
+                )}
+                {l.custom && (
+                  <>
+                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">yours</span>
+                    <span onClick={drop(l)} title="Forget this language" className="hover:text-destructive">
+                      <X className="w-3 h-3" />
+                    </span>
+                  </>
                 )}
                 {l.code === lang && <Check className="w-3.5 h-3.5" />}
               </span>
             </button>
           ))}
+          {/* Sixteen languages is not every language. Type any name and the AI translates into it. */}
+          <div className="border-t border-border/50 mt-1 pt-1.5 px-1.5">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground pb-1">Your language</div>
+            <div className="flex gap-1">
+              <input
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addOwn(); }}
+                placeholder="e.g. Tagalog, Swiss German"
+                className="flex-1 min-w-0 bg-muted/30 border border-border rounded px-2 py-1 text-xs"
+              />
+              <button
+                onClick={addOwn}
+                disabled={busy || typed.trim().length < 2}
+                className="px-2 py-1 rounded bg-primary/20 text-primary text-xs disabled:opacity-40"
+                title="Translate the interface into this language"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
           <div className="text-[10px] text-muted-foreground px-1.5 pt-1.5 leading-snug border-t border-border/50 mt-1">
-            "Built-in" languages ship with the app — instant and offline. The rest are translated once by
-            your AI provider and cached. Your own content (lyrics, titles, text you typed) is left untouched.
+            The listed languages ship with the app — instant and offline. A language you add is translated
+            by your AI provider once and then cached. Your own content (lyrics, titles, text you typed) is
+            left untouched.
           </div>
         </div>
       )}

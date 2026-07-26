@@ -3,7 +3,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mayTranslate, baselineOriginal } from "../src/src/lib/uiTranslateRules.js";
+import {
+  mayTranslate,
+  baselineOriginal,
+  languageSlug,
+} from "../src/src/lib/uiTranslateRules.js";
 
 const INVENTORY = new Set(JSON.parse(readFileSync(new URL("../src/src/i18n/ui-strings.json", import.meta.url), "utf8")).strings);
 
@@ -66,4 +70,33 @@ test("a node React reused for DIFFERENT text is re-baselined — this is the fli
   node.nodeValue = "Saved";                      // React hands the same node new content
   assert.equal(baselineOriginal(node), "Saved", "the new text is the baseline now");
   assert.equal(node.__i18nApplied, undefined, "the stale translation must never be re-applied");
+});
+
+// ── Custom languages the user types in ───────────────────────────────────────
+
+test("names that differ only in case or spacing are ONE language, not three bills", () => {
+  const a = languageSlug("Swiss German");
+  assert.equal(a, "swiss-german");
+  assert.equal(languageSlug("  swiss   german  "), a);
+  assert.equal(languageSlug("SWISS GERMAN"), a);
+});
+
+test("a name with no letters or digits produces no code, so it can be rejected", () => {
+  assert.equal(languageSlug("   "), "");
+  assert.equal(languageSlug("!!! ???"), "");
+  assert.equal(languageSlug(null), "");
+});
+
+test("non-Latin names still yield a usable key rather than an empty one", () => {
+  // Someone naming their language in its own script must not end up with `x-`, which would collide
+  // with every other such name. The label they typed is what reaches the AI either way.
+  const slug = languageSlug("Português (Brasil) 2");
+  assert.equal(slug, "portugu-s-brasil-2");
+  assert.ok(!slug.endsWith("-"), "never ends in a separator");
+});
+
+test("a long name is truncated without leaving a trailing separator", () => {
+  const slug = languageSlug("Ancient Koine Greek as spoken in Alexandria");
+  assert.ok(slug.length <= 24, `got ${slug.length}`);
+  assert.ok(!slug.endsWith("-"), `trailing dash in ${slug}`);
 });

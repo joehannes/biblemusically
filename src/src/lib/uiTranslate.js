@@ -1,6 +1,6 @@
 import { api } from "./api";
 import INVENTORY from "../i18n/ui-strings.json";
-import { mayTranslate as mayTranslateRule, baselineOriginal } from "./uiTranslateRules";
+import { mayTranslate as mayTranslateRule, baselineOriginal, languageSlug } from "./uiTranslateRules";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Runtime GUI translation.
@@ -14,12 +14,13 @@ import { mayTranslate as mayTranslateRule, baselineOriginal } from "./uiTranslat
 // strings extracted from the source by scripts/extract-ui-strings.mjs. That list is the difference
 // between a translator and a money pit:
 //
-//   • Spanish, German, Portuguese and Russian ship as full catalogs (src/i18n/<code>.json) keyed by
-//     those strings, so switching is instant and costs no AI call at all — including the panels that
-//     only render on demand (tours, guides, dialogs), which used to stay English because nothing had
-//     ever translated them before they appeared.
-//   • For any other language the whole inventory is translated ONCE in background batches and cached,
-//     so later-appearing panels are already covered instead of waiting ~20s on the AI mid-click.
+//   • every language in the picker ships as a full catalog (src/i18n/<code>.json) keyed by those
+//     strings, so switching is instant, offline, and costs no AI call at all — including the panels
+//     that only render on demand (tours, guides, dialogs), which used to stay English because nothing
+//     had ever translated them before they appeared.
+//   • a language the user types in themselves has no catalog, so its whole inventory is translated
+//     ONCE in background batches and cached — later-appearing panels are already covered instead of
+//     waiting ~20s on the AI mid-click.
 //   • Runtime data is never sent: counts, timestamps, model ids, filenames, song text. Those strings
 //     are unbounded — every new value would be a new AI request. This is what previously turned a
 //     10-minute session into hundreds of translate calls and burned a day's free credits.
@@ -53,15 +54,77 @@ export const UI_LANGUAGES = [
   { code: "zh", label: "Chinese", native: "中文" },
 ];
 
-// Languages with a committed catalog. Loaded on demand so only the chosen one is fetched.
+// Every language in the picker ships a committed catalog, so picking one costs no AI requests and
+// works with no key and no connection. Loaded on demand — only the chosen one is ever fetched, which
+// is why sixteen catalogs cost nothing at startup.
 const BUNDLED = {
   de: () => import("../i18n/de.json"),
   es: () => import("../i18n/es.json"),
   pt: () => import("../i18n/pt.json"),
   ru: () => import("../i18n/ru.json"),
+  fr: () => import("../i18n/fr.json"),
+  it: () => import("../i18n/it.json"),
+  nl: () => import("../i18n/nl.json"),
+  pl: () => import("../i18n/pl.json"),
+  he: () => import("../i18n/he.json"),
+  ar: () => import("../i18n/ar.json"),
+  hi: () => import("../i18n/hi.json"),
+  id: () => import("../i18n/id.json"),
+  ja: () => import("../i18n/ja.json"),
+  ko: () => import("../i18n/ko.json"),
+  zh: () => import("../i18n/zh.json"),
 };
 export const BUNDLED_LANGUAGES = Object.keys(BUNDLED);
 export const isBundledLanguage = (code) => Object.prototype.hasOwnProperty.call(BUNDLED, code);
+
+// ── Languages the user adds ──────────────────────────────────────────────────
+// Sixteen languages is not "every language", and the ones missing are exactly the ones least likely
+// to be shipped by anybody: a regional variety, a minority language, the language someone actually
+// prays in. So the picker takes a name typed by hand and the AI translates into it on demand. Codes
+// are BCP-47 private-use (`x-…`) so they can never collide with a real code we later bundle.
+const CUSTOM_KEY = "studio:ui-languages-custom";
+
+export function customLanguages() {
+  try {
+    const list = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "[]");
+    return Array.isArray(list) ? list.filter((l) => l?.code && l?.label) : [];
+  } catch { return []; }
+}
+
+/** All languages the picker offers: the bundled ones, then anything the user added. */
+export const allLanguages = () => [...UI_LANGUAGES, ...customLanguages()];
+export const isCustomLanguage = (code) => typeof code === "string" && code.startsWith("x-");
+
+/**
+ * Remember a language the user typed. The name is passed to the AI verbatim, so "Swiss German",
+ * "Tagalog", "Brazilian Portuguese, informal" and "Koine Greek" all work — the model is asked for a
+ * language by name, not by code.
+ */
+export function addCustomLanguage(name) {
+  const label = String(name || "").trim().slice(0, 60);
+  if (label.length < 2) return { ok: false, error: "Type the name of the language." };
+  const s = languageSlug(label);
+  if (!s) return { ok: false, error: "That name has no letters in it." };
+  const code = `x-${s}`;
+  if (UI_LANGUAGES.some((l) => l.label.toLowerCase() === label.toLowerCase() || l.native.toLowerCase() === label.toLowerCase())) {
+    const built = UI_LANGUAGES.find((l) => l.label.toLowerCase() === label.toLowerCase() || l.native.toLowerCase() === label.toLowerCase());
+    return { ok: true, code: built.code, existing: "bundled" };   // already shipped — use the real one
+  }
+  const list = customLanguages();
+  if (!list.some((l) => l.code === code)) {
+    list.push({ code, label, native: label, custom: true });
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch { /* quota — fine */ }
+  }
+  return { ok: true, code };
+}
+
+export function removeCustomLanguage(code) {
+  const list = customLanguages().filter((l) => l.code !== code);
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+  try { localStorage.removeItem(cacheKey(code)); } catch { /* ignore */ }
+  langState.delete(code);
+  return list;
+}
 
 const LANG_KEY = "studio:ui-language";
 const cacheKey = (code) => `studio:ui-i18n:${code}`;
@@ -394,7 +457,7 @@ function stopObserver() {
 
 /** Switch the interface language. `en` restores the original text and stops translating. */
 export async function setUiLanguage(code) {
-  const lang = UI_LANGUAGES.find((l) => l.code === code) || UI_LANGUAGES[0];
+  const lang = allLanguages().find((l) => l.code === code) || UI_LANGUAGES[0];
   current = lang.code;
   try { localStorage.setItem(LANG_KEY, lang.code); } catch { /* ignore */ }
   emit();
@@ -462,6 +525,7 @@ export function uiTranslationStatus(code = current) {
   return {
     code,
     bundled: isBundledLanguage(code),
+    custom: isCustomLanguage(code),
     inventory: KNOWN.size,
     known: st ? Object.keys(st.catalog).length : 0,
     aiRequests: st?.batches || 0,

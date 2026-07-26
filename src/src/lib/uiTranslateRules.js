@@ -44,3 +44,21 @@ export function baselineOriginal(node) {
   }
   return node.__i18nOriginal;
 }
+
+/**
+ * Turn a language name typed by a person into a stable code.
+ *
+ * Custom languages are keyed by `x-<slug>` — BCP-47 private use — so a name the user invents can
+ * never collide with a real code that later ships a catalogue, and so "Swiss German", "swiss german"
+ * and " Swiss  German " are one language rather than three separate translation bills.
+ *
+ * Returns "" when the name has nothing to key on; the caller rejects it rather than storing `x-`.
+ */
+export function languageSlug(name) {
+  return String(name || "")
+    .trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24)
+    .replace(/-+$/, "");        // a name truncated mid-separator must not end in a dash
+}
