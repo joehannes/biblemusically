@@ -9,7 +9,19 @@ context, with a `Fixed —` note.
 
 Four tracks requested after v0.76.0. Recorded with the shape each needs; **none are started.**
 
-### D. OS integration + a clipboard tool
+### D. OS integration + a clipboard tool — **done in v0.78.0**
+
+Built: `commands/clipboard.rs` (cross-platform: system mirror with a real pop, append-only vault whose
+"pop" appends the simulated post-pop state, store-backed paste queue with an atomic take-and-advance),
+`tray.rs` (desktop-only tray icon + menu, rebuilt on every change because Tauri 2 hands the OS a static
+menu with no lazy-populate hook), `pages/Clipboard.jsx`, and a `paste-queue` macro step.
+
+Mobile: the clipboard, vault and queue all work there — the plugin covers Android and iOS. What mobile
+does not get is the tray (no taskbar) and the 700ms poll (polling from an app the OS suspends is
+unreliable and costs battery); there the history records on `clipboard_sync`, which the view and the
+macro player call at the moment it is about to be used.
+
+### D (original write-up). OS integration + a clipboard tool
 
 | Piece | Shape |
 |---|---|

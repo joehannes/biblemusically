@@ -14,6 +14,9 @@ import {
   sunoSubmitScript, sunoEngineSelectScript, sunoScrapeResultScript, midjourneyScrapeJobsScript,
   youtubeListChannelsScript, engineHealthScript,
 } from "./browserSites";
+// The paste queue lives in the backend store, not here: a cursor in a JS closure is lost the moment
+// the embedded webview navigates, which is exactly when a multi-step macro is mid-run.
+import { api } from "./api";
 
 const MACROS_KEY = "studio:webview-macros";
 const CLIPBOARD_KEY = "studio:webview-clipboard";
@@ -565,6 +568,7 @@ export function describeStep(s) {
     case "contextmenu": return `right-click ${label}${list}`;
     case "paste": return `paste into ${label}`;
     case "paste-clipboard": return `paste app clipboard into ${label || "focused field"}`;
+    case "paste-queue": return `paste the next queued value into ${label || "focused field"}`;
     case "connector": {
       const c = CONNECTORS.find((x) => x.id === s.connector);
       return `connector → ${c ? c.label : s.connector || "unbound"} into ${label || "focused field"}`;
@@ -895,12 +899,21 @@ export async function playMacro(steps, opts, io) {
     // bound connector action. Both replay through the regular paste mechanics.
     let execStep = step;
     let execOpts = opts;
-    if (step.type === "paste-clipboard" || step.type === "connector") {
+    if (step.type === "paste-clipboard" || step.type === "paste-queue" || step.type === "connector") {
       let text = "";
       try {
-        text = step.type === "paste-clipboard"
-          ? (opts?.pasteText != null ? opts.pasteText : getVirtualClipboard())
-          : await resolveConnector(step.connector, step.binding);
+        // paste-queue takes the next PREPARED value from the backend queue. One call takes and
+        // advances, so two macros racing cannot paste the same value twice — and the cursor lives in
+        // the store, so a navigation mid-macro cannot lose its place.
+        if (step.type === "paste-queue") {
+          const taken = await api.clipboardQueueTake();
+          if (taken?.done) throw new Error("the paste queue is empty — load values before playing this macro");
+          text = taken?.text || "";
+        } else if (step.type === "paste-clipboard") {
+          text = opts?.pasteText != null ? opts.pasteText : getVirtualClipboard();
+        } else {
+          text = await resolveConnector(step.connector, step.binding);
+        }
       } catch (e) {
         results.push({ i, type: step.type, ok: false, reason: "connector failed: " + e });
         if (opts?.stopOnFailure) break;

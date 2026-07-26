@@ -32,7 +32,7 @@ fn bson_to_value(doc: Document) -> Value {
 // ────────────────────────────────────────────────────────────────
 
 /// The step types the macro player actually understands (see lib/macroRecorder.js).
-const STEP_TYPES: &[&str] = &["nav", "click", "contextmenu", "paste", "paste-clipboard", "fill", "enter", "wait", "download", "action", "connector"];
+const STEP_TYPES: &[&str] = &["nav", "click", "contextmenu", "paste", "paste-clipboard", "paste-queue", "fill", "enter", "wait", "download", "action", "connector"];
 
 /// Validate and clean one proposed step. `None` drops it.
 ///

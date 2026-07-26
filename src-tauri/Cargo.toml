@@ -1,6 +1,6 @@
     [package]
 name = "ai-music-video-studio"
-version = "0.77.0"
+version = "0.78.0"
 edition = "2021"
 
 [lib]
@@ -11,10 +11,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri            = { version = "2", features = ["devtools", "unstable"] }
+# tray-icon: the OS taskbar icon and its native context menu (Tauri 2 gates it behind a feature).
+tauri            = { version = "2", features = ["devtools", "unstable", "tray-icon", "image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Reading and writing the OS clipboard. It does not notify on change, so history means polling.
+tauri-plugin-clipboard-manager = "2"
 
 serde            = { version = "1", features = ["derive"] }
 serde_json       = "1"

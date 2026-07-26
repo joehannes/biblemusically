@@ -5,6 +5,12 @@ pub mod commands;
 #[path = "../epub.rs"]
 pub mod epub;
 
+// Desktop only: Android and iOS have no taskbar. The clipboard machinery it exposes is
+// cross-platform and lives in commands/clipboard.rs.
+#[cfg(desktop)]
+#[path = "../tray.rs"]
+pub mod tray;
+
 #[path = "../helpers.rs"]
 pub mod helpers;
 #[path = "../jobs.rs"]
@@ -39,6 +45,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             use tauri::Manager;
             let handle = app.handle();
@@ -361,6 +368,18 @@ pub fn run() {
                     .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
                     .blocking_show();
             }
+            // The OS taskbar icon and its clipboard menu. Desktop only — a phone has no tray, and the
+            // same actions are in the app's own clipboard view on every platform. The watcher is
+            // desktop-only for a second reason: the clipboard plugin cannot notify on change, so
+            // history means polling, and polling from an app the OS suspends costs battery for nothing.
+            #[cfg(desktop)]
+            {
+                if let Err(err) = tray::attach(&handle.clone()) {
+                    eprintln!("tray icon unavailable: {err}");
+                }
+                tray::watch(&handle.clone());
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -633,6 +652,18 @@ pub fn run() {
             commands::printify_selection,
             commands::printify_make_products,
             commands::list_printify_products,
+            // Clipboard: a mirrored system history, an append-only vault, and a paste queue
+            commands::clipboard_sync,
+            commands::clipboard_history,
+            commands::clipboard_use,
+            commands::clipboard_add,
+            commands::clipboard_pop,
+            commands::clipboard_pin,
+            commands::clipboard_clear,
+            commands::clipboard_queue_set,
+            commands::clipboard_queue_next,
+            commands::clipboard_queue_take,
+            commands::clipboard_queue_status,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

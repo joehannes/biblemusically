@@ -196,6 +196,19 @@ export const api = {
   printifySelection: () => invokeCommand("printify_selection"),
   printifyMakeProducts: (payload) => invokeCommand("printify_make_products", { payload }),
   listPrintifyProducts: (projectId) => invokeCommand("list_printify_products", { projectId: projectId || null }),
+  // ============ Clipboard: system mirror, append-only vault, paste queue ============
+  clipboardSync: () => invokeCommand("clipboard_sync"),
+  clipboardHistory: (kind, limit) => invokeCommand("clipboard_history", { kind: kind || null, limit: limit || null }),
+  clipboardUse: (id) => invokeCommand("clipboard_use", { id }),
+  clipboardAdd: (payload) => invokeCommand("clipboard_add", { payload }),
+  clipboardPop: (kind) => invokeCommand("clipboard_pop", { kind: kind || null }),
+  clipboardPin: (id, pinned) => invokeCommand("clipboard_pin", { id, pinned }),
+  clipboardClear: (kind) => invokeCommand("clipboard_clear", { kind: kind || null }),
+  clipboardQueueSet: (payload) => invokeCommand("clipboard_queue_set", { payload }),
+  clipboardQueueNext: () => invokeCommand("clipboard_queue_next"),
+  // Used by the macro player: returns the value to paste now and advances in one call.
+  clipboardQueueTake: () => invokeCommand("clipboard_queue_take"),
+  clipboardQueueStatus: () => invokeCommand("clipboard_queue_status"),
   // ============ AI-authored macros ============
   // Command-line steps (ffmpeg, yt-dlp, imagemagick) on this device or on a remote host.
   listCliRunners: () => invokeCommand("list_cli_runners"),
