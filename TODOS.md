@@ -45,8 +45,10 @@ before a quit.
 An autosave with nothing staged is a no-op rather than an empty commit — otherwise `git log` fills with
 noise and stops being usable for the thing it exists for.
 
-Still open from E: only the Project Brief opts in so far. Every other view needs its persisted controls
-marked with `data-autosave`; the mechanism is done, the annotation is per-view work.
+**Extended in v0.86.0:** the five persisted channel-wide settings (topic, branding, about, content style,
+upload schedule) now opt in alongside the Project Brief. Deliberately *not* annotated: the new-channel
+form and the tag staging boxes — those are forms and filters, and staging them would write half-typed
+values into the project. Remaining views are the same one-line-per-field pass.
 
 ### E (original write-up). Autosave as real git commits
 
@@ -156,8 +158,12 @@ ONIX/spreadsheet uploads, which is the closest thing); Draft2Digital reaches App
 10% of list; **KDP pays 70% only between $2.99 and $9.99 and charges delivery per megabyte**, so an
 illustrated book with audio must be priced *up*, not down — which is what `pricing_advice` does.
 
-Still open from B: Media Overlays (SMIL read-along) are described in the module but not generated —
-they need per-line timings, which means the analysis step, not the writer.
+**Closed in v0.86.0:** Media Overlays are generated. One SMIL per page, timed from the song's own
+analysed section starts where there are any and by equal division otherwise — and the result reports
+which of the two it got, because a guess that reads along roughly must not be advertised as synced.
+Validated externally: overlays present in the archive, manifested in the OPF, well-formed XML, and each
+`text src` pointing at an id the page really carries (a target that does not exist makes an overlay
+silently do nothing). Granularity is paragraph-level; word-level would need forced alignment.
 
 ### B (original write-up). Poetic graphic novels → ebooks
 

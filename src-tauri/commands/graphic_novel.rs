@@ -419,6 +419,9 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
                 .filter_map(|l| l.as_str().map(|s| s.to_string())).collect()).unwrap_or_default(),
             image: image_name,
             caption: p["caption"].as_str().filter(|c| !c.is_empty()).map(|c| c.to_string()),
+            // Filled in below, once it is known whether there is audio to read along with.
+            has_overlay: false,
+            span: (0.0, 0.0),
         });
     }
 
@@ -440,6 +443,34 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
             }
         }
     }
+    // Read-along: one overlay per page, timed from the song's own analysed sections where there are
+    // any. Paragraph-level rather than word-level, which would need forced alignment — and a reader
+    // without overlay support ignores them and still plays the audio, so this cannot make a book worse.
+    let mut synced = false;
+    if !audio.is_empty() && !pages.is_empty() {
+        let mut starts: Vec<f64> = Vec::new();
+        if let Ok(mut cursor) = state.db.collection::<Document>("sections")
+            .find(doc! { "song_id": edition["song_id"].as_str().unwrap_or("") }).await {
+            use futures_util::StreamExt;
+            let mut secs: Vec<Value> = Vec::new();
+            while let Some(Ok(d)) = cursor.next().await { secs.push(bson_to_value(d)); }
+            secs.sort_by_key(|s| s["index"].as_i64().unwrap_or(0));
+            starts = secs.iter().filter_map(|s| s["start"].as_f64()).collect();
+        }
+        let total = state.db.collection::<Document>("songs")
+            .find_one(doc! { "id": edition["song_id"].as_str().unwrap_or("") }).await.ok().flatten()
+            .map(bson_to_value)
+            .and_then(|s| s["duration"].as_f64())
+            .filter(|d| *d > 1.0)
+            .unwrap_or(180.0);
+        let (spans, real) = crate::epub::page_spans(total, &starts, pages.len());
+        synced = real;
+        for (p, span) in pages.iter_mut().zip(spans) {
+            p.has_overlay = true;
+            p.span = span;
+        }
+    }
+
     // A page that plays the song, referenced from the first page's spine position.
     if let Some((name, _)) = audio.first() {
         pages.insert(0, crate::epub::Page {
@@ -448,6 +479,8 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
             lines: vec![format!("This edition plays. If your reader supports audio, the song is here: audio/{name}")],
             image: None,
             caption: None,
+            has_overlay: false,
+            span: (0.0, 0.0),
         });
     }
 
@@ -487,6 +520,10 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
         "images": images.len(),
         "audio": audio.len(),
         "missing_art": missing_art,
+        "read_along": !audio.is_empty(),
+        // Said apart from "read_along" because a guess that reads along roughly should not be
+        // advertised as synced.
+        "read_along_timed_from_analysis": synced,
         "note": if audio.is_empty() {
             "No audio embedded — the song has no local file yet. EPUB is the format that can carry it, \
              so it is worth generating the music first."

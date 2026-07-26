@@ -136,6 +136,10 @@ pub struct Page {
     pub image: Option<String>,
     /// Caption under the art.
     pub caption: Option<String>,
+    /// This page has a Media Overlay: `<page-id>.smil` narrates it.
+    pub has_overlay: bool,
+    /// The audio range this page covers, in seconds. Only used when `has_overlay`.
+    pub span: (f64, f64),
 }
 
 /// The XHTML for one page.
@@ -164,8 +168,8 @@ pub fn page_xhtml(page: &Page, title: &str) -> String {
          xml:lang=\"{lang}\">\n\
          <head>\n  <title>{title}</title>\n  \
          <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/>\n</head>\n\
-         <body>\n  <section epub:type=\"chapter\">\n{body}  </section>\n</body>\n</html>\n",
-        lang = "en", title = xml_escape(title), body = body,
+         <body>\n  <section epub:type=\"chapter\" id=\"body-{id}\">\n{body}  </section>\n</body>\n</html>\n",
+        lang = "en", title = xml_escape(title), body = body, id = xml_escape(&page.id),
     )
 }
 
@@ -190,8 +194,16 @@ pub fn content_opf(
     );
     let mut spine = String::new();
     for p in pages {
+        // A page with an overlay declares it; a reader without overlay support ignores the attribute.
+        let overlay = if p.has_overlay {
+            manifest.push_str(&format!(
+                "    <item id=\"smil-{id}\" href=\"{id}.smil\" media-type=\"application/smil+xml\"/>\n",
+                id = xml_escape(&p.id),
+            ));
+            format!(" media-overlay=\"smil-{}\"", xml_escape(&p.id))
+        } else { String::new() };
         manifest.push_str(&format!(
-            "    <item id=\"{id}\" href=\"{id}.xhtml\" media-type=\"application/xhtml+xml\"/>\n",
+            "    <item id=\"{id}\" href=\"{id}.xhtml\" media-type=\"application/xhtml+xml\"{overlay}/>\n",
             id = xml_escape(&p.id),
         ));
         spine.push_str(&format!("    <itemref idref=\"{}\"/>\n", xml_escape(&p.id)));
@@ -229,6 +241,53 @@ pub fn content_opf(
         id = xml_escape(book_id), title = xml_escape(title), author = xml_escape(author),
         language = xml_escape(language), modified = modified_iso,
     )
+}
+
+/// A Media Overlay (SMIL) for one page: which audio range narrates it.
+///
+/// This is the piece that makes an EPUB *read along* rather than merely carry a file. It is worth being
+/// honest about the granularity: the timings come from the song's own section analysis, so a page is
+/// highlighted for the stretch of audio that section covers — paragraph-level sync, not word-level.
+/// Word-level would need forced alignment against the lyrics, which is a different problem entirely.
+///
+/// A reader that does not support overlays ignores them and still plays the audio, so this can never
+/// make a book worse.
+pub fn page_smil(page_id: &str, audio_file: &str, start: f64, end: f64) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\">\n\
+         \x20 <body>\n\
+         \x20   <par id=\"par-{page_id}\">\n\
+         \x20     <text src=\"{page_id}.xhtml#body-{page_id}\"/>\n\
+         \x20     <audio src=\"audio/{audio}\" clipBegin=\"{start:.3}s\" clipEnd=\"{end:.3}s\"/>\n\
+         \x20   </par>\n\
+         \x20 </body>\n\
+         </smil>\n",
+        page_id = xml_escape(page_id), audio = xml_escape(audio_file),
+        start = start.max(0.0), end = end.max(start + 0.1),
+    )
+}
+
+/// Split a track into one span per page, from the analysed section timings where there are any.
+///
+/// Falls back to equal division. That is a guess, and a guess that reads along roughly is better than
+/// no read-along at all — but the caller is told which it got, because "roughly" should not be
+/// advertised as "synced".
+pub fn page_spans(total_seconds: f64, section_starts: &[f64], pages: usize) -> (Vec<(f64, f64)>, bool) {
+    if pages == 0 { return (Vec::new(), false); }
+    let total = if total_seconds > 0.5 { total_seconds } else { 1.0 };
+
+    if section_starts.len() >= pages && pages > 0 {
+        let mut spans = Vec::with_capacity(pages);
+        for i in 0..pages {
+            let start = section_starts[i].max(0.0);
+            let end = if i + 1 < section_starts.len() { section_starts[i + 1] } else { total };
+            spans.push((start, end.max(start + 0.1)));
+        }
+        return (spans, true);
+    }
+    let step = total / pages as f64;
+    ((0..pages).map(|i| (i as f64 * step, (i as f64 + 1.0) * step)).collect(), false)
 }
 
 /// The navigation document — EPUB 3's table of contents, and a hard requirement.
@@ -311,8 +370,13 @@ pub fn build(
     ).as_bytes());
     zip.add("OEBPS/nav.xhtml", nav_xhtml(title, pages).as_bytes());
     zip.add("OEBPS/style.css", stylesheet().as_bytes());
+    let audio_name = audio.first().map(|(n, _)| n.clone()).unwrap_or_default();
     for p in pages {
         zip.add(&format!("OEBPS/{}.xhtml", p.id), page_xhtml(p, title).as_bytes());
+        if p.has_overlay && !audio_name.is_empty() {
+            zip.add(&format!("OEBPS/{}.smil", p.id),
+                    page_smil(&p.id, &audio_name, p.span.0, p.span.1).as_bytes());
+        }
     }
     for (name, bytes) in images {
         zip.add(&format!("OEBPS/images/{name}"), bytes);
@@ -335,6 +399,8 @@ mod tests {
                 lines: vec!["Light & dark, divided".into(), "".into()],
                 image: Some("panel-01.jpg".into()),
                 caption: Some("The first morning".into()),
+                has_overlay: true,
+                span: (0.0, 30.0),
             },
             Page {
                 id: "page-02".into(),
@@ -342,8 +408,54 @@ mod tests {
                 lines: vec!["A garden, and a name for every living thing".into()],
                 image: None,
                 caption: None,
+                has_overlay: true,
+                span: (30.0, 62.5),
             },
         ]
+    }
+
+    #[test]
+    fn a_read_along_page_declares_its_overlay_and_ships_the_smil() {
+        // The overlay is what makes this read *along* rather than merely carry a file.
+        let images = vec![("panel-01.jpg".to_string(), vec![0xFF, 0xD8])];
+        let audio = vec![("song.mp3".to_string(), b"ID3".to_vec())];
+        let epub = build("Genesis", "Lightkid", "en", "urn:uuid:1", &sample_pages(),
+                         &images, &audio, None, "2026-07-26T00:00:00Z");
+        let text = String::from_utf8_lossy(&epub);
+        assert!(text.contains("page-01.smil"), "the overlay file is missing from the archive");
+        assert!(text.contains("media-overlay=\"smil-page-01\""), "the page does not declare it");
+        assert!(text.contains("application/smil+xml"), "the overlay is not manifested");
+    }
+
+    #[test]
+    fn the_smil_points_at_a_target_the_page_actually_has() {
+        // A text src pointing at an id that does not exist makes the overlay silently do nothing.
+        let pages = sample_pages();
+        let smil = page_smil(&pages[0].id, "song.mp3", 0.0, 30.0);
+        assert!(smil.contains("page-01.xhtml#body-page-01"), "{smil}");
+        let html = page_xhtml(&pages[0], "Genesis");
+        assert!(html.contains("id=\"body-page-01\""), "the page must carry that id: {html}");
+        assert!(smil.contains("clipBegin=\"0.000s\"") && smil.contains("clipEnd=\"30.000s\""));
+    }
+
+    #[test]
+    fn spans_come_from_the_analysis_when_there_is_one_and_say_when_they_do_not() {
+        // Equal division reads along roughly, which beats no read-along — but "roughly" must not be
+        // advertised as "synced", so the caller is told which it got.
+        let (spans, real) = page_spans(120.0, &[0.0, 40.0, 80.0], 3);
+        assert!(real, "three sections for three pages is real timing");
+        assert_eq!(spans[0], (0.0, 40.0));
+        assert_eq!(spans[2], (80.0, 120.0));
+
+        let (guessed, real) = page_spans(120.0, &[], 4);
+        assert!(!real, "no sections means a guess");
+        assert_eq!(guessed[0], (0.0, 30.0));
+        assert_eq!(guessed[3].1, 120.0);
+
+        // Never a zero-length or inverted span, whatever the input.
+        let (odd, _) = page_spans(0.0, &[], 2);
+        assert!(odd.iter().all(|(a, b)| b > a), "{odd:?}");
+        assert_eq!(page_spans(10.0, &[], 0).0.len(), 0);
     }
 
     #[test]
@@ -372,9 +484,10 @@ mod tests {
         let audio = vec![("song.mp3".to_string(), vec![0x49, 0x44, 0x33])];
         let epub = build("Genesis", "Lightkid", "en", "urn:uuid:1", &sample_pages(),
                          &images, &audio, Some("panel-01.jpg"), "2026-07-25T00:00:00Z");
-        // mimetype, container, opf, nav, css, 2 pages, 1 image, 1 audio = 9
+        // mimetype, container, opf, nav, css, 2 pages, 2 overlays, 1 image, 1 audio = 11.
+        // The overlays are there because both sample pages carry one and there is audio to narrate with.
         let n = epub.windows(4).filter(|w| *w == [0x50, 0x4b, 0x01, 0x02]).count();
-        assert_eq!(n, 9, "every file needs a central directory record");
+        assert_eq!(n, 11, "every file needs a central directory record");
         assert!(epub.windows(4).any(|w| w == [0x50, 0x4b, 0x05, 0x06]), "missing end-of-directory");
     }
 

@@ -421,6 +421,7 @@ export default function ChannelSettingsPanel({ projectId, channels, onRefresh })
                   placeholder="Describe your channel's main topic and content focus..."
                   value={globalSettings.topic_description}
                   onChange={(e) => setGlobalSettings(prev => ({ ...prev, topic_description: e.target.value }))}
+                  data-autosave="channels:topic_description"
                   rows={3}
                 />
               </div>
@@ -430,6 +431,7 @@ export default function ChannelSettingsPanel({ projectId, channels, onRefresh })
                   placeholder="Short branding message or tagline..."
                   value={globalSettings.branding_text}
                   onChange={(e) => setGlobalSettings(prev => ({ ...prev, branding_text: e.target.value }))}
+                  data-autosave="channels:branding_text"
                   rows={3}
                 />
               </div>
@@ -441,6 +443,7 @@ export default function ChannelSettingsPanel({ projectId, channels, onRefresh })
                 placeholder="Detailed 'About' section for your channels..."
                 value={globalSettings.about_section}
                 onChange={(e) => setGlobalSettings(prev => ({ ...prev, about_section: e.target.value }))}
+                  data-autosave="channels:about_section"
                 rows={4}
               />
             </div>
@@ -481,6 +484,7 @@ export default function ChannelSettingsPanel({ projectId, channels, onRefresh })
                   placeholder="e.g., Educational, Entertainment, Documentary..."
                   value={globalSettings.content_style}
                   onChange={(e) => setGlobalSettings(prev => ({ ...prev, content_style: e.target.value }))}
+                  data-autosave="channels:content_style"
                 />
               </div>
               <div className="space-y-2">
@@ -489,6 +493,7 @@ export default function ChannelSettingsPanel({ projectId, channels, onRefresh })
                   placeholder="e.g., Daily, Weekly, Bi-weekly..."
                   value={globalSettings.upload_schedule}
                   onChange={(e) => setGlobalSettings(prev => ({ ...prev, upload_schedule: e.target.value }))}
+                  data-autosave="channels:upload_schedule"
                 />
               </div>
             </div>

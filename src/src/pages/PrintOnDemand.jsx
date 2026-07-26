@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import GuidedPanel from "../components/GuidedPanel";
+import { useSectionAction } from "../lib/pageActions";
 import { podFlow } from "../lib/guidedFlows";
 import { openLoginUrl } from "../lib/openLogin";
 
@@ -157,6 +158,16 @@ export default function PrintOnDemand() {
     } catch (err) { toast.error(`${err}`, { duration: 12000 }); }
     finally { setBusy(""); }
   };
+
+  // The one action that publishes real products belongs in the bar — but only while the card that
+  // configures it is on screen. Making products from a tab that is not showing the wording or the
+  // product list is exactly the click nobody means to make.
+  const makeRef = useSectionAction({
+    id: "pod-make", label: "Make the products", icon: Sparkles, variant: "primary", priority: 10,
+    disabled: busy === "make" || !picked.length || !activeSongId,
+    title: picked.length ? "Apply today's wording and art to the picked products" : "Pick products first",
+    onClick: make,
+  });
 
   return (
     <div className="space-y-4">
@@ -324,7 +335,7 @@ export default function PrintOnDemand() {
 
       {/* ── Make ─────────────────────────────────────────────────────────── */}
       {tab === "make" && (
-        <Card className="p-4 space-y-3">
+        <Card className="p-4 space-y-3" ref={makeRef}>
           <div>
             <h2 className="font-medium">Apply today's wording and art</h2>
             <p className="text-xs text-muted-foreground">

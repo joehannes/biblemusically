@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import GuidedPanel from "../components/GuidedPanel";
+import { useBarAction } from "../lib/pageActions";
 import { distributionFlow } from "../lib/guidedFlows";
 import { openLoginUrl } from "../lib/openLogin";
 
@@ -173,6 +174,12 @@ export default function Distribution() {
     } catch (err) { toast.error(`${err}`); }
     finally { setBusy(""); }
   };
+
+  // View-wide: refreshing is useful from any tab, and it is the action people reach for most.
+  useBarAction({
+    id: "dist-refresh", label: "Refresh", icon: RefreshCw, priority: 60,
+    disabled: !activeProjectId, onClick: load,
+  });
 
   const chosen = useMemo(() => {
     const ids = new Set(releases.map((r) => r.distributor).filter(Boolean));
