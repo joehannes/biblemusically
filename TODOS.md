@@ -5,6 +5,150 @@ follow-up implementation passes since. Each still-open item below also has an in
 `// deprecated???` comment at the referenced location. Fixed items keep their original write-up for
 context, with a `Fixed —` note.
 
+## Engine access research (2026-07-26) — read this before touching any engine
+
+Three questions were asked and answered. Two of the answers **change the recommendation**, so this
+supersedes the "remove Suno/Midjourney" reasoning in the section below it.
+
+### The distinction that matters: who breaches the terms
+
+There are two completely different things that both get called "a third-party API":
+
+| Kind | Who holds the account | Whose terms are breached | Verdict |
+|---|---|---|---|
+| **Cookie/token automation** (what this app does now for Suno; every OSS MJ proxy) | The user | **The user's** — self-botting / non-interface access | Not shippable in a product sold publicly |
+| **Aggregator that runs its own accounts** (sunoapi.org, AIMLAPI, sunor, APIPASS, apiframe, evolink for Suno; Apiframe for MJ) | The provider | The provider's problem, not ours | **Legitimate purchase.** Buy an API, get audio. |
+
+That second row is the thing worth having. Our user is not automating anything, holds no scraped
+credential, and has no account to lose. The remaining risk is **vendor risk**, and it is real: if the
+provider loses its access, the pipeline breaks overnight. Mitigate by keeping the engine list plural and
+the fallback chain working, which the app already does (`music_engine_fallback`).
+
+### Suno — no official API yet, but one is coming, and aggregators work today
+
+- **No self-serve official API** as of July 2026: no key workflow, no published pricing.
+- **2026-07-01: Suno's CPO said they are opening a developer API**, starting with a curated partner group,
+  and opened an intake form. → **ACTION FOR THE OWNER: fill in that intake form.** This is the legitimate
+  route and it costs nothing to be in the queue.
+- Enterprise/partner access is invitation-only today.
+- **Aggregators charge $0.014–$0.111 per song**, subscriptions from ~$19/month. Most explicitly permit
+  commercial use of the output; some attach attribution or tier conditions — read the specific one.
+- Suno settled with Warner Music (Nov 2025), which is why any of this is possible at all.
+
+**Recommendation:** add an aggregator-backed `suno_api` engine (API key + base URL, exactly like the
+existing paid providers) as the sellable Suno path. Keep the cookie path in the code but hidden (below).
+
+### Midjourney — same structure, same answer
+
+- **No official public API.** Keys exist only behind an **Enterprise dashboard**; developer access is by
+  application through Midjourney's site. → **ACTION: apply**, since it costs nothing to ask.
+- **Apiframe** and similar run their own Midjourney accounts — "no Discord required, no account bans" —
+  which puts the risk on them, not on us.
+- Everything else (Selenium against *your* account, Discord user tokens) automates the user's own account
+  and is exactly what was rejected. Do not reinstate any of it.
+
+**Recommendation:** Midjourney becomes an optional **aggregator-backed** engine, never a
+self-automation one. Since FLUX, Leonardo, Ideogram and Recraft cover the same ground, this is low
+priority — but it is no longer forbidden.
+
+### Udio — full songs now, has an API, and is still unusable here
+
+- **The 30-second era is over.** Udio v4 (2026) generates up to **10 minutes** without drift; v1.5 was
+  ~2:10.
+- **There is a developer REST API.**
+- **But: Udio's walled garden blocks export entirely** — no downloadable master file. This app has to
+  download audio to build a video, so that is disqualifying, not inconvenient. **Verify this before
+  spending any time on Udio**; if export has since opened up, it becomes a strong candidate given the
+  10-minute length.
+- Settled with Warner and Universal.
+
+---
+
+## THE TASK LIST — a new session can work straight down this
+
+Ordered so each item stands on what came before. Every one of them is a decision already made; none needs
+re-litigating.
+
+### 1. Enforce the trial restriction (do this first)
+
+`require()`, `refusal()` and `cache_key_material()` exist in `commands/subscription.rs` and are tested,
+but the call sites do not use them. **Right now the terms promise a restriction the software does not
+apply.** Add `require(&state, "…").await?` as the first line of:
+
+- `save_project_version` → `"save_copies"`
+- `sync_project_now`, `pull_project_now` → `"remote_sync"`
+- `export_release_package` → `"export"`
+- `build_epub` → `"export"`
+- the Data & Sync export path → `"export"`
+- `save_and_push` → `"remote_sync"`
+
+Then encrypt the project cache with `cache_key_material()` so a new trial account cannot open an old
+account's projects — the route the whole design exists to close.
+
+### 2. Hide Suno and Midjourney rather than deleting them
+
+The owner's instruction, and the right call: their terms may change, and Suno has an API in progress.
+
+- A settings flag (`show_risky_engines`, default **false**) hides the `suno` and `midjourney` options from
+  the engine pickers and from `list_ai_providers` / the engine capability lists.
+- The job-runner branches, `real_suno`, the cookie capture route, `midjourney-generator.js` and the `mj_*`
+  settings all **stay exactly as they are**. Hidden, not removed.
+- When shown, each carries one line saying whose account is at risk and why.
+- Defaults already moved to FLUX and ACE-Step (v0.88.x) — leave them there.
+
+### 3. Paid image engines
+
+`fal.ai` and `Leonardo` as new engines, plus Ideogram and Recraft as specialists. Costs and reasoning in
+the section below. Each engine's own features (aspect ratio, style presets, negative prompts, SVG output,
+upscale) reach the GUI through `lib/engineCapabilities.js` — the seam exists, do not invent a second one.
+
+### 4. Aggregator-backed music engines
+
+A `suno_api` engine (aggregator key + base URL) and **ElevenLabs Music** as the licensed option. Keep
+ACE-Step as the default. `music_engine_fallback` already handles one engine being down; make sure a new
+engine registers with it.
+
+### 5. Mobile: the four things that make it whole
+
+- **Markdown links → iframe split-screen** (lower/upper portrait, left/right landscape), with detection of
+  the refusal and a system-browser fallback plus one line of explanation. A setting picks the default.
+  Google, Kaggle, Meta and GitHub all send `X-Frame-Options: DENY`; a blank half-screen is worse than a
+  browser jump.
+- **Logins → system browser + deep link** (RFC 8252). This is what makes Kaggle and the social
+  connections work on Android. An iframe cannot do it.
+- **Folder picking → Android SAF.**
+- **git via `git2`.** One function, `project_sync::git`, already `#[cfg]`-split; all 26 call sites funnel
+  through it. Turn it into a typed API (commit/add/status/log/clone/pull/push/checkout_paths) with a
+  desktop implementation (shell out, unchanged) and a mobile one (`git2`). The NDK C-compilation wiring
+  already exists from `ring`.
+
+### 6. ComfyUI on Kaggle — expand the catalogue
+
+More preconfigured checkpoints, each described in **artist language**: what it is good at, what it is bad
+at, how long it takes. Selectable in the GUI. The per-model config plumbing exists (v0.51.0); this is
+catalogue work and honest copy, not architecture.
+
+### 7. The rest of the subscription surface
+
+Feedback view with templates and share-to-social; the T&C in the Welcome Guide (the `Markdown` component
+already renders it); analytics event wiring through `track_events`; Hotjar as an opt-in only.
+
+### 8. Finish the catalogues
+
+93% across fifteen languages, ~150–300 strings each. **By hand, not Gemini** — the owner asked for this
+explicitly.
+
+### 9. Android build
+
+Never yet attempted. Unsigned APK for sideloading first (`docs/INSTALL.md` covers the system toggle), then
+a signed AAB. **The Play Store submission needs the owner**: a developer account, agreements accepted in
+person, a listing, screenshots and a content rating. Nothing about that can be automated.
+
+### 10. A short link
+
+Needs a domain (~$10/yr, free to attach to the Worker). `workers.dev` subdomains are fixed to the account
+name and cannot be made short. Until then, add a `/get` path as an alias.
+
 ## Open milestones (2026-07-26, decided) — the commercial pass
 
 Decisions already taken, so a new session does not re-litigate them.
