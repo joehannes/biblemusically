@@ -158,43 +158,105 @@ with it, and the fallback must never silently move somebody from a free engine t
   desktop implementation (shell out, unchanged) and a mobile one (`git2`). The NDK C-compilation wiring
   already exists from `ring`.
 
-### 6. ComfyUI on Kaggle — more models, more workflows, described in artist language
+### 6. ComfyUI on Kaggle — models, workflows, and controls built for *this* subject matter
 
-The owner wants this properly expanded: **more preconfigured image models and more workflow templates**,
-all free and professional quality, all reflected in the GUI as selectable options with human, artsy wording
-that is transparent about what each one can and cannot do.
+Not a generic model catalogue. The images this app makes are devotional: scripture set to music, on YouTube,
+and they have to read as **clean, reverent, and morally unambiguous** while still being able to carry
+suspense, mystery and glory. Two researched facts decide almost every design choice below, and both are
+easy to get wrong.
 
-**Researched starting set (2026-07-26).** All free, all on CivitAI or Hugging Face, all `.safetensors` —
-which is the format to insist on: it loads faster and cannot contain executable code, so a model download
-is never a code download.
+#### Fact 1 — FLUX cannot use negative prompts, at all
 
-| Model | What it is genuinely good at | Watch out for |
-|---|---|---|
-| **FLUX.1 Dev** | Cinematic, high detail, best prompt adherence of the free options. The current default. | Ships UNet, CLIP and VAE as **separate files** — the loader config differs from a single checkpoint |
-| **Juggernaut XL** (SDXL) | Photorealism; portraits and people. The safest first choice. | Less literal about long prompts than FLUX |
-| **Krea 2 RAW / Krea 2 Turbo** | New in 2026, open weights, unusually varied aesthetics. Turbo is the fast one. | Newest, so the least documented |
-| **Pony Diffusion** | Illustration, anime, stylised character work | Style is strong and hard to talk out of |
-| **Stable Diffusion 3.5** | Solid all-rounder, good text rendering for an open model | Heavier than SDXL for the quality gained |
+**FLUX.1 Dev was trained with guidance distillation and runs at CFG 1.** There is no classifier-free
+guidance to push away from a negative prompt, so a "things to avoid" field does **nothing** on FLUX. It does
+not warn, it does not fail — it silently ignores you.
 
-Worth investigating and adding beyond these: **Qwen-Image** (strong at text in images), and SDXL fine-tunes
-aimed at illustration and painterly work, since this app makes a lot of devotional and storybook imagery.
+That is a trap for exactly this use case, because "without getting dark or dirty" is the kind of thing
+people naturally put in a negative box. So:
 
-**Workflow templates**, not just checkpoints — the second half of this task and the more valuable one:
+- The GUI must **not show a negative-prompt field for FLUX.** Gate it through `lib/engineCapabilities.js`,
+  which already exists for precisely this.
+- On FLUX, restraint is expressed **positively** — "modestly dressed, fully clothed, reverent, wholesome,
+  serene" — because a detailed positive prompt is the documented substitute.
+- A `DynamicThresholdingFull` node does enable CFG and negatives on FLUX, at roughly **2× the generation
+  time**. Worth offering as an explicit "strict mode" toggle on a model that needs it, never as a default.
+- On SDXL and SD 3.5 negatives work normally, so the same control produces a real negative prompt there.
+  **One control, two mechanisms, decided per engine.**
 
-- plain text-to-image at each aspect ratio the app uses (16:9 video frames, 2:3 book pages, 1:1 panels
-  and covers, 9:16 shorts);
-- **character-consistent** generation using the existing `appearance_tags`, so a face survives a whole
-  book;
-- upscale and detail passes for the 300-DPI print path, where a 1024 image is currently 77 DPI and a refund;
-- img2img and inpainting for fixing one panel without regenerating a chapter;
-- a **transparent-background** workflow for the Printify art path.
+#### Fact 2 — Pony Diffusion is the wrong model for this app
 
-The per-model config plumbing already exists (v0.51.0 checkpoint auto-resolve). This is catalogue work,
-workflow JSON, and honest copy — not architecture.
+Trained primarily on Derpibooru with **acknowledged bias in its training data**, and it needs
+`score_9, score_8_up, score_7_up` plus `rating_safe` *plus* a suppressive negative prompt to reliably stay
+wholesome. V7 expanded SFW coverage, which is an improvement to a default that should never have to be
+corrected in the first place.
 
-**The copy is half the job.** "Juggernaut XL" tells an artist nothing. "Photographic, best for faces and
-skin; slower; ignores long instructions" tells them everything. Each entry needs: what it is for, what it
-is bad at, roughly how long it takes on the free GPU, and its aspect-ratio sweet spot.
+**Recommendation: drop Pony from the curated set.** For a Christian channel, a model whose baseline needs
+active suppression is a liability — one forgotten tag on one of fifty daily images is a published mistake.
+Use FLUX or an SDXL illustration fine-tune for stylised work instead. If it is ever included, the score and
+`rating_safe` tags must be **injected by the app, not typed by the user**, and it must carry a plain warning.
+
+#### The curated models, judged for this subject
+
+| Model | For this app | Negatives | Notes |
+|---|---|---|---|
+| **FLUX.1 Dev** | **Default.** Cleanest baseline, best prompt adherence — which matters most when the prompt is doing all the moral work | **No** (CFG 1) | Ships UNet + CLIP + VAE as separate files; the loader config differs from a single checkpoint |
+| **Juggernaut XL** (SDXL) | Faces, hands, skin, robes, human presence. Where a real negative prompt earns its place | Yes | Less literal with long prompts than FLUX |
+| **SD 3.5** | All-rounder, best open text rendering — useful for verse overlays baked into art | Yes | Heavier than SDXL for the gain |
+| **Krea 2 RAW / Turbo** | Aesthetic variety; Turbo for drafts, RAW for finals | Verify | New in 2026, least documented |
+| **Qwen-Image** | Investigate — strongest open model for text *inside* images | Verify | Would suit verse cards |
+| ~~Pony~~ | **Excluded**, see above | — | — |
+
+#### The controls — human grammar over machine parameters
+
+Every control below is one thing an artist would actually say, mapped to real mechanics per engine. None of
+them expose a sampler name or a CFG number.
+
+- **Light** — *dawn* / *shafts through cloud* / *candlelit* / *golden hour* / *storm light* / *starlit*.
+  Lighting does more devotional work than any other single lever and it is the safest to hand over.
+- **Mood** — *serene* / *hopeful* / *solemn* / *awe* / *held breath* / *glory*. Note what is deliberately
+  absent: no "dark", no "ominous", no "horror". The vocabulary itself keeps the output clean.
+- **Suspense without darkness** — the specific requirement, and it is a *technique*, not a slider toward
+  black. Mechanically: dramatic chiaroscuro, weather, vast scale, a small figure against something immense,
+  a withheld reveal. Never gore, never occult imagery, never a horror palette. The control should say
+  "tension" and produce that, and it is worth a comment in the code explaining why it does not simply
+  darken the scene.
+- **Restraint** (default **on**) — modest clothing, no gore, no occult symbolism, nothing sensual. A real
+  negative prompt on SDXL/SD3.5; positive phrasing on FLUX. Off is a deliberate act, not a default.
+- **Figures** — *no faces shown* / *faces shown* / *symbolic only*. "No faces" (backs, silhouettes, hands,
+  feet, robes) is the option many Christian channels actually want — it sidesteps depicting Christ's face,
+  and it happens to sidestep the face-consistency problem entirely. Worth offering first rather than as an
+  afterthought.
+- **Era** — *ancient Near East* / *timeless and abstract* / *modern parable*.
+- **Symbolism** — *subtle* → *overt* (light, water, bread, vine, dove, lamp, path, door). Subtle by default;
+  overt reads as clip-art at fifty images a day.
+- **Shape** — the aspect ratios the app already uses: 16:9 video frames, 9:16 shorts, 2:3 book pages, 1:1
+  panels and covers. Never a free-text pixel size.
+
+#### The workflows — the half that is worth more than checkpoints
+
+- text-to-image at each of the four aspect ratios above;
+- **character-consistent** generation from the existing `appearance_tags`, via IPAdapter/ControlNet plus a
+  fixed seed, so a face survives a whole book — and a "no faces" path that needs none of it;
+- **upscale and detail passes for print**, where a 1024px image is currently **77 DPI and a refund** (see
+  `print_quality` in `commands/printify.rs`);
+- img2img and inpainting, to fix one panel without regenerating a chapter;
+- **transparent background** for the Printify art path;
+- a **draft/final** pair per model (Turbo or few-step for drafts, full for finals), because reviewing fifty
+  images a day at final quality wastes the GPU hours the free tier gives you.
+
+#### Deployment
+
+Same shape as the existing engine notebooks: Kaggle notebook plus a cloudflared tunnel, model files fetched
+on start with the checkpoint auto-resolve that already exists (v0.51.0). Insist on `.safetensors`
+throughout — it loads faster and cannot contain executable code, so a model download never becomes a code
+download.
+
+#### The copy is half the job
+
+"Juggernaut XL" tells an artist nothing. "Photographic — best for faces, hands and fabric; slower; ignores
+long instructions" tells them everything. Every model needs: what it is for, what it is bad at, roughly how
+long it takes on the free GPU, whether a "things to avoid" field will do anything, and its aspect-ratio
+sweet spot.
 
 ### 7. The rest of the subscription surface
 
