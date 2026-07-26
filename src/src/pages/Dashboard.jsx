@@ -58,6 +58,7 @@ export default function Dashboard() {
     languages: (p.languages || []).join(", "),
     styles: (p.styles || []).join(", "),
     next_chapter: 1,
+    autonomy: p.schedule_autonomy || "lyrics",
     ...(p.schedule_config || {}),
     // schedule_config stores languages/styles as arrays; render them as comma-separated text
     ...(p.schedule_config?.languages ? { languages: p.schedule_config.languages.join(", ") } : {}),
@@ -88,7 +89,13 @@ export default function Dashboard() {
         next_chapter: Math.max(1, parseInt(draft.next_chapter, 10) || 1),
         day_of_week: Math.max(0, Math.min(6, parseInt(draft.day_of_week, 10) || 0)),
       };
-      await api.updateProject(pid, { schedule_config: payload });
+      // `autonomy` belongs to the project rather than to the schedule shape, because the workflow
+      // runner reads it per tick and a schedule payload is rewritten by the chapter cursor.
+      const { autonomy, ...scheduleFields } = payload;
+      await api.updateProject(pid, {
+        schedule_config: scheduleFields,
+        ...(autonomy ? { schedule_autonomy: autonomy } : {}),
+      });
       await refreshProjects();
       toast.success("Daily Content schedule saved");
     } catch (err) {
@@ -666,6 +673,37 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <p className="text-[11px] text-muted-foreground">Up to 4 language × style combinations are generated per run. Leave blank to use the project's configured languages/styles.</p>
+
+                    {/* How far a scheduled run is allowed to go on its own. Default is the behaviour this
+                        always had — lyrics and queued music — because escalating silently would put work
+                        on the internet that nobody had looked at. */}
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+                        How far should it go by itself?
+                      </div>
+                      <div className="grid sm:grid-cols-3 gap-1.5">
+                        {[
+                          { id: "lyrics", label: "Lyrics + queue music", hint: "You do the visuals. The safe default." },
+                          { id: "video", label: "…through to finished video", hint: "Wake up to watchable videos. Nothing public." },
+                          { id: "publish", label: "…and publish to YouTube", hint: "Fully hands-off. Public, and not undoable." },
+                        ].map((opt) => {
+                          const active = (draft.autonomy || p.schedule_autonomy || "lyrics") === opt.id;
+                          return (
+                            <button key={opt.id} onClick={() => set({ autonomy: opt.id })}
+                              className={`text-left rounded-lg border p-2 transition-all hover:border-primary/60 ${active ? "border-primary/60 bg-primary/5" : "border-border"}`}>
+                              <div className="text-[11px] font-medium">{opt.label}</div>
+                              <div className="text-[10px] text-muted-foreground leading-snug">{opt.hint}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {(draft.autonomy || p.schedule_autonomy) === "publish" && (
+                        <p className="text-[11px] text-amber-400 mt-1">
+                          Every scheduled chapter will be published without review. The YouTube sign-in has to
+                          be valid, and a bad generation goes out with the good ones.
+                        </p>
+                      )}
+                    </div>
 
                     <div className="flex gap-2">
                       <Button size="sm" disabled={scheduleUi[p.id]?.saving} onClick={() => saveSchedule(p.id)}>

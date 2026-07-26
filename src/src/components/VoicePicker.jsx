@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Button } from "./ui/button";
-import { speak, stopSpeaking, voicePrefs, setVoicePrefs, voiceInputAvailable } from "../lib/voice";
+import {
+  speak, stopSpeaking, voicePrefs, setVoicePrefs, voiceInputAvailable,
+  systemVoices, requestMicPermission, micPermissionState,
+} from "../lib/voice";
 import { Volume2, Loader2, Mic, Check } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,11 +18,18 @@ export default function VoicePicker({ compact = false, onChange }) {
   const [voices, setVoices] = useState([]);
   const [engines, setEngines] = useState([]);
   const [previewing, setPreviewing] = useState("");
+  // The platform's own voices: free, offline, no key, no request budget. Android's WebView ships a full
+  // set; WebKitGTK on Linux usually ships none, which is why this list can legitimately be empty and
+  // says so rather than showing an empty grid.
+  const [system, setSystem] = useState([]);
+  const [mic, setMic] = useState(undefined);
 
   useEffect(() => {
     api.listAssistantVoices()
       .then((r) => { setVoices(r?.voices || []); setEngines(r?.engines || []); })
       .catch(() => { /* the picker degrades to whatever is already chosen */ });
+    systemVoices().then(setSystem).catch(() => setSystem([]));
+    micPermissionState().then(setMic).catch(() => {});
     return () => stopSpeaking();
   }, []);
 
@@ -66,6 +76,47 @@ export default function VoicePicker({ compact = false, onChange }) {
         </div>
       </div>
 
+      {/* The platform's own voices — shown only for the engine that uses them. */}
+      {prefs.engine === "browser" && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Which system voice?
+          </div>
+          {!system.length ? (
+            <p className="text-xs text-muted-foreground">
+              This platform exposes no built-in voices. That is normal on Linux desktop — Android and
+              iOS ship a full set. Gemini voices work everywhere a key does.
+            </p>
+          ) : (
+            <div className={`grid gap-2 ${compact ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
+              {system.slice(0, 24).map((v) => {
+                const active = prefs.systemVoice === v.id || (!prefs.systemVoice && v.default);
+                return (
+                  <div key={v.id}
+                    className={`rounded-lg border p-2.5 ${active ? "border-primary/60 bg-primary/5" : "border-border"}`}>
+                    <button onClick={() => update({ systemVoice: v.id })} className="text-left w-full">
+                      <div className="text-sm font-medium flex items-center gap-1.5 truncate">
+                        {v.name}{active && <Check className="w-3 h-3 text-primary shrink-0" />}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {v.lang}{v.local ? " · offline" : " · needs network"}
+                      </div>
+                    </button>
+                    <Button size="sm" variant="ghost" className="mt-1 h-6 px-1.5 text-[10px]"
+                      onClick={() => { update({ systemVoice: v.id }); preview(v.id); }}
+                      disabled={previewing === v.id}>
+                      {previewing === v.id
+                        ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />playing</>
+                        : <><Volume2 className="w-3 h-3 mr-1" />listen</>}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Voice */}
       {prefs.engine === "gemini" && (
         <div className="space-y-1.5">
@@ -108,15 +159,26 @@ export default function VoicePicker({ compact = false, onChange }) {
         </span>
       </label>
 
-      {prefs.listen && voiceInputAvailable() && (
-        <Button size="sm" variant="secondary" onClick={async () => {
-          try {
-            await navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => s.getTracks().forEach((t) => t.stop()));
-            toast.success("Microphone access granted.");
-          } catch { toast.error("Microphone access was refused — the system may need to allow it for this app."); }
-        }}>
-          <Mic className="w-3 h-3 mr-1.5" />Test the microphone
-        </Button>
+      {/* Asking here, during setup, rather than mid-question: a permission dialog appearing over a
+          guided question is how people deny it by reflex — and the platform remembers a denial. */}
+      {prefs.listen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="secondary" onClick={async () => {
+            const r = await requestMicPermission();
+            setMic(r.granted ? "granted" : "denied");
+            if (r.granted) toast.success("Microphone ready.");
+            else toast.error(r.reason, { duration: 9000 });
+          }}>
+            <Mic className="w-3 h-3 mr-1.5" />
+            {mic === "granted" ? "Microphone ready" : "Allow the microphone"}
+          </Button>
+          {mic === "granted" && <span className="text-[11px] text-emerald-400">granted</span>}
+          {mic === "denied" && (
+            <span className="text-[11px] text-amber-400">
+              Denied — your platform remembers that, so re-enable it in system or app settings.
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

@@ -10,9 +10,7 @@ import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
-  Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound,
-  RefreshCw, User, AtSign, Globe, Hash, Mail, Sparkles, Info,
-  ChevronDown, X, Lightbulb, Search, Settings, Languages, Loader2,
+  Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound, RefreshCw, User, AtSign, Globe, Hash, Mail, Sparkles, Info, ChevronDown, X, Lightbulb, Search, Settings, Languages, Loader2, Clock,
 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { toast } from "sonner";
@@ -183,6 +181,92 @@ function AddTagDropdown({ onAdd }) {
 // ══════════════════════════════════════════════════════════════════
 // Main Channels component
 // ══════════════════════════════════════════════════════════════════
+/**
+ * When this channel publishes.
+ *
+ * The AI suggestion is a *suggestion* until accepted — a time that appeared by itself and started
+ * publishing would be a setting nobody chose. The honest source is the channel's own YouTube Analytics
+ * ("when your viewers are on YouTube"), which needs an extra scope, so that is offered rather than
+ * demanded.
+ */
+/**
+ * Ask for a publication-time suggestion for a channel that has just appeared.
+ *
+ * Fire-and-forget on purpose: a channel import must not wait on an AI call, and a failed suggestion is
+ * not a failed import. The suggestion is stored, so it is there when the card renders.
+ */
+async function suggestForNewChannels(before, after) {
+  const known = new Set((before || []).map((c) => c.id));
+  const fresh = (after || []).filter((c) => !known.has(c.id) && !c.publish_time);
+  for (const c of fresh) {
+    api.suggestPublishTime({ channel_id: c.id }).catch(() => { /* the card still offers the button */ });
+  }
+  return fresh.length;
+}
+
+function PublishTime({ channel, onSaved }) {
+  const [time, setTime] = useState(channel.publish_time || "");
+  const [busy, setBusy] = useState(false);
+  const [suggestion, setSuggestion] = useState(
+    channel.publish_time_suggested
+      ? { time: channel.publish_time_suggested, days: channel.publish_days_suggested || [], reason: channel.publish_time_reason }
+      : null,
+  );
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const ask = async () => {
+    setBusy(true);
+    try {
+      const r = await api.suggestPublishTime({ channel_id: channel.id, refresh: true });
+      setSuggestion(r);
+      toast.message(r.reason || `Suggested ${r.time}`, { duration: 9000 });
+    } catch (err) { toast.error(`${err}`); }
+    finally { setBusy(false); }
+  };
+
+  const save = async (t, days) => {
+    setBusy(true);
+    try {
+      await api.setPublishTime({ channel_id: channel.id, time: t, days: days || [], timezone: channel.publish_timezone || null });
+      setTime(t);
+      toast.success(t ? `Publishing at ${t} local time.` : "Publication time cleared.");
+      onSaved?.();
+    } catch (err) { toast.error(`${err}`); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mb-3 rounded-lg border border-border/60 p-2 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Clock className="w-3 h-3 text-muted-foreground shrink-0" />
+        <Input value={time} onChange={(e) => setTime(e.target.value)} placeholder="19:30"
+               className="h-7 w-20 text-xs" data-autosave={`channel-${channel.id}:publish_time`} />
+        <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]"
+                disabled={busy} onClick={() => save(time, channel.publish_days || [])}>
+          Set
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" disabled={busy} onClick={ask}>
+          {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Ask the AI"}
+        </Button>
+        {channel.publish_time_source === "chosen" && (
+          <span className="text-[10px] text-emerald-400">set</span>
+        )}
+      </div>
+      {suggestion && suggestion.time !== time && (
+        <div className="text-[10px] text-muted-foreground">
+          Suggested <b className="text-foreground">{suggestion.time}</b>
+          {suggestion.days?.length ? ` on ${suggestion.days.map((d) => dayNames[d]).join(", ")}` : ""}
+          {suggestion.timezone ? ` (${suggestion.timezone})` : ""}
+          <button className="underline ml-1.5" onClick={() => save(suggestion.time, suggestion.days)}>
+            use it
+          </button>
+          {suggestion.reason && <div className="italic mt-0.5">{suggestion.reason}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Channels() {
   const [params, setParams] = useSearchParams();
   const discoverySectionRef = useRef(null);
@@ -230,7 +314,15 @@ export default function Channels() {
   // Channel settings panel state
   const [showChannelSettings, setShowChannelSettings] = useState(false);
 
-  const load = async () => setChannels(await api.listChannels());
+  // Every path that adds a channel funnels through here, so one hook covers hand-added, imported and
+  // discovered channels: whatever is new gets a publication-time suggestion researched for its region.
+  const load = async () => {
+    const before = channels;
+    const after = await api.listChannels();
+    setChannels(after);
+    suggestForNewChannels(before, after);
+    return after;
+  };
   useEffect(() => { load(); }, []);
 
   // Persist tags whenever they change
@@ -876,6 +968,7 @@ export default function Channels() {
               {picked && (
                 <div className="mb-3 text-[10px] text-mono text-muted-foreground flex items-center gap-1"><KeyRound className="w-3 h-3" />will use: <span className="text-foreground">{picked.label}</span></div>
               )}
+              <PublishTime channel={c} onSaved={load} />
               {oauthClients.length > 1 ? (
                 <div className="flex gap-2">
                   <Select onValueChange={(v) => startOauth(c, v === "_auto" ? undefined : v)}>

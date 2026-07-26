@@ -205,6 +205,11 @@ export const api = {
   startWorkflowRun: (payload) => invokeCommand("start_workflow_run", { payload }),
   workflowRunStatus: (projectId) => invokeCommand("workflow_run_status", { projectId: projectId || null }),
   setWorkflowRunStatus: (projectId, status) => invokeCommand("set_workflow_run_status", { projectId, status }),
+  // ============ Channel publication times ============
+  suggestPublishTime: (payload) => invokeCommand("suggest_publish_time", { payload }),
+  setPublishTime: (payload) => invokeCommand("set_publish_time", { payload }),
+  listPublishTimes: () => invokeCommand("list_publish_times"),
+  channelsMissingPublishTime: () => invokeCommand("channels_missing_publish_time"),
   // ============ Clipboard: system mirror, append-only vault, paste queue ============
   clipboardSync: () => invokeCommand("clipboard_sync"),
   clipboardHistory: (kind, limit) => invokeCommand("clipboard_history", { kind: kind || null, limit: limit || null }),

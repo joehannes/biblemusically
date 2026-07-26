@@ -156,6 +156,8 @@ pub async fn create_project(state: State<'_, AppState>, body: Value) -> Res<Valu
         name,
         topic,
         schedule,
+        // Unset means "lyrics": a new project never starts publishing by itself.
+        schedule_autonomy: None,
         multi_language,
         multi_style,
         languages,

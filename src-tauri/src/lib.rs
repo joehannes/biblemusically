@@ -687,6 +687,11 @@ pub fn run() {
             commands::start_workflow_run,
             commands::workflow_run_status,
             commands::set_workflow_run_status,
+            // When a channel should publish: AI-researched per region, or measured, or chosen
+            commands::suggest_publish_time,
+            commands::set_publish_time,
+            commands::list_publish_times,
+            commands::channels_missing_publish_time,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

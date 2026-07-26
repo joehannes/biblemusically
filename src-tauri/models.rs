@@ -235,6 +235,13 @@ pub struct Project {
     pub topic: String,
     #[serde(default)]
     pub schedule: Option<String>,
+    /// How far a scheduled run may carry on by itself: "lyrics" (default — generate and queue music,
+    /// stop), "video" (through to a finished video, nothing public), "publish" (upload too).
+    ///
+    /// Absent means "lyrics". Escalation is never implicit: a schedule that started publishing because
+    /// a default changed would be the worst kind of surprise.
+    #[serde(default)]
+    pub schedule_autonomy: Option<String>,
     #[serde(default = "yes")]
     pub multi_language: bool,
     #[serde(default = "yes")]

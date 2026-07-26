@@ -20,7 +20,48 @@ import { matchOption } from "./voiceMatch.js";
 
 const PREF_KEY = "studio:voice";
 
-const defaults = { engine: "gemini", voice: "Kore", speak: false, listen: false };
+const defaults = { engine: "gemini", voice: "Kore", systemVoice: "", speak: false, listen: false };
+
+// ── system voices ───────────────────────────────────────────────────────────
+// The voices the platform itself ships: free, offline, no key, and no request budget. Android's WebView
+// has a full set; WebKitGTK on Linux usually has none at all, which is why Gemini is the default rather
+// than the fallback.
+//
+// `getVoices()` is famously empty on the first call — the list arrives asynchronously — so this waits
+// for `voiceschanged` once rather than reporting "no voices" to someone who has plenty.
+let systemVoicesCache = null;
+
+export async function systemVoices() {
+  if (systemVoicesCache) return systemVoicesCache;
+  const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+  if (!synth?.getVoices) return (systemVoicesCache = []);
+
+  let list = synth.getVoices();
+  if (!list.length) {
+    list = await new Promise((resolve) => {
+      const done = () => resolve(synth.getVoices() || []);
+      // Both paths, because some engines fire the event and some only populate late.
+      synth.addEventListener?.("voiceschanged", done, { once: true });
+      setTimeout(done, 1200);
+    });
+  }
+  systemVoicesCache = (list || []).map((v) => ({
+    id: v.voiceURI || v.name,
+    name: v.name,
+    lang: v.lang,
+    local: v.localService !== false,
+    default: !!v.default,
+  }));
+  return systemVoicesCache;
+}
+
+/** Resolve a stored system-voice id back to the live SpeechSynthesisVoice object. */
+function pickSystemVoice(id) {
+  const synth = window.speechSynthesis;
+  const all = synth?.getVoices?.() || [];
+  if (!all.length) return null;
+  return all.find((v) => (v.voiceURI || v.name) === id) || all.find((v) => v.default) || all[0];
+}
 
 export function voicePrefs() {
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}") }; }
@@ -69,11 +110,16 @@ export async function speak(text, { style, force = false } = {}) {
 
   const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
   if (synth && typeof SpeechSynthesisUtterance !== "undefined") {
+    // Make sure the list is populated before choosing, or the first line of a session always uses the
+    // default voice regardless of what was picked.
+    await systemVoices();
     return await new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(text);
+      const chosen = prefs.systemVoice ? pickSystemVoice(prefs.systemVoice) : null;
+      if (chosen) { u.voice = chosen; u.lang = chosen.lang; }
       u.rate = 1.0;
       u.pitch = 1.0;
-      u.onend = () => resolve({ spoken: true, engine: "browser" });
+      u.onend = () => resolve({ spoken: true, engine: "browser", voice: chosen?.name });
       u.onerror = () => resolve({ spoken: false });
       synth.speak(u);
     });
@@ -142,6 +188,45 @@ export async function listen({ language, maxMs = 8000 } = {}) {
     console.warn("[voice] transcription failed:", err);
     return null;
   }
+}
+
+/**
+ * Ask for the microphone, and say what happened.
+ *
+ * Separate from `listen()` because the permission prompt should appear during setup, when the user is
+ * expecting it and can be told why — not in the middle of a guided question, where a browser dialog
+ * appearing over the question is how people end up denying it by reflex. A denial is remembered by the
+ * platform, so the first ask is the one that matters.
+ */
+export async function requestMicPermission() {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return { granted: false, reason: "This device exposes no microphone to the app." };
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Release it immediately: holding the mic open would show a recording indicator for the whole
+    // session and, on a phone, keep the hardware awake.
+    stream.getTracks().forEach((t) => t.stop());
+    return { granted: true };
+  } catch (err) {
+    const name = err?.name || "";
+    return {
+      granted: false,
+      reason: name === "NotAllowedError"
+        ? "Microphone access was denied. Your platform remembers that, so it has to be re-enabled in system or app settings."
+        : name === "NotFoundError"
+        ? "No microphone was found."
+        : `Microphone unavailable: ${err}`,
+    };
+  }
+}
+
+/** Has the microphone already been granted, without prompting? Undefined where the API is missing. */
+export async function micPermissionState() {
+  try {
+    const status = await navigator.permissions?.query?.({ name: "microphone" });
+    return status?.state;            // "granted" | "denied" | "prompt"
+  } catch { return undefined; }
 }
 
 /** Is a spoken answer possible at all here? Used to decide whether to show the mic button. */

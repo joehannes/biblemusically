@@ -343,6 +343,75 @@ pub async fn run_scheduler_tick(state: &Arc<AppState>) {
     for pid in due_ids {
         if let Err(err) = run_scheduled_generation(state, &pid).await {
             eprintln!("Scheduler: generation failed for project {}: {}", pid, err);
+            continue;
         }
+        // How far the schedule is allowed to carry on by itself. Default "lyrics" — the behaviour this
+        // has always had — because escalating silently would publish work nobody had looked at.
+        match autonomy_for(state, &pid).await.as_str() {
+            "video" => start_autonomous_run(state, &pid, "video", false).await,
+            "publish" => start_autonomous_run(state, &pid, "upload", true).await,
+            _ => {}
+        }
+        // Products for the day, if the project asked for them. Also gated, and drafts unless the
+        // publish toggle is on.
+        printify_sweep(state, &pid).await;
+    }
+}
+
+/// A project's `schedule_autonomy`: "lyrics" | "video" | "publish".
+///
+/// Read per tick rather than cached, so turning it down takes effect on the next run rather than after
+/// a restart — the direction someone changes it in a hurry.
+async fn autonomy_for(state: &Arc<AppState>, project_id: &str) -> String {
+    state.db.collection::<Document>("projects")
+        .find_one(doc! { "id": project_id }).await.ok().flatten()
+        .map(bson_to_value)
+        .and_then(|p| p["schedule_autonomy"].as_str().map(|s| s.to_string()))
+        .filter(|s| matches!(s.as_str(), "lyrics" | "video" | "publish"))
+        .unwrap_or_else(|| "lyrics".to_string())
+}
+
+/// Hand the rest of the pipeline to the backend workflow runner.
+///
+/// Deliberately the same runner the Workflow view starts, rather than a second sequencer: one place to
+/// be right about ordering, and a scheduled run then survives a project switch and a restart for the
+/// same reason a manual one does.
+async fn start_autonomous_run(state: &Arc<AppState>, project_id: &str, stop_after: &str, include_upload: bool) {
+    let steps = crate::commands::workflow_run::step_order(stop_after, include_upload);
+    let run = serde_json::json!({
+        "_id": project_id,
+        "id": uuid::Uuid::new_v4().to_string(),
+        "project_id": project_id,
+        "steps": steps,
+        "cursor": 0,
+        "status": "running",
+        "stop_on_error": false,
+        "dispatched": Value::Null,
+        "log": [{ "at": now_iso(), "message": format!("started by the schedule (autonomy: {stop_after})") }],
+        "started_at": now_iso(),
+        "updated_at": now_iso(),
+    });
+    if let Ok(d) = bson::to_document(&run) {
+        let _ = state.db.collection::<Document>("workflow_runs")
+            .update_one(doc! { "_id": project_id }, doc! { "$set": d }).upsert(true).await;
+    }
+}
+
+/// Apply the day's wording and art to the pre-picked Printify products.
+///
+/// Nothing here decides which products — that was chosen once, on purpose. Publishing follows
+/// `printify_auto_publish`, off by default.
+async fn printify_sweep(state: &Arc<AppState>, project_id: &str) {
+    let plan = crate::commands::printify::daily_run(state, project_id).await;
+    if plan["skipped"].is_string() { return; }
+    let (Some(song_id), Some(shop_id)) = (plan["song_id"].as_str(), plan["shop_id"].as_str()) else { return };
+    let publish = plan["auto_publish"].as_bool() == Some(true);
+    match crate::commands::printify::make_products(state, shop_id, song_id, None, publish).await {
+        Ok(r) => eprintln!(
+            "Printify: {} product(s) for project {project_id}{}",
+            r["created"].as_array().map(|a| a.len()).unwrap_or(0),
+            if publish { ", published" } else { " as drafts" },
+        ),
+        Err(err) => eprintln!("Printify sweep failed for project {project_id}: {err}"),
     }
 }

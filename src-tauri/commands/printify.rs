@@ -106,7 +106,7 @@ pub async fn printify_storefronts() -> Res<Value> {
 
 // ── HTTP ────────────────────────────────────────────────────────────────────
 
-async fn token(state: &State<'_, AppState>) -> Res<String> {
+async fn token(state: &AppState) -> Res<String> {
     let settings = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or_default();
@@ -417,28 +417,41 @@ pub struct MakeRequest {
 /// Apply a phrase and artwork to the picked products and create them in Printify.
 #[tauri::command]
 pub async fn printify_make_products(state: State<'_, AppState>, payload: MakeRequest) -> Res<Value> {
+    make_products(&state, &payload.shop_id, &payload.song_id, payload.phrase.as_deref(),
+                  payload.publish.unwrap_or(false)).await
+}
+
+/// The work behind the command, callable from the scheduler.
+///
+/// Takes `&AppState` rather than Tauri's `State`, which is what lets the daily sweep run from a
+/// background tick with no window involved.
+pub async fn make_products(
+    state: &AppState,
+    shop_id: &str,
+    song_id: &str,
+    phrase_override: Option<&str>,
+    publish: bool,
+) -> Res<Value> {
     use futures_util::StreamExt;
-    let t = token(&state).await?;
+    let t = token(state).await?;
 
     let song = state.db.collection::<Document>("songs")
-        .find_one(doc! { "id": &payload.song_id }).await.map_err(e)?
+        .find_one(doc! { "id": song_id }).await.map_err(e)?
         .map(bson_to_value)
         .ok_or_else(|| "song not found".to_string())?;
 
-    let selection = printify_selection(state.clone()).await?;
+    let selection = state.db.collection::<Document>("printify_selection")
+        .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
+        .map(bson_to_value).unwrap_or(json!({ "products": [] }));
     let picked = selection["products"].as_array().cloned().unwrap_or_default();
     if picked.is_empty() {
         return Err("No products picked yet. Choose them once in Print on Demand → Products.".into());
     }
-    let targets: Vec<&Value> = match payload.product_index {
-        Some(i) => picked.get(i).map(|p| vec![p]).unwrap_or_default(),
-        None => picked.iter().collect(),
-    };
-    if targets.is_empty() { return Err("that product index is not in the selection".into()); }
+    let targets: Vec<&Value> = picked.iter().collect();
 
     // The wording. Written by the AI from the song unless the user supplied it.
-    let phrase = match payload.phrase.clone().filter(|p| !p.trim().is_empty()) {
-        Some(p) => print_phrase(&p, 12),
+    let phrase = match phrase_override.filter(|p| !p.trim().is_empty()) {
+        Some(p) => print_phrase(p, 12),
         None => {
             let settings = state.db.collection::<Document>("settings")
                 .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
@@ -458,12 +471,10 @@ pub async fn printify_make_products(state: State<'_, AppState>, payload: MakeReq
     };
 
     // The art. Whatever the image pipeline already produced for this song, unless overridden.
-    let art = match payload.art_path.clone().filter(|p| !p.is_empty()) {
-        Some(p) => p,
-        None => {
+    let art = {
             let mut found = String::new();
             let mut cursor = state.db.collection::<Document>("sections")
-                .find(doc! { "song_id": &payload.song_id }).await.map_err(e)?;
+                .find(doc! { "song_id": song_id }).await.map_err(e)?;
             while let Some(Ok(d)) = cursor.next().await {
                 let s = bson_to_value(d);
                 let url = s["image_url"].as_str().unwrap_or("").trim_start_matches("file://");
@@ -476,7 +487,6 @@ pub async fn printify_make_products(state: State<'_, AppState>, payload: MakeReq
                 return Err("This song has no finished artwork to print. Generate images first.".into());
             }
             found
-        }
     };
 
     // Upload once, reuse for every product — Printify keeps uploads at account level.
@@ -501,7 +511,7 @@ pub async fn printify_make_products(state: State<'_, AppState>, payload: MakeReq
         if let Some(ts) = bson_to_value(d)["published_at"].as_str() { recent.push(ts.to_string()); }
     }
     let pacing = publish_pacing(&recent, &crate::models::now_iso());
-    let may_publish = payload.publish.unwrap_or(false) && pacing["room"].as_bool() == Some(true);
+    let may_publish = publish && pacing["room"].as_bool() == Some(true);
 
     let mut created = Vec::new();
     let mut errors = Vec::new();
@@ -531,13 +541,13 @@ pub async fn printify_make_products(state: State<'_, AppState>, payload: MakeReq
             &image_id, target["position"].as_str().unwrap_or("front"),
             quality["scale"].as_f64().unwrap_or(1.0).min(1.0),
         );
-        match post_json(&t, &format!("/shops/{}/products.json", payload.shop_id), &body).await {
+        match post_json(&t, &format!("/shops/{shop_id}/products.json"), &body).await {
             Ok(product) => {
                 let product_id = product["id"].as_str().unwrap_or("").to_string();
                 let mut published_at = Value::Null;
                 if may_publish && !product_id.is_empty() {
-                    match post_json(&t, &format!("/shops/{}/products/{product_id}/publish.json",
-                                                 payload.shop_id), &publish_payload()).await {
+                    match post_json(&t, &format!("/shops/{shop_id}/products/{product_id}/publish.json"),
+                                    &publish_payload()).await {
                         Ok(_) => published_at = json!(crate::models::now_iso()),
                         Err(err) => errors.push(format!("{title}: created but not published — {err}")),
                     }
@@ -545,8 +555,8 @@ pub async fn printify_make_products(state: State<'_, AppState>, payload: MakeReq
                 let record = json!({
                     "id": uuid::Uuid::new_v4().to_string(),
                     "printify_product_id": product_id,
-                    "shop_id": payload.shop_id,
-                    "song_id": payload.song_id,
+                    "shop_id": shop_id,
+                    "song_id": song_id,
                     "project_id": song["project_id"].as_str().unwrap_or(""),
                     "phrase": phrase,
                     "title": title,
@@ -574,7 +584,7 @@ pub async fn printify_make_products(state: State<'_, AppState>, payload: MakeReq
         "errors": errors,
         "published": may_publish,
         "pacing": pacing,
-        "note": if payload.publish.unwrap_or(false) && !may_publish {
+        "note": if publish && !may_publish {
             "Created as drafts: Printify's publish window is full (200 per 30 minutes). Publish them \
              when it clears."
         } else { "" },
