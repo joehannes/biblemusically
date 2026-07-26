@@ -312,6 +312,91 @@ long instructions" tells them everything. Every model needs: what it is for, wha
 long it takes on the free GPU, whether a "things to avoid" field will do anything, and its aspect-ratio
 sweet spot.
 
+### 6b. The typography layer — words on products, and speech bubbles in panels
+
+**Decided: render the words with real fonts, never generate them.** One mechanism serves both the Printify
+phrases and the graphic-novel bubbles, because it is the same problem twice.
+
+#### Why not an image model, even a good one
+
+Ideogram 3.0, Recraft and Qwen-Image are genuinely good at text — and "good" means *occasional* letter
+errors. On a mug that is a **returned order**, not a retry, and at fifty products a day nobody proofreads
+every one. It compounds with resolution: generated images are 1024–2048px against print areas of
+3000–4000px, and upscaled letterforms go soft in a way that reads as cheap where soft scenery does not. And
+the phrase can never be edited afterwards without regenerating the artwork.
+
+**AI makes the artwork; typography lays the words on top.** That is how merch and comics are actually made,
+and it is already how this app draws the link card on shorts.
+
+#### The transport already exists
+
+`magick` and `convert` are **already in `ALLOWED_TOOLS`** (`commands/remote_exec.rs`), and `find_font()`
+already exists in `commands/shorts.rs`. So text compositing runs locally on desktop and on Modal from a
+phone with no new machinery — the same path the shorts cutter uses. This is a smaller job than it looks.
+
+Render as **SVG, rasterise once** at the exact target size: real vector layout, text-on-path for curves, and
+Recraft's genuine SVG output could drop into the same pipeline for ornaments.
+
+#### Font licensing — the part that can actually cost money
+
+- **Google Fonts are almost entirely SIL OFL or Apache 2.0.** Both permit commercial use including print on
+  merchandise. ~1,800 families, and that is the safe pool.
+- **Selling a product with text rendered in a font is not distributing the font.** Always fine.
+- **Bundling the font file in the app *is* distribution** — OFL permits it if the licence ships alongside. So
+  bundle a curated dozen with their `OFL.txt`, or fetch from Google Fonts at runtime.
+- **Never let a user point the app at an arbitrary font file without saying this:** many "free font" sites
+  mean free for *personal* use, and merchandise is precisely what they exclude.
+
+#### Decoration method changes the design, and Printify tells us which
+
+The variants response carries `decoration_method` — observed values include `dtf` and **`embroidery`**.
+Embroidery cannot do gradients, fine detail or many colours at all; a design that looks lovely on DTF becomes
+an unrecognisable blob stitched. DTG loses thin strokes and light-on-light generally.
+
+So the renderer must **read the decoration method and adapt**: minimum stroke weight, a colour-count cap for
+embroidery, no hairline serifs at small sizes, and a refusal rather than a warning when the phrase cannot
+survive the process.
+
+#### Layout templates — typography without layout looks like a document
+
+Stacked centred · big word + subline · two lines with a rule · arc and curve (`-distort Arc`, or SVG
+`textPath`) · circular badge · left-aligned block · **verse + reference** ("Be still and know" /
+*Psalm 46:10*), which is the shape most of this app's phrases actually want.
+
+Guards on every one: transparent PNG, 300 DPI at the blueprint's **real** print area (already fetched by
+`printify_blueprint_detail`), safe margins inside it, and `print_quality()` consulted before anything is
+created.
+
+#### Speech bubbles — and why compositing beats baking them in
+
+The `panels` register in `commands/graphic_novel.rs` already produces a caption (≤12 words) and a line of
+dialogue per page. **The data exists; only the rendering is missing.** No comic-specific image model is
+needed — `jobs.rs` already has `comic` and `graphic_novel` style prefixes for the artwork itself.
+
+Compositing is not a compromise here, it is better on four counts:
+
+1. **The text stays editable.** A typo is a re-render of the bubble, not of the panel.
+2. **Translation.** This app already ships sixteen languages and generates per-language songs. With the
+   bubble composited, *one artwork serves every language* — re-render the words, keep the picture. Baked-in
+   text would mean regenerating every panel per language.
+3. **Placement is a decision made after seeing the art** — a bubble must not cover a face.
+4. **Reading order** is layout, not generation.
+
+**In the EPUB, use HTML and CSS rather than a rasterised overlay.** The pages are already XHTML, so a bubble
+positioned over the image with CSS gives **selectable text, screen-reader accessibility, and reflow** — all
+of which a PNG destroys. Rasterise the same SVG only for exported images and print.
+
+Bubble kinds: rounded rect with a tail (speech) · scalloped cloud (thought) · jagged (shout) · plain
+rectangle (narration or caption box). Auto-size to the text, then place the tail toward a speaker anchor.
+
+**Compose the panel *for* the bubble.** The art prompt should request negative space where the words will go
+— "uncluttered upper third", "clear sky upper left". That is a real technique and it is the difference
+between a bubble that sits in the composition and one that vandalises it. The `panels` register's art prompt
+should say so.
+
+Lettering conventions are worth respecting: comic lettering is conventionally all-caps in a lettering face
+rather than a body face. Comic Neue is OFL; there are proper lettering faces in the Google pool.
+
 ### 7. The rest of the subscription surface
 
 Feedback view with templates and share-to-social; the T&C in the Welcome Guide (the `Markdown` component
