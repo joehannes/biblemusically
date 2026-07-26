@@ -157,6 +157,38 @@ fn open(key: &[u8; KEY_LEN], entry: &Value) -> Res<String> {
     String::from_utf8(plain).map_err(|e| e.to_string())
 }
 
+/// Seal a payload with a passphrase, as a single portable string.
+///
+/// Different from the vault's own entries on purpose: this one carries its **own salt**, so it can be
+/// opened on another machine that has never seen this vault. That is what makes it safe to send a set of
+/// refresh tokens through a chat message — without the passphrase the blob is noise, and without the
+/// salt travelling with it the other device could not derive the key at all.
+pub fn seal_with(passphrase: &str, plaintext: &str) -> Res<String> {
+    if passphrase.trim().len() < 8 {
+        return Err("Use a passphrase of at least eight characters.".into());
+    }
+    let salt_b64 = B64.encode(random_bytes(16));
+    let key = derive_key(passphrase, &salt_b64)?;
+    let sealed = seal(&key, plaintext)?;
+    let envelope = json!({
+        "v": 1, "kdf": "argon2", "salt": salt_b64,
+        "nonce": sealed["nonce"], "data": sealed["data"],
+    });
+    Ok(format!("bmstudio-sealed:{}", B64.encode(envelope.to_string().as_bytes())))
+}
+
+/// Open what `seal_with` produced.
+pub fn open_with(passphrase: &str, blob: &str) -> Res<String> {
+    let body = blob.trim().strip_prefix("bmstudio-sealed:")
+        .ok_or_else(|| "That is not a sealed blob from this app.".to_string())?;
+    let bytes = B64.decode(body).map_err(|_| "The blob is damaged.".to_string())?;
+    let envelope: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| "The blob is damaged.".to_string())?;
+    let salt = envelope["salt"].as_str().ok_or("The blob carries no salt.")?;
+    let key = derive_key(passphrase, salt)?;
+    open(&key, &envelope)
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Backend API (used by remote sync, social publishing, …)
 // ────────────────────────────────────────────────────────────────────────────
@@ -393,6 +425,24 @@ mod tests {
 
     /// Round-trip through the real file layout, in an isolated HOME so the developer's own vault is
     /// never touched. Serialized because the vault path comes from process-wide env.
+    #[test]
+    fn a_sealed_blob_travels_to_a_machine_that_never_saw_this_vault() {
+        // It carries its own salt, which is the whole point: the other device derives the same key from
+        // the passphrase alone.
+        let blob = seal_with("a good long passphrase", "hunter2-refresh-token").expect("sealed");
+        assert!(blob.starts_with("bmstudio-sealed:"));
+        assert!(!blob.contains("hunter2"), "the secret must not be readable in the blob");
+        assert_eq!(open_with("a good long passphrase", &blob).unwrap(), "hunter2-refresh-token");
+        // Whitespace from a chat message is normal.
+        assert_eq!(open_with("a good long passphrase", &format!("  {blob}\n")).unwrap(), "hunter2-refresh-token");
+        // The wrong passphrase fails rather than returning something plausible.
+        assert!(open_with("a different passphrase", &blob).is_err());
+        assert!(open_with("a good long passphrase", "bmstudio-sealed:zzzz").is_err());
+        assert!(open_with("a good long passphrase", "not a blob").is_err());
+        // Too short a passphrase is refused at seal time, not discovered later.
+        assert!(seal_with("short", "x").is_err());
+    }
+
     #[test]
     fn seal_and_open_roundtrip() {
         let key = [7u8; KEY_LEN];

@@ -225,6 +225,11 @@ export const api = {
   finishMerge: (projectId) => invokeCommand("finish_merge", { projectId }),
   projectHistory: (projectId, limit) => invokeCommand("project_history", { projectId, limit: limit || null }),
   rewindProject: (projectId, commit) => invokeCommand("rewind_project", { projectId, commit }),
+  // ============ Signing in from a phone ============
+  platformCapabilities: () => invokeCommand("platform_capabilities"),
+  exportChannelTokens: (passphrase) => invokeCommand("export_channel_tokens", { passphrase }),
+  importChannelTokens: (payload) => invokeCommand("import_channel_tokens", { payload }),
+  deeplinkSetupSteps: () => invokeCommand("deeplink_setup_steps"),
   // ============ Suno without a browser ============
   sunoGenerate: (payload) => invokeCommand("suno_generate", { payload }),
   sunoPoll: (ids) => invokeCommand("suno_poll", { ids }),

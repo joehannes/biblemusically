@@ -722,6 +722,11 @@ pub fn run() {
             commands::suno_poll,
             commands::save_suno_cookie,
             commands::suno_status,
+            // Signing in from a phone: borrow the desktop's tokens, or its own deep-link client
+            commands::platform_capabilities,
+            commands::export_channel_tokens,
+            commands::import_channel_tokens,
+            commands::deeplink_setup_steps,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

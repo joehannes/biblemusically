@@ -35,6 +35,107 @@ const ROLE_NOTE = {
   viewer: "Read, pull and export only.",
 };
 
+/**
+ * Moving channel sign-ins between devices.
+ *
+ * A phone cannot use the desktop's loopback OAuth redirect, and creating an Android OAuth client is a
+ * trip through the Google console. So the default is simply to carry the tokens across: a refresh token
+ * is exactly the thing designed to be stored and reused.
+ *
+ * Sealed with a passphrase, because a refresh token in plain text in a chat message is a token somebody
+ * else can use for a year.
+ */
+function DeviceTransfer() {
+  const [caps, setCaps] = useState(null);
+  const [pass, setPass] = useState("");
+  const [blob, setBlob] = useState("");
+  const [incoming, setIncoming] = useState("");
+  const [busy, setBusy] = useState("");
+
+  useEffect(() => { api.platformCapabilities().then(setCaps).catch(() => {}); }, []);
+
+  return (
+    <Card className="p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="font-medium">Sign-ins on another device</h2>
+        {caps && (
+          <Badge variant="outline" className="text-[10px]">
+            {caps.desktop ? "desktop · loopback sign-in" : `phone · ${caps.oauth_mode} sign-in`}
+          </Badge>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        A phone cannot use the desktop's loopback redirect. The simplest route is to carry the channel
+        sign-ins across — a refresh token stays valid until it is revoked, so nothing has to be
+        re-consented. Sealed with a passphrase, so it is safe to send through a normal chat.
+      </p>
+
+      <Input type="password" value={pass} onChange={(e) => setPass(e.target.value)}
+             placeholder="a passphrase, at least 8 characters" className="text-sm" />
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Export from here</div>
+          <Button size="sm" variant="secondary" disabled={busy === "exp" || pass.trim().length < 8}
+                  onClick={async () => {
+                    setBusy("exp");
+                    try {
+                      const r = await api.exportChannelTokens(pass);
+                      setBlob(r.blob);
+                      toast.success(`${r.channels} sign-in(s) sealed.`);
+                      toast.warning(r.caveat, { duration: 11000 });
+                    } catch (err) { toast.error(`${err}`, { duration: 9000 }); }
+                    finally { setBusy(""); }
+                  }}>
+            {busy === "exp" ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+            Seal my sign-ins
+          </Button>
+          {blob && (
+            <>
+              <Textarea readOnly value={blob} className="text-[10px] h-20 font-mono" data-no-i18n />
+              <Button size="sm" variant="ghost" onClick={() => {
+                navigator.clipboard.writeText(blob); toast.success("Copied.");
+              }}><Copy className="w-3.5 h-3.5 mr-1.5" />Copy</Button>
+            </>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Bring them here</div>
+          <Textarea value={incoming} onChange={(e) => setIncoming(e.target.value)}
+                    placeholder="bmstudio-sealed:…" className="text-[10px] h-20 font-mono" data-no-i18n />
+          <Button size="sm" disabled={busy === "imp" || !incoming.trim() || pass.trim().length < 8}
+                  onClick={async () => {
+                    setBusy("imp");
+                    try {
+                      const r = await api.importChannelTokens({ blob: incoming.trim(), passphrase: pass });
+                      toast.success(`${r.imported} channel(s) can upload from this device now.`);
+                      setIncoming("");
+                    } catch (err) { toast.error(`${err}`, { duration: 9000 }); }
+                    finally { setBusy(""); }
+                  }}>
+            Import
+          </Button>
+        </div>
+      </div>
+
+      {caps && !caps.desktop && (
+        <p className="text-[11px] text-muted-foreground">
+          {caps.android_client_configured
+            ? `This phone can also sign in on its own — redirect ${caps.deeplink_redirect}.`
+            : "This phone can sign in on its own once an Android OAuth client is set up (Settings → Mobile sign-in). Until then, carrying sign-ins across is the way."}
+        </p>
+      )}
+      {caps && (
+        <div className="text-[11px] text-muted-foreground space-y-0.5">
+          {!caps.local_cli && <div>· {caps.local_cli_note}</div>}
+          {!caps.hidden_webview && <div>· {caps.hidden_webview_note}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function Team() {
   const { activeProjectId, projects } = useStudio();
   const [me, setMe] = useState({ signed_in: false });
@@ -120,6 +221,9 @@ export default function Team() {
           </div>
         )}
       </Card>
+
+      {/* ── Bring sign-ins to another device ─────────────────────────────── */}
+      <DeviceTransfer />
 
       {!activeProjectId ? (
         <Card className="p-4 text-sm text-muted-foreground">Pick a project to share it.</Card>

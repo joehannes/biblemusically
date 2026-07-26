@@ -175,6 +175,7 @@ const initialSettings = {
   suno_api_base: "",
   suno_clerk_base: "",
   suno_fallback_after_minutes: 15,
+  android_oauth_client_id: "",
   cli_worker_url: "",
   modal_cli_endpoint: "",
   modal_endpoint: "",
@@ -1166,6 +1167,28 @@ const SettingsComponent = () => {
             posts that went out unread is not something an apology fixes.</span>
           </span>
         </label>
+      </Card>
+
+      {/* ── Mobile sign-in ────────────────────────────────────────────────── */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><ShieldCheck className="w-4 h-4 text-primary" /><h2 className="font-semibold">Mobile sign-in</h2></div>
+        <div className="text-sm text-muted-foreground mb-3">
+          A phone cannot use the desktop's <code>127.0.0.1</code> redirect. Two routes, and both work:
+          carry the sign-ins across from a desktop (Team → Sign-ins on another device — needs nothing
+          created), or give the phone its own Android OAuth client so it signs in independently.
+        </div>
+        <label className="text-xs text-muted-foreground">Android OAuth client id (optional)</label>
+        <input
+          value={s.android_oauth_client_id || ""}
+          onChange={(e) => updateS("android_oauth_client_id", e.target.value)}
+          placeholder="…apps.googleusercontent.com — type Android, package com.studio.lightkid"
+          className="w-full bg-muted/30 border border-border rounded px-3 py-2 text-sm mb-2"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Creating it needs the SHA-1 of the keystore the APK is signed with — a release build signed
+          with a different key will not match. The redirect is derived from the client id, because
+          Google compares it as an exact string and typing it twice is how that goes wrong.
+        </p>
       </Card>
 
       {/* ── Suno without a browser ────────────────────────────────────────── */}
