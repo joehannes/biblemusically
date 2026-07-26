@@ -62,7 +62,9 @@ import {
   Workflow as WorkflowIcon, Megaphone, Plus, Disc3, BookMarked, Shirt, ClipboardList} from "lucide-react";
 import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
-import { PageActionsContext } from "../lib/pageActions";
+import {
+  PageActionsContext, ActionRegistryContext, useActionRegistry, splitActions,
+} from "../lib/pageActions";
 import {
   installAutosave, setAutosaveProject, setAutosaveView, commitPending,
 } from "../lib/autosave";
@@ -707,6 +709,10 @@ export default function Shell({ children }) {
   // is needed (a parent-owned effect on `loc.pathname` would fire after the new page's own
   // effect and wipe out whatever it just published).
   const [pageActions, setPageActions] = useState(null);
+  // Registered actions: view-wide ones stay while the view is mounted, section ones come and go with
+  // the viewport. Order is by priority then id, never by when they registered — see pageActions.jsx.
+  const { registry: actionRegistry, ordered: barActions } = useActionRegistry();
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   // Track navigation history for back/forward
   useEffect(() => {
@@ -1221,6 +1227,61 @@ export default function Shell({ children }) {
               </div>
             )}
 
+            {/* Registered actions. Section-scoped ones are only here while their section is on screen,
+                so a Generate button never sits in the bar with its subject scrolled out of sight. */}
+            {barActions.length > 0 && (() => {
+              const { visible, overflow } = splitActions(barActions);
+              return (
+                <div className="flex items-center gap-1 pr-1.5 sm:pr-2 mr-0.5 border-r border-border/60">
+                  {visible.map((a) => {
+                    const Icon = a.icon;
+                    return (
+                      <button
+                        key={a.id}
+                        data-testid={`bar-action-${a.id}`}
+                        onClick={() => (a._live?.current?.onClick || a.onClick)?.()}
+                        disabled={a.disabled}
+                        title={a.title || a.label}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                          a.variant === "primary"
+                            ? "bg-primary/20 text-primary hover:bg-primary/30"
+                            : "bg-muted/40 hover:bg-muted/70 text-foreground"
+                        }`}
+                      >
+                        {Icon ? <Icon className="w-3.5 h-3.5" /> : null}
+                        <span className="hidden md:inline">{a.label}</span>
+                      </button>
+                    );
+                  })}
+                  {overflow.length > 0 && (
+                    <div className="relative">
+                      <button
+                        onClick={() => setOverflowOpen((o) => !o)}
+                        title={`${overflow.length} more action${overflow.length === 1 ? "" : "s"}`}
+                        className="px-1.5 py-1.5 rounded-lg bg-muted/40 hover:bg-muted/70 text-muted-foreground"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      {overflowOpen && (
+                        <div className="absolute z-[9999] top-full mt-1.5 right-0 bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 min-w-[200px]">
+                          {overflow.map((a) => (
+                            <button
+                              key={a.id}
+                              onClick={() => { setOverflowOpen(false); (a._live?.current?.onClick || a.onClick)?.(); }}
+                              disabled={a.disabled}
+                              className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-accent disabled:opacity-40"
+                            >
+                              {a.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Running jobs indicator */}
             {running > 0 && (
               <div className="flex items-center gap-2 text-xs text-mono mr-2">
@@ -1375,9 +1436,11 @@ export default function Shell({ children }) {
         <HealthBanner />
 
         <PageActionsContext.Provider value={setPageActions}>
+        <ActionRegistryContext.Provider value={actionRegistry}>
           {/* pb-16 on mobile clears the fixed bottom nav so the last of a page's content isn't
               hidden behind it; safe-area inset keeps it above a phone's home indicator. */}
           <div className="flex-1 min-h-0 overflow-auto scroll-thin pb-16 md:pb-0 [padding-bottom:calc(4rem+env(safe-area-inset-bottom))] md:[padding-bottom:0]">{children}</div>
+        </ActionRegistryContext.Provider>
         </PageActionsContext.Provider>
       </main>
 

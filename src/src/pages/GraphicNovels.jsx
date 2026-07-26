@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import GuidedPanel from "../components/GuidedPanel";
+import { useBarAction, useSectionAction } from "../lib/pageActions";
 import { novelFlow } from "../lib/guidedFlows";
 import { openLoginUrl } from "../lib/openLogin";
 
@@ -132,6 +133,28 @@ export default function GraphicNovels() {
   const reg = styles.registers.find((r) => r.id === register);
   const fmt = styles.formats.find((f) => f.id === format);
 
+  // The two big actions live in the top bar rather than at the bottom of a long card — but only while
+  // the section they act on is actually on screen. A "Write the edition" button in the bar while the
+  // form that configures it is scrolled out of sight is a button whose effect you cannot see.
+  const writeRef = useSectionAction({
+    id: "novel-write", label: "Write the edition", icon: Sparkles, variant: "primary", priority: 10,
+    disabled: busy === "write" || !activeSongId,
+    title: activeSongId ? "Write the edition from this song's text" : "Pick a song first",
+    onClick: write,
+  });
+  const bindRef = useSectionAction({
+    id: "novel-bind", label: "Build the EPUB", icon: Download, variant: "primary", priority: 10,
+    disabled: busy === "bind" || !active,
+    onClick: bind,
+  });
+  // View-wide: useful from anywhere on the page once an edition exists.
+  useBarAction({
+    id: "novel-collect", label: "Collect art", icon: RefreshCw, priority: 60,
+    disabled: !active || busy === "collect",
+    title: "Pull finished page art back onto the edition",
+    onClick: collectArt,
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -169,7 +192,7 @@ export default function GraphicNovels() {
 
       {/* ── Write ────────────────────────────────────────────────────────── */}
       {tab === "write" && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" ref={writeRef}>
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Song</label>
@@ -287,7 +310,7 @@ export default function GraphicNovels() {
 
       {/* ── Bind ─────────────────────────────────────────────────────────── */}
       {tab === "book" && active && (
-        <Card className="p-4 space-y-3">
+        <Card className="p-4 space-y-3" ref={bindRef}>
           <div>
             <h2 className="font-medium">Bind it as an EPUB</h2>
             <p className="text-xs text-muted-foreground">

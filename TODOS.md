@@ -58,7 +58,22 @@ marked with `data-autosave`; the mechanism is done, the annotation is per-view w
 | Save-and-push | New entry in the save button's dropdown. Only offered when a remote is configured; uses the existing token-injection path from `remote_sync.rs` (tokens never touch `.git/config`). |
 | Risk to respect | A commit per tab change is a lot of commits. The message must carry the view and the changed fields so the log stays readable, and an autosave with nothing staged must be a no-op rather than an empty commit. |
 
-### F. Move actions into the app menubar, viewport-aware
+### F. Move actions into the app menubar, viewport-aware — **mechanism done in v0.80.0**
+
+Built: `lib/actionOrder.js` (the pure ordering rule, in its own `.js` so it can be tested — it decides
+where buttons sit), `lib/pageActions.jsx` (`useBarAction` for view-wide actions, `useSectionAction` which
+registers an action **only while its section intersects the viewport**), and the Shell bar that renders
+them with an overflow menu past four.
+
+Ordering is by priority then id, never by registration order: a section action appearing when its section
+scrolls into view must not reshuffle the bar, or the button someone is about to click moves out from
+under the pointer. Four tests cover exactly that.
+
+Applied on the Graphic Novels view as the worked example (Write and Bind are section-scoped, Collect art
+is view-wide). Still open: the same annotation for the other views — the mechanism is finished, adopting
+it is per-view work, and `usePageActions` keeps working for pages with bespoke controls.
+
+### F (original write-up). Move actions into the app menubar, viewport-aware
 
 | Piece | Shape |
 |---|---|
