@@ -174,6 +174,18 @@ export const api = {
   deleteRelease: (id) => invokeCommand("delete_release", { id }),
   exportReleasePackage: (id) => invokeCommand("export_release_package", { id }),
   generateReleaseCover: (payload) => invokeCommand("generate_release_cover", { payload }),
+  // ============ Poetic graphic novels → ebooks ============
+  // EPUB 3 is the target because it is the one ebook format that carries the song itself.
+  listNovelStyles: () => invokeCommand("list_novel_styles"),
+  authorEdition: (payload) => invokeCommand("author_edition", { payload }),
+  listEditions: (projectId, songId) => invokeCommand("list_editions", { projectId: projectId || null, songId: songId || null }),
+  updateEdition: (id, patch) => invokeCommand("update_edition", { id, patch }),
+  deleteEdition: (id) => invokeCommand("delete_edition", { id }),
+  generateEditionArt: (id) => invokeCommand("generate_edition_art", { id }),
+  collectEditionArt: (id) => invokeCommand("collect_edition_art", { id }),
+  buildEpub: (payload) => invokeCommand("build_epub", { payload }),
+  listEbookStores: () => invokeCommand("list_ebook_stores"),
+  ebookPricing: (payload) => invokeCommand("ebook_pricing", { payload }),
   // ============ AI-authored macros ============
   // Command-line steps (ffmpeg, yt-dlp, imagemagick) on this device or on a remote host.
   listCliRunners: () => invokeCommand("list_cli_runners"),

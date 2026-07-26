@@ -37,7 +37,25 @@ live account, which needs the user's own login.
 | Distributor integration | **Research first:** DistroKid historically has no public API (only a partner API for labels) — verify. Amuse, RouteNote, CD Baby, Ditto, LANDR: check which expose a REST API and at what tier. If none do at a sane price, this becomes an AI-authored browser macro per distributor (the machinery shipped in v0.72.0) plus a metadata export (CSV/DDEX) the distributor's own uploader accepts. |
 | Channels as artists | Each channel maps to an artist profile: name, bio, artwork, Spotify/Apple artist links once claimed. Store alongside the channel. |
 
-### B. Poetic graphic novels → ebooks
+### B. Poetic graphic novels → ebooks — **done in v0.76.0**
+
+Built: `epub.rs` (a store-only zip writer with its own CRC-32, plus the OPF/nav/XHTML/CSS documents —
+validated externally with Python's `zipfile` and an XML parser: CRCs correct, `mimetype` first and
+stored, every document well-formed, manifest matching the archive exactly),
+`commands/graphic_novel.rs` (five writing registers as *directions to a writer* rather than adjectives,
+three page formats with their own aspect ratios, art through the existing image pipeline, EPUB assembly
+with the song embedded, ebook-store matrix and band-based pricing), `pages/GraphicNovels.jsx`.
+
+Findings: **EPUB 3 is the only mainstream format that carries audio**, which is what "musical digital
+content" needed; **no ebook store has a publishing API** (Google Play's Partner Center takes bulk
+ONIX/spreadsheet uploads, which is the closest thing); Draft2Digital reaches Apple/Kobo/B&N/Google for
+10% of list; **KDP pays 70% only between $2.99 and $9.99 and charges delivery per megabyte**, so an
+illustrated book with audio must be priced *up*, not down — which is what `pricing_advice` does.
+
+Still open from B: Media Overlays (SMIL read-along) are described in the module but not generated —
+they need per-line timings, which means the analysis step, not the writer.
+
+### B (original write-up). Poetic graphic novels → ebooks
 
 | Piece | Shape |
 |---|---|

@@ -2,6 +2,9 @@
 // while Cargo's library entrypoint lives in src-tauri/src.
 #[path = "../commands/mod.rs"]
 pub mod commands;
+#[path = "../epub.rs"]
+pub mod epub;
+
 #[path = "../helpers.rs"]
 pub mod helpers;
 #[path = "../jobs.rs"]
@@ -610,6 +613,17 @@ pub fn run() {
             commands::delete_release,
             commands::export_release_package,
             commands::generate_release_cover,
+            // Poetic graphic novels → EPUB 3 (the one ebook format that carries the song)
+            commands::list_novel_styles,
+            commands::author_edition,
+            commands::list_editions,
+            commands::update_edition,
+            commands::delete_edition,
+            commands::generate_edition_art,
+            commands::collect_edition_art,
+            commands::build_epub,
+            commands::list_ebook_stores,
+            commands::ebook_pricing,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

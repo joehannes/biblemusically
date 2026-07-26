@@ -952,3 +952,64 @@ export const distributionFlow = {
     },
   ],
 };
+
+// ── Graphic novels → ebooks ─────────────────────────────────────────────────
+// The first question is the voice, because it is the only one whose answer cannot be fixed later
+// without rewriting the whole edition.
+export const novelFlow = {
+  id: "novel",
+  title: "Guided edition",
+  aiContext: (ctx) => ({ ...baseAiContext(ctx), editions: ctx.editions?.length || 0 }),
+  steps: [
+    {
+      id: "voice",
+      title: "Voice",
+      question: "Whose voice is this edition in?",
+      help: "These are different writers, not settings on one writer. \"More poetic\" produces the same faintly purple prose every time; a scribe's margin gloss produces something with a shape.",
+      reveals: "register",
+      options: (ctx) => (ctx.registers || []).slice(0, 4).map((r, i) => ({
+        id: r.id,
+        label: r.label,
+        hint: r.hint,
+        recommended: i === 1,
+        apply: (c) => c.setRegister?.(r.id),
+      })),
+    },
+    {
+      id: "shape",
+      title: "Shape",
+      question: "What shape are the pages?",
+      help: "Decided before the art, not after: a 16:9 panel dropped into a portrait book is a letterboxed strip.",
+      reveals: "format",
+      options: (ctx) => (ctx.formats || []).map((f, i) => ({
+        id: f.id,
+        label: `${f.label} (${f.aspect})`,
+        hint: f.hint,
+        recommended: i === 0,
+        apply: (c) => c.setFormat?.(f.id),
+      })),
+    },
+    {
+      id: "length",
+      title: "Length",
+      question: "How long?",
+      help: "Length drives the price: a longer book sits higher in every store's royalty band.",
+      reveals: "pages",
+      options: () => [
+        { id: "short", label: "A short piece — 8 pages", hint: "One sitting, one idea.", apply: (c) => c.setPages?.(8) },
+        { id: "standard", label: "A full edition — 12 pages", hint: "The default, and the shape that prices well.", recommended: true, apply: (c) => c.setPages?.(12) },
+        { id: "long", label: "A long edition — 24 pages", hint: "More art to generate, and a higher price band.", apply: (c) => c.setPages?.(24) },
+      ],
+    },
+    {
+      id: "go",
+      title: "Write",
+      question: "Write it now?",
+      reveals: "edition",
+      options: () => [
+        { id: "write", label: "Write the edition", hint: "Text first; the art is queued after you have read it.", recommended: true, apply: (c) => c.write?.() },
+        { id: "later", label: "Not yet", apply: () => {} },
+      ],
+    },
+  ],
+};
