@@ -2586,6 +2586,17 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 ).await?;
                 
                 db_log(db, job_id, &format!("upload: completed! YouTube URL: https://youtu.be/{}", yt_id)).await;
+
+                // The moment the video exists is the moment publicity can reference it, so draft the
+                // per-platform pieces now — with the real URL in them — rather than making the user
+                // come back for it. Drafts only, and only when the setting is on: nothing posts here.
+                if let Some(song_id) = upload.get("song_id").and_then(|v| v.as_str()) {
+                    let state_for_publicity = state.clone();
+                    let song_id = song_id.to_string();
+                    tauri::async_runtime::spawn(async move {
+                        crate::commands::publicity::auto_author_after_upload(&state_for_publicity, &song_id).await;
+                    });
+                }
                 serde_json::json!({ "youtube_video_id": yt_id, "url": format!("https://youtu.be/{yt_id}"), "real": true })
             }
 

@@ -115,6 +115,11 @@ pub struct AuthorPieceRequest {
 /// Write one publicity piece for one platform, with its own cover-image prompts.
 #[tauri::command]
 pub async fn author_publicity_piece(state: State<'_, AppState>, payload: AuthorPieceRequest) -> Res<Value> {
+    author_piece(&state, payload).await
+}
+
+/// The same work against a borrowed state, so the upload job can trigger it without a Tauri command.
+pub async fn author_piece(state: &AppState, payload: AuthorPieceRequest) -> Res<Value> {
     let settings = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or_default();
@@ -136,7 +141,7 @@ pub async fn author_publicity_piece(state: State<'_, AppState>, payload: AuthorP
         .and_then(|d| d["published_url"].as_str().map(|s| s.to_string()));
 
     let brief = crate::commands::ai::project_brief_block(&state.db, &project_id).await;
-    let learnings = crate::commands::learnings::learnings_prompt_block(&state, &project_id).await;
+    let learnings = crate::commands::learnings::learnings_prompt_block(state, &project_id).await;
     let research = crate::commands::ai::channel_research_block(&state.db).await;
     let taste = crate::commands::social::taste_profile_block().await;
 
@@ -328,7 +333,7 @@ pub async fn author_publicity_set(state: State<'_, AppState>, song_id: String, p
     let mut failed = Vec::new();
     for platform in targets {
         // Sequential on purpose: a free tier that gets four concurrent requests answers with 429s.
-        match author_publicity_piece(state.clone(), AuthorPieceRequest {
+        match author_piece(&state, AuthorPieceRequest {
             song_id: song_id.clone(), platform: platform.clone(), angle: None, covers: Some(1),
         }).await {
             Ok(p) => written.push(json!({ "platform": platform, "id": p["id"], "title": p["title"] })),
@@ -336,4 +341,35 @@ pub async fn author_publicity_set(state: State<'_, AppState>, song_id: String, p
         }
     }
     Ok(json!({ "written": written, "failed": failed }))
+}
+
+
+/// Draft publicity for every connected platform, for the upload job to call when a video lands.
+///
+/// Drafts only, and only when `publicity_auto_author` is on. A batch of posts that went out unread is
+/// not something an apology fixes, so the automatic half stops at writing.
+pub async fn auto_author_after_upload(state: &AppState, song_id: &str) {
+    use futures_util::StreamExt;
+    let settings = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
+        .map(bson_to_value).unwrap_or_default();
+    if settings["publicity_auto_author"].as_bool() != Some(true) { return; }
+
+    let mut platforms = Vec::new();
+    if let Ok(mut cursor) = state.db.collection::<Document>("social_accounts").find(doc! {}).await {
+        while let Some(Ok(d)) = cursor.next().await {
+            if let Some(p) = bson_to_value(d)["platform"].as_str() { platforms.push(p.to_string()); }
+        }
+    }
+    if platforms.is_empty() { return; }
+
+    for platform in platforms {
+        // Sequential: four concurrent requests to a free tier come back as 429s.
+        match author_piece(state, AuthorPieceRequest {
+            song_id: song_id.to_string(), platform: platform.clone(), angle: None, covers: Some(1),
+        }).await {
+            Ok(p) => println!("publicity: drafted {} for {platform}", p["title"].as_str().unwrap_or("")),
+            Err(err) => eprintln!("publicity: {platform} draft failed: {err}"),
+        }
+    }
 }

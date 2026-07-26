@@ -166,6 +166,7 @@ const initialSettings = {
   google_redirect_uri: "",
   remote_render_provider: "local",
   remote_cli_provider: "local",
+  publicity_auto_author: false,
   cli_worker_url: "",
   modal_cli_endpoint: "",
   modal_endpoint: "",
@@ -1141,6 +1142,22 @@ const SettingsComponent = () => {
           Gemini key and every line is cached, so a repeated question costs nothing.
         </div>
         <VoicePicker />
+      </Card>
+
+      {/* ── Publicity ─────────────────────────────────────────────────────── */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Sparkles className="w-4 h-4 text-primary" /><h2 className="font-semibold">Publicity</h2></div>
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" className="mt-1 accent-primary" checked={!!s.publicity_auto_author}
+            data-testid="settings-publicity-auto"
+            onChange={(e) => updateS("publicity_auto_author", e.target.checked)} />
+          <span>
+            <b>Draft publicity as soon as a video is published.</b>
+            <span className="text-muted-foreground"> One piece per connected platform, written with the
+            real YouTube link already in it. Drafts only — nothing is posted without you, and a batch of
+            posts that went out unread is not something an apology fixes.</span>
+          </span>
+        </label>
       </Card>
 
       {/* ── Remote commands ───────────────────────────────────────────────────

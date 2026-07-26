@@ -5,6 +5,39 @@ follow-up implementation passes since. Each still-open item below also has an in
 `// deprecated???` comment at the referenced location. Fixed items keep their original write-up for
 context, with a `Fixed —` note.
 
+## Open milestones (2026-07-25, requested)
+
+Three feature tracks requested after v0.73.0, recorded here with the shape each one needs and the
+research each one still owes. None are started.
+
+### A. Long compilations + music-only distribution
+
+| Piece | Shape |
+|---|---|
+| Whole-book compilations | One long video per Bible book: every chapter's song concatenated, with per-chapter chapter markers, an intro/outro "special", and a tracklist in the description. The remote render worker already assembles from a list — this is a new spec kind (`compilation`), not a new pipeline. Chapter markers are just timestamps in the YouTube description. |
+| Monetisable short-form beyond TikTok | Investigate before building: YouTube Shorts (already the render target, monetised via the main channel), Facebook/Instagram Reels bonuses, Snapchat Spotlight, Pinterest. Check which actually pay per-view in 2026 and which need follower thresholds. |
+| Music-only distribution | New **Distribution** tab: releases (single = one chapter song, album = whole book), cover art per release, ISRC/UPC handling, release dates, and per-channel "artist" identity. |
+| Distributor integration | **Research first:** DistroKid historically has no public API (only a partner API for labels) — verify. Amuse, RouteNote, CD Baby, Ditto, LANDR: check which expose a REST API and at what tier. If none do at a sane price, this becomes an AI-authored browser macro per distributor (the machinery shipped in v0.72.0) plus a metadata export (CSV/DDEX) the distributor's own uploader accepts. |
+| Channels as artists | Each channel maps to an artist profile: name, bio, artwork, Spotify/Apple artist links once claimed. Store alongside the channel. |
+
+### B. Poetic graphic novels → ebooks
+
+| Piece | Shape |
+|---|---|
+| Poetic re-authoring | New tab: the AI writes a poetic, annotated, flavoured version of a song's text — several style registers (illuminated-manuscript prose, free verse, graphic-novel panels with captions) — from the same context the publicity writer uses. |
+| Panel imagery | Graphic-novel aspect ratios (2:3 pages, 1:1 panels, splash spreads) driven through the existing image pipeline with per-panel prompts, so character consistency (`appearance_tags`) carries across pages. |
+| Ebook assembly | **EPUB 3** is the target format, because it is the one that carries audio: `<audio>` in the content documents plus Media Overlays (SMIL) for read-along. That is what "musical digital content" needs — a PDF cannot do it. Assembly is a zip with a mimetype, container.xml, an OPF manifest and the XHTML pages; no external library required. |
+| Store publishing | New tab connecting the stores that accept EPUB directly: Kobo Writing Life, Draft2Digital (aggregates to Apple/Barnes & Noble/Tolino), Google Play Books, Amazon KDP. **Research:** which have real APIs (Google Play Books has a partner API; KDP does not — it is web-only, so a macro), and per-store pricing rules (KDP's 70% royalty band is $2.99–$9.99; Draft2Digital takes 10%). Pricing advice should come from those rules, not from a guess. |
+
+### C. Printify print-on-demand
+
+| Piece | Shape |
+|---|---|
+| Product selection | Printify has a documented REST API (catalogue, products, orders, publishing). Let the user pre-pick blueprints/print providers per category once — the app then applies art + phrasing to those. Store the selection so a daily run needs no decisions. |
+| Art + phrasing | Reuse the image pipeline for the artwork and the publicity writer for the phrasing, with print-safe constraints: 300 DPI, transparent PNG, per-blueprint print-area sizes from the catalogue API. |
+| Storefronts | **Research:** Printify's own **Pop-Up Store** is free and needs no external account — the obvious default. Etsy charges $0.20 per listing (so a daily run has a real cost); Shopify is a monthly fee; TikTok Shop and eBay are commission-only. Check current terms before recommending. |
+| Daily run | Same shape as the chapter scheduler: a scheduled sweep applies the day's phrasing/art to the pre-picked products and publishes to the connected store, with the same deliberate stop — nothing goes live without the toggle being on. |
+
 ## Open (2026-07-25) — asked for, not yet built
 
 Two requests from the same session as the OAuth/i18n fixes. Both are large enough that starting them

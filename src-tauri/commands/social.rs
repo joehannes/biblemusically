@@ -946,10 +946,12 @@ pub async fn publish_derivative(state: State<'_, AppState>, id: String) -> Res<V
         "discord" => post_discord(&http, &caption, media_path.as_deref()).await,
         "youtube" => Err("Publish YouTube videos through the Upload page, which handles the OAuth channel and metadata.".to_string()),
         "instagram" | "tiktok" => Err(format!(
-            "{platform} needs its app review/audit completed before the API will publish. Until then, \
-             use the built-in browser with a recorded macro."
+            "{platform} will not publish through its API until the app review/audit is done. The way \
+             through today: open {platform} in the app's browser and let the Macro Manager write the \
+             posting macro for you (\"Write a macro with the AI\"), then replay it per song."
         )),
-        "browser_macro" => Err("Replay the recorded macro from the Macro Manager to post this.".to_string()),
+        "browser_macro" => Err("Replay the macro from the Macro Manager to post this — or have the AI \
+             write one against the site if you have not recorded it yet.".to_string()),
         other => Err(format!("Publishing to {other} is not implemented.")),
     };
 
