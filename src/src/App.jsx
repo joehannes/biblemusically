@@ -20,6 +20,7 @@ import Distribution from "./pages/Distribution";
 import GraphicNovels from "./pages/GraphicNovels";
 import PrintOnDemand from "./pages/PrintOnDemand";
 import Clipboard from "./pages/Clipboard";
+import AccessGuides from "./pages/AccessGuides";
 import BibleSources from "./pages/BibleSources";
 import AIComposer from "./pages/AIComposer";
 import FreeformComposer from "./pages/FreeformComposer";
@@ -107,6 +108,7 @@ function RootGate() {
             <Route path="/novels" element={<GraphicNovels />} />
             <Route path="/print" element={<PrintOnDemand />} />
             <Route path="/clipboard" element={<Clipboard />} />
+            <Route path="/access" element={<AccessGuides />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/characters" element={<Characters />} />
             <Route path="/upload" element={<Upload />} />

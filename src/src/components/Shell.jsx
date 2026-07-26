@@ -59,7 +59,7 @@ import {
   Folder,
   Globe,
   Wand2,
-  Workflow as WorkflowIcon, Megaphone, Plus, Disc3, BookMarked, Shirt, ClipboardList} from "lucide-react";
+  Workflow as WorkflowIcon, Megaphone, Plus, Disc3, BookMarked, Shirt, ClipboardList, KeyRound} from "lucide-react";
 import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -233,6 +233,13 @@ const NAV = [
     label: "Web Browser",
     icon: Globe,
     testid: "nav-browser",
+    group: "system",
+  },
+  {
+    to: "/access",
+    label: "Access & Permissions",
+    icon: KeyRound,
+    testid: "nav-access",
     group: "system",
   },
   {

@@ -692,6 +692,11 @@ pub fn run() {
             commands::set_publish_time,
             commands::list_publish_times,
             commands::channels_missing_publish_time,
+            // Guides for getting tokens and permissions out of other people's dashboards
+            commands::list_access_guides,
+            commands::access_guide,
+            commands::set_access_step,
+            commands::save_access_capture,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

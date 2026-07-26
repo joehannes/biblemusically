@@ -205,6 +205,11 @@ export const api = {
   startWorkflowRun: (payload) => invokeCommand("start_workflow_run", { payload }),
   workflowRunStatus: (projectId) => invokeCommand("workflow_run_status", { projectId: projectId || null }),
   setWorkflowRunStatus: (projectId, status) => invokeCommand("set_workflow_run_status", { projectId, status }),
+  // ============ Third-party access guides ============
+  listAccessGuides: () => invokeCommand("list_access_guides"),
+  accessGuide: (id) => invokeCommand("access_guide", { id }),
+  setAccessStep: (payload) => invokeCommand("set_access_step", { payload }),
+  saveAccessCapture: (payload) => invokeCommand("save_access_capture", { payload }),
   // ============ Channel publication times ============
   suggestPublishTime: (payload) => invokeCommand("suggest_publish_time", { payload }),
   setPublishTime: (payload) => invokeCommand("set_publish_time", { payload }),
