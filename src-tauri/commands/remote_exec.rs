@@ -40,7 +40,14 @@ const ALLOWED_TOOLS: &[&str] = &["ffmpeg", "ffprobe", "yt-dlp", "magick", "conve
 /// Where a command-line step can run. Surfaced in Settings.
 #[tauri::command]
 pub async fn list_cli_runners() -> Res<Value> {
-    Ok(json!({ "runners": [
+    Ok(json!({
+        // The UI needs to know before it offers the choice, not after a job fails.
+        "local_available": local_runner_available(),
+        "local_unavailable_reason": if local_runner_available() { "" } else {
+            "This device has no ffmpeg and cannot get one, so command-line steps run on a remote host. \
+             Modal's free credits cover a daily video comfortably."
+        },
+        "runners": [
         {
             "id": "local", "label": "This device", "cost": "free",
             "detail": "Runs the binary installed here. The only option that needs no network — and the one a phone cannot use.",
@@ -123,7 +130,42 @@ pub async fn remote_exec(state: State<'_, AppState>, job: CliJob) -> Res<Value> 
 /// Which runner a job would use, without running it — callers need this to decide whether they must
 /// resolve their inputs to URLs first.
 pub fn configured_runner(settings: &Value) -> String {
-    settings["remote_cli_provider"].as_str().unwrap_or("local").to_string()
+    let chosen = settings["remote_cli_provider"].as_str().unwrap_or("local");
+    // A phone has no ffmpeg, no yt-dlp and no imagemagick, and shipping them would be a hundred
+    // megabytes to run a command a server can run for free. So "local" is not a choice there — the
+    // setting is overridden rather than obeyed, and `local_runner_available` explains why in the UI.
+    if !local_runner_available() && chosen == "local" {
+        return preferred_remote(settings);
+    }
+    chosen.to_string()
+}
+
+/// Can command-line steps run on this device at all?
+///
+/// False on mobile, and deliberately a compile-time fact rather than a probe: the answer cannot change
+/// while the app is running, and a probe that failed for another reason would silently strand the user
+/// on a runner that does not exist.
+pub fn local_runner_available() -> bool {
+    cfg!(desktop)
+}
+
+/// Which remote to use when local is not an option.
+///
+/// Modal first because it is the one with a free tier that needs no repository and no notebook session —
+/// the shortest path from "a phone" to "a rendered video".
+fn preferred_remote(settings: &Value) -> String {
+    for (key, runner) in [
+        ("modal_cli_endpoint", "modal"),
+        ("modal_endpoint", "modal"),
+        ("remote_cli_endpoint", "http"),
+    ] {
+        if settings[key].as_str().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+            return runner.to_string();
+        }
+    }
+    // Nothing configured: name the runner anyway so the failure says "Modal is not set up" rather than
+    // "ffmpeg not found", which would send someone looking for the wrong thing entirely.
+    "modal".to_string()
 }
 
 /// The shared path: validate, pick the runner, dispatch. Used by the command and by any module that
@@ -133,6 +175,10 @@ pub async fn exec_job(settings: &Value, job: CliJob) -> Res<Value> {
     let runner = job.runner.clone()
         .or_else(|| settings["remote_cli_provider"].as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "local".to_string());
+    // Even an explicit `runner: "local"` cannot be honoured on a device with no binaries to run.
+    let runner = if runner == "local" && !local_runner_available() {
+        preferred_remote(settings)
+    } else { runner };
 
     match runner.as_str() {
         "local" => run_local(&job),

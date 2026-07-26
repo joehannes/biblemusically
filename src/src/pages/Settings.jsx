@@ -171,6 +171,10 @@ const initialSettings = {
   printify_shop_id: "",
   printify_auto_publish: false,
   printify_daily_run: false,
+  suno_wrapper_url: "",
+  suno_api_base: "",
+  suno_clerk_base: "",
+  suno_fallback_after_minutes: 15,
   cli_worker_url: "",
   modal_cli_endpoint: "",
   modal_endpoint: "",
@@ -1162,6 +1166,50 @@ const SettingsComponent = () => {
             posts that went out unread is not something an apology fixes.</span>
           </span>
         </label>
+      </Card>
+
+      {/* ── Suno without a browser ────────────────────────────────────────── */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Sparkles className="w-4 h-4 text-primary" /><h2 className="font-semibold">Suno session &amp; fallback</h2></div>
+        <div className="text-sm text-muted-foreground mb-3">
+          Suno has no official API. The app uses your own signed-in session over plain HTTP — no hidden
+          browser, which is what makes it work on a phone. The session expires periodically and has to be
+          re-captured; if that prompt goes unanswered, the app switches to a wrapper rather than losing
+          the night's output.
+        </div>
+        <label className="text-xs text-muted-foreground">Wrapper URL (the automatic fallback)</label>
+        <input
+          value={s.suno_wrapper_url || ""}
+          onChange={(e) => updateS("suno_wrapper_url", e.target.value)}
+          placeholder="https://…modal.run  — deploy scripts/remote/suno_wrapper.py"
+          className="w-full bg-muted/30 border border-border rounded px-3 py-2 text-sm mb-3"
+        />
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Fall back after (minutes unanswered)</label>
+            <input type="number" min={1} max={240}
+              value={s.suno_fallback_after_minutes ?? 15}
+              onChange={(e) => updateS("suno_fallback_after_minutes", Number(e.target.value) || 15)}
+              className="w-full bg-muted/30 border border-border rounded px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">API base (only if Suno moves it)</label>
+            <input value={s.suno_api_base || ""} onChange={(e) => updateS("suno_api_base", e.target.value)}
+              placeholder="studio-api.prod.suno.com"
+              className="w-full bg-muted/30 border border-border rounded px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Sign-in base</label>
+            <input value={s.suno_clerk_base || ""} onChange={(e) => updateS("suno_clerk_base", e.target.value)}
+              placeholder="clerk.suno.com"
+              className="w-full bg-muted/30 border border-border rounded px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-2">
+          These hosts are settings rather than built in because they move — the base changed from
+          studio-api.suno.ai to studio-api.prod.suno.com. Blank means today's default. Unofficial and
+          for research: an account can be rate-limited or suspended.
+        </p>
       </Card>
 
       {/* ── Print on demand ───────────────────────────────────────────────── */}
