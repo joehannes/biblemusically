@@ -352,6 +352,20 @@ pub fn run() {
                 });
             }
 
+            // Workflow runs: the pipeline's sequencing lives here rather than in the /workflow page, so
+            // switching project does not abandon a run half way through. Ten seconds, because a run is
+            // mostly waiting for jobs and a step that has nothing to do should not sit for minutes.
+            {
+                let run_state = state_arc.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
+                    loop {
+                        tick.tick().await;
+                        commands::workflow_run::tick(&run_state).await;
+                    }
+                });
+            }
+
             // Check for FFmpeg and show a warning dialog if missing
             if which::which("ffmpeg").is_err() {
                 use tauri_plugin_dialog::DialogExt;
@@ -669,6 +683,10 @@ pub fn run() {
             commands::autosave_commit,
             commands::autosave_status,
             commands::save_and_push,
+            // Workflow runs: sequenced on the backend so a project switch cannot abandon one
+            commands::start_workflow_run,
+            commands::workflow_run_status,
+            commands::set_workflow_run_status,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 import { toast } from "sonner";
 import { api } from "./api";
 import { commitPending } from "./autosave";
+import { hasRunIntentFor, runIntent, clearRunIntent } from "./runHandoff";
 
 const Ctx = createContext(null);
 
@@ -39,6 +40,25 @@ export function StudioProvider({ children }) {
       // have, and the commit is labelled "before switching project" so the log says why it exists.
       try { await commitPending("switch"); }
       catch (err) { console.warn("autosave before project switch failed", err); }
+
+      // Hand any in-flight run to the backend runner before the page that owns it unmounts. The
+      // backend sequences from the project's saved JSON, so it finishes without anything of the GUI —
+      // which is the only way the previous project's run survives this switch.
+      if (hasRunIntentFor(prev)) {
+        const intent = runIntent();
+        try {
+          await api.startWorkflowRun({
+            project_id: prev,
+            stop_after: intent.stopAfter || "video",
+            include_upload: !!intent.includeUpload,
+            stop_on_error: !!intent.stopOnError,
+          });
+          clearRunIntent();
+          toast.success("That project's run continues in the background.");
+        } catch (err) {
+          toast.error(`Could not hand the run to the background: ${err}`);
+        }
+      }
     }
     // persist relevant drafts for previous project
     try {

@@ -81,7 +81,25 @@ it is per-view work, and `usePageActions` keeps working for pages with bespoke c
 | Viewport-scoped buttons | An action that only makes sense for one section (the big *Generate* on a specific control) should appear in the bar **only while that section is in the viewport**. An `IntersectionObserver` per registered section, registering/unregistering its action as it enters and leaves. |
 | Care needed | Actions appearing and disappearing as you scroll is jarring if done naively — the bar needs a stable order and a fixed slot count, so a button never jumps sideways when a neighbour appears. |
 
-### G. Project switching without stopping the running workflow
+### G. Project switching without stopping the running workflow — **done in v0.81.0**
+
+Built: `commands/workflow_run.rs` — a `workflow_runs` document per project (steps, cursor, dispatched job
+ids, log) advanced by a 10-second backend tick. Eligibility (which songs still need music, analysis,
+overlays, video) moved out of the /workflow page's closures and into tested Rust that reads the **store**,
+so a run cannot be confused by a half-edited form, or by a form belonging to a different project.
+
+`lib/runHandoff.js` + `selectProject`: a client-side run in flight registers its intent, and switching
+project hands it to the backend runner before the page unmounts — so the previous project's run finishes
+instead of being abandoned with its queued jobs still completing (which looked like success).
+
+The Workflow view now has "Run in background" beside "Run full pipeline", shows the backend run's step
+and last log lines with pause/resume/cancel, and shows runs belonging to *other* projects — the point of
+moving the loop is only reassuring if you can see it from wherever you are.
+
+Still open from G: creating upload rows and enriching their metadata stays in the Upload view (those are
+decisions, not work), so the background run's upload step only dispatches rows that are already pending.
+
+### G (original write-up). Project switching without stopping the running workflow
 
 | Piece | Shape |
 |---|---|

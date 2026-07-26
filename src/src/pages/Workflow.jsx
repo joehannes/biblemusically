@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import GuidedPanel from "../components/GuidedPanel";
+import { setRunIntent, clearRunIntent } from "../lib/runHandoff";
 import { workflowFlow } from "../lib/guidedFlows";
 
 // One row per pipeline stage, in the order they actually have to run. `pending(songs)` — when
@@ -151,6 +152,38 @@ export default function Workflow() {
 
   const pushLog = (message, level = "info") => setLog((prev) => [...prev.slice(-199), { t: Date.now(), level, message }]);
 
+  // ── Background runs ────────────────────────────────────────────────────────
+  // The same pipeline, sequenced by the backend from this project's saved JSON. That is the version
+  // that survives a project switch, a reload and a crash — nothing about it lives in this component.
+  const [backendRun, setBackendRun] = useState(null);
+  const [elsewhere, setElsewhere] = useState([]);
+  const refreshRuns = async () => {
+    try {
+      const r = await api.workflowRunStatus(activeProjectId || null);
+      setBackendRun(r?.run || null);
+      setElsewhere(r?.running_elsewhere || []);
+    } catch { /* no runs yet */ }
+  };
+  useEffect(() => {
+    refreshRuns();
+    const t = setInterval(refreshRuns, 8000);
+    return () => clearInterval(t);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [activeProjectId]);
+
+  const startBackgroundRun = async () => {
+    if (!activeProjectId) { toast.error("No active project selected."); return; }
+    try {
+      const r = await api.startWorkflowRun({
+        project_id: activeProjectId, stop_after: guidedStopAfter,
+        include_upload: includeUpload, stop_on_error: stopOnError,
+      });
+      pushLog(`Background run started: ${(r.steps || []).join(" → ")}`);
+      toast.success("Running in the background — you can switch projects freely.");
+      refreshRuns();
+    } catch (err) { toast.error(`${err}`); }
+  };
+
   const setStage = (id, patch) => setStageState((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
   const runStage = async (stage) => {
@@ -209,6 +242,12 @@ export default function Workflow() {
   const runFullPipeline = async () => {
     if (runningStageId || runningAll) return;
     setRunningAll(true);
+    // If the user switches project mid-run, `selectProject` reads this and hands the run to the backend
+    // runner rather than letting it die with this component.
+    setRunIntent({
+      projectId: activeProjectId, stopAfter: guidedStopAfter,
+      includeUpload, stopOnError,
+    });
     pushLog("── Running full pipeline ──");
     try {
       // The guided run's "how far" answer is a hard stop: everything after the chosen stage is
@@ -243,6 +282,7 @@ export default function Workflow() {
       }
     } finally {
       setRunningAll(false);
+      clearRunIntent();
       pushLog("── Full pipeline run finished ──");
       // The GPU servers are no longer needed: shut down anything this session started so the run
       // stops billing against the free weekly Kaggle GPU quota.
@@ -302,10 +342,68 @@ export default function Workflow() {
           }}
         />
       </div>
+      {/* A run belonging to another project. Shown here because the whole point of moving the loop to
+          the backend is that leaving a project does not stop its run — and that is only reassuring if
+          you can see it from wherever you are. */}
+      {elsewhere.length > 0 && (
+        <Card className="p-3 mb-4 text-sm flex items-start gap-2">
+          <Loader2 className="w-4 h-4 text-primary animate-spin mt-0.5 shrink-0" />
+          <div>
+            <b>{elsewhere.length} other project{elsewhere.length === 1 ? "" : "s"} still running.</b>{" "}
+            <span className="text-muted-foreground">
+              {elsewhere.map((r) => `${(r.steps || [])[r.cursor] || "finishing"}`).join(", ")} — they carry on
+              without this view.
+            </span>
+          </div>
+        </Card>
+      )}
+
+      {backendRun && backendRun.status === "running" && (
+        <Card className="p-3 mb-4 text-sm space-y-1.5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 text-primary animate-spin" />
+              <b>Background run:</b>
+              <span className="text-muted-foreground">
+                step {Math.min((backendRun.cursor || 0) + 1, (backendRun.steps || []).length)} of{" "}
+                {(backendRun.steps || []).length} — {(backendRun.steps || [])[backendRun.cursor] || "finishing"}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              <Button size="sm" variant="secondary"
+                      onClick={async () => { await api.setWorkflowRunStatus(activeProjectId, "paused"); refreshRuns(); }}>
+                Pause
+              </Button>
+              <Button size="sm" variant="ghost"
+                      onClick={async () => { await api.setWorkflowRunStatus(activeProjectId, "cancelled"); refreshRuns(); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+          {(backendRun.log || []).slice(-3).map((l, i) => (
+            <div key={i} className="text-xs text-muted-foreground">{l.message}</div>
+          ))}
+        </Card>
+      )}
+      {backendRun && backendRun.status === "paused" && (
+        <Card className="p-3 mb-4 text-sm flex items-center justify-between gap-2">
+          <span className="text-muted-foreground">Background run paused at{" "}
+            {(backendRun.steps || [])[backendRun.cursor] || "the end"}.</span>
+          <Button size="sm" onClick={async () => { await api.setWorkflowRunStatus(activeProjectId, "running"); refreshRuns(); }}>
+            Resume
+          </Button>
+        </Card>
+      )}
+
       <Card className="p-4 mb-4 flex flex-wrap items-center gap-4">
         <Button size="lg" disabled={runningAll || !!runningStageId} onClick={runFullPipeline} className="shrink-0">
           {runningAll ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
           Run full pipeline
+        </Button>
+        <Button size="lg" variant="secondary" onClick={startBackgroundRun} className="shrink-0"
+                title="Sequenced by the backend from this project's saved data — survives switching project, reloading, or a crash">
+          <Play className="w-4 h-4 mr-2" />
+          Run in background
         </Button>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <Switch checked={includeUpload} onCheckedChange={setIncludeUpload} />

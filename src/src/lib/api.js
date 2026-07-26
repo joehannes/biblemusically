@@ -201,6 +201,10 @@ export const api = {
   autosaveCommit: (payload) => invokeCommand("autosave_commit", { payload }),
   autosaveStatus: (projectId) => invokeCommand("autosave_status", { projectId }),
   saveAndPush: (projectId, view) => invokeCommand("save_and_push", { projectId, view: view || null }),
+  // ============ Workflow runs (backend-sequenced, survive a project switch) ============
+  startWorkflowRun: (payload) => invokeCommand("start_workflow_run", { payload }),
+  workflowRunStatus: (projectId) => invokeCommand("workflow_run_status", { projectId: projectId || null }),
+  setWorkflowRunStatus: (projectId, status) => invokeCommand("set_workflow_run_status", { projectId, status }),
   // ============ Clipboard: system mirror, append-only vault, paste queue ============
   clipboardSync: () => invokeCommand("clipboard_sync"),
   clipboardHistory: (kind, limit) => invokeCommand("clipboard_history", { kind: kind || null, limit: limit || null }),
