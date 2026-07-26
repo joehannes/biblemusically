@@ -838,3 +838,117 @@ export const FLOWS = {
   workflow: workflowFlow,
   publicity: publicityFlow,
 };
+
+// ── Distribution ────────────────────────────────────────────────────────────
+// The one guided flow whose first question is a policy question, because it has to be: two of the
+// distributors in the list refuse fully AI-generated music, and finding that out at delivery costs an
+// account rather than an upload.
+export const distributionFlow = {
+  id: "distribution",
+  title: "Guided distribution",
+  aiContext: (ctx) => ({
+    ...baseAiContext(ctx),
+    releases: ctx.releases?.length || 0,
+    ready_albums: ctx.plan?.albums?.length || 0,
+    ready_singles: ctx.plan?.singles?.length || 0,
+  }),
+  steps: [
+    {
+      id: "what",
+      title: "What",
+      question: "What are you releasing?",
+      help: "A chapter is a single; a finished book is an album. Albums do better on streaming — a listener finds one thing, not fifty.",
+      reveals: "releases",
+      options: (ctx) => [
+        {
+          id: "album",
+          label: `A whole book as an album (${ctx.plan?.albums?.length || 0} ready)`,
+          hint: "Every chapter, in order, under one release.",
+          when: (c) => (c.plan?.albums?.length || 0) > 0,
+          recommended: true,
+          apply: (c) => c.setTab?.("releases"),
+        },
+        {
+          id: "single",
+          label: "One chapter as a single",
+          hint: "Good for testing the whole path end to end before committing a book.",
+          when: (c) => (c.plan?.singles?.length || 0) > 0,
+          apply: (c) => c.setTab?.("releases"),
+        },
+        {
+          id: "compilation",
+          label: "A book as one long video",
+          hint: "Not a streaming release — a single YouTube upload with chapter markers.",
+          apply: (c) => c.setTab?.("compilations"),
+        },
+      ],
+    },
+    {
+      id: "who",
+      title: "Artist",
+      question: "Who is it by?",
+      help: "A release needs an artist, and the artist is the channel — that is what keeps the royalties attached to the thing that earns them.",
+      reveals: "artist",
+      options: (ctx) => [
+        {
+          id: "existing",
+          label: `Release as ${ctx.artists?.[0]?.name || "the saved artist"}`,
+          hint: "Already set up.",
+          when: (c) => (c.artists?.length || 0) > 0,
+          recommended: (ctx.artists?.length || 0) > 0,
+          apply: () => {},
+        },
+        {
+          id: "new",
+          label: "Set up an artist now",
+          hint: "Name, bio, and which channel it releases as.",
+          apply: (c) => c.setTab?.("artists"),
+        },
+      ],
+    },
+    {
+      id: "distributor",
+      title: "Distributor",
+      question: "Who delivers it to the stores?",
+      help: "None of them offer an upload API, so this decides the terms, not the automation. What matters most is their AI policy: two on the list refuse generated music outright.",
+      reveals: "distributor",
+      options: (ctx) => {
+        const ok = (ctx.distributors || []).filter((d) => d.ai === "accepts");
+        const free = ok.find((d) => (d.price || "").toLowerCase().includes("free"));
+        return [
+          {
+            id: "free",
+            label: `Start free — ${free?.name || "RouteNote"}`,
+            hint: free ? `${free.price}. ${free.royalty}.` : "A free tier takes a cut instead of a fee.",
+            recommended: true,
+            when: () => Boolean(free),
+            apply: (c) => c.setTab?.("distributors"),
+          },
+          {
+            id: "uncapped",
+            label: "Pay, and keep everything",
+            hint: "A yearly fee, full royalties, no per-release cut.",
+            apply: (c) => c.setTab?.("distributors"),
+          },
+          {
+            id: "compare",
+            label: "Show me the comparison",
+            hint: "Price, royalty, AI policy and rate caps side by side.",
+            apply: (c) => c.setTab?.("distributors"),
+          },
+        ];
+      },
+    },
+    {
+      id: "package",
+      title: "Package",
+      question: "Build the upload package?",
+      help: "Numbered audio, the cover, metadata as CSV, and the AI-credits disclosure Spotify's DDEX standard requires. Then a macro or you does the upload itself.",
+      reveals: "package",
+      options: () => [
+        { id: "go", label: "Export the package", hint: "Writes a folder; nothing is delivered yet.", recommended: true, apply: (c) => c.setTab?.("releases") },
+        { id: "cover", label: "Make the cover first", hint: "Stores reject a release without square artwork.", apply: (c) => c.setTab?.("releases") },
+      ],
+    },
+  ],
+};

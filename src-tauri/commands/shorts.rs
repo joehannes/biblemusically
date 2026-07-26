@@ -28,15 +28,49 @@ fn bson_to_value(doc: Document) -> Value {
 // rendered video, the channel handle and the published YouTube id.
 // ────────────────────────────────────────────────────────────────
 
-/// Frame size and length limits per platform. Kept here rather than guessed per call, because a
-/// wrong aspect ratio is silently re-cropped by the platform and a too-long clip is rejected.
-fn platform_spec(platform: &str) -> (i64, i64, f64) {
+/// Frame size, hard limit and *default* length per platform.
+///
+/// Kept here rather than guessed per call, because a wrong aspect ratio is silently re-cropped and a
+/// too-long clip is rejected — and because on TikTok the default length decides whether the clip earns
+/// anything at all. Checked July 2026:
+///
+///   • TikTok's Creator Rewards programme pays only for videos over one minute; anything shorter earns
+///     nothing however well it performs. So the default is 75s, deliberately past the line — the one
+///     place where the obvious "make it 60 seconds" is the expensive choice.
+///   • YouTube Shorts is capped strictly under 60s for the Shorts feed, and pays from a pooled share
+///     of feed ad revenue rather than per view.
+///   • Facebook Reels pays per view but needs 10k followers and 600k plays in 60 days first.
+///   • Snapchat Spotlight revenue-shares with a $100 payout floor.
+///   • Pinterest pays nothing per view at all — its Creator Rewards programme ended and was not
+///     replaced. A pin is worth cutting for traffic, never for revenue.
+///
+/// Returns `(width, height, max_seconds, default_seconds)`.
+fn platform_spec(platform: &str) -> (i64, i64, f64, f64) {
     match platform {
-        "tiktok" => (1080, 1920, 60.0),
-        "youtube" | "shorts" => (1080, 1920, 59.0),   // Shorts is strictly < 60s
-        "instagram" | "reels" => (1080, 1920, 89.0),
-        "pinterest" => (1080, 1920, 59.0),
-        _ => (1080, 1920, 59.0),
+        // Over a minute, on purpose: under it, Creator Rewards pays zero.
+        "tiktok" => (1080, 1920, 600.0, 75.0),
+        "youtube" | "shorts" => (1080, 1920, 59.0, 59.0),
+        "instagram" | "reels" => (1080, 1920, 89.0, 75.0),
+        "facebook" => (1080, 1920, 89.0, 75.0),
+        "snapchat" | "spotlight" => (1080, 1920, 59.0, 55.0),
+        "pinterest" => (1080, 1920, 59.0, 45.0),
+        _ => (1080, 1920, 59.0, 59.0),
+    }
+}
+
+/// What a platform actually pays, so the choice is made with the number in view.
+fn payout_note(platform: &str) -> &'static str {
+    match platform {
+        "tiktok" => "Creator Rewards pays roughly $0.50–1.00 per 1,000 qualified views — but only for \
+                     videos over one minute.",
+        "youtube" | "shorts" => "Pooled share of Shorts feed ad revenue, roughly $0.01–0.10 per 1,000 \
+                                 views. Needs 1,000 subscribers and 10M Shorts views in 90 days.",
+        "facebook" => "Roughly $0.005–0.01 per 1,000 views, after 10,000 followers and 600,000 plays \
+                       in 60 days.",
+        "instagram" | "reels" => "No per-view payout; gifts and subscriptions start at 10,000 followers.",
+        "snapchat" | "spotlight" => "Revenue share, $100 minimum payout, available in 45 countries.",
+        "pinterest" => "Pays nothing per view — cut this one for traffic, not revenue.",
+        _ => "",
     }
 }
 
@@ -107,8 +141,8 @@ pub async fn build_short(state: State<'_, AppState>, payload: ShortRequest) -> R
     }
 
     let platform = payload.platform.clone().unwrap_or_else(|| "shorts".to_string());
-    let (w, h, max_secs) = platform_spec(&platform);
-    let window = payload.seconds.unwrap_or(max_secs).clamp(5.0, max_secs);
+    let (w, h, max_secs, default_secs) = platform_spec(&platform);
+    let window = payload.seconds.unwrap_or(default_secs).clamp(5.0, max_secs);
 
     let mut sections: Vec<Value> = Vec::new();
     if let Ok(mut cursor) = state.db.collection::<Document>("sections")
@@ -224,6 +258,7 @@ pub async fn build_short(state: State<'_, AppState>, payload: ShortRequest) -> R
         "width": w, "height": h,
         "hook_start": start,
         "seconds": window,
+        "payout": payout_note(&platform),
         "links_to": if video_id.is_empty() { Value::Null } else { json!(format!("https://www.youtube.com/watch?v={video_id}")) },
         "status": "draft",
         "created_at": crate::models::now_iso(),
@@ -317,5 +352,27 @@ mod tests {
         assert_eq!(platform_spec("shorts").2, 59.0, "Shorts is strictly under a minute");
         assert_eq!(platform_spec("reels").2, 89.0);
         assert_eq!(platform_spec("tiktok").0, 1080);
+    }
+
+    #[test]
+    fn a_tiktok_cut_defaults_past_the_one_minute_pay_line() {
+        // Creator Rewards pays nothing for a clip under a minute, so defaulting to "just under 60"
+        // — the obvious number, and the one every other platform wants — earns zero on TikTok.
+        let (_, _, max, default) = platform_spec("tiktok");
+        assert!(default > 60.0, "a TikTok cut of {default}s earns nothing");
+        assert!(default <= max);
+
+        // Shorts is the opposite constraint: the feed rejects a minute or more.
+        let (_, _, smax, sdefault) = platform_spec("shorts");
+        assert!(sdefault < 60.0 && smax < 60.0, "Shorts must stay under a minute");
+    }
+
+    #[test]
+    fn every_platform_says_what_it_pays_including_the_one_that_pays_nothing() {
+        for p in ["tiktok", "shorts", "facebook", "instagram", "snapchat", "pinterest"] {
+            assert!(!payout_note(p).is_empty(), "{p} has no payout note");
+        }
+        assert!(payout_note("pinterest").contains("nothing"),
+                "a platform that pays nothing must say so rather than be quietly listed");
     }
 }

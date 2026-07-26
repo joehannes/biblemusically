@@ -7,10 +7,27 @@ context, with a `Fixed —` note.
 
 ## Open milestones (2026-07-25, requested)
 
-Three feature tracks requested after v0.73.0, recorded here with the shape each one needs and the
-research each one still owes. None are started.
+Three feature tracks requested after v0.73.0. **A is built** (v0.75.0) — its research is written up in
+[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md). B and C are recorded with the shape each needs and the
+research each still owes.
 
-### A. Long compilations + music-only distribution
+### A. Long compilations + music-only distribution — **done in v0.75.0**
+
+Built: `commands/compilation.rs` (chapter order parsed from titles, concat *filter* so inputs rendered
+months apart still join, timestamped description), `commands/distribution.rs` (distributor matrix with
+AI policies and rate caps, releases, artists, `export_release_package`), `pages/Distribution.jsx`, and
+the 66-book canon (the book list held 17, so most of the Bible could not be selected at all).
+
+Findings that changed the design: **no self-service distributor has an upload API** — so the app builds
+the release package and a macro or a person uploads; **TuneCore and CD Baby refuse fully AI-generated
+music**, Amuse caps at 10 releases/7 days, LANDR at 12 AI songs/month, and DistroKid excludes "mass
+auto-generated content"; **Spotify requires a DDEX AI-credits disclosure**; and **TikTok pays nothing
+for a clip under one minute**, so the TikTok cut now defaults to 75s.
+
+Still open from A: nothing blocking. A real per-distributor upload macro has to be recorded against a
+live account, which needs the user's own login.
+
+### A (original write-up). Long compilations + music-only distribution
 
 | Piece | Shape |
 |---|---|

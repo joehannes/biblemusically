@@ -157,6 +157,23 @@ export const api = {
   listPublicityPieces: (songId, projectId) => invokeCommand("list_publicity_pieces", { songId: songId || null, projectId: projectId || null }),
   updatePublicityPiece: (id, patch) => invokeCommand("update_publicity_piece", { id, patch }),
   deletePublicityPiece: (id) => invokeCommand("delete_publicity_piece", { id }),
+  // ============ Compilations + music-only distribution ============
+  // A whole book of the Bible as one long video, with a timestamped tracklist.
+  compilationPlan: (payload) => invokeCommand("compilation_plan", { payload }),
+  buildCompilation: (payload) => invokeCommand("build_compilation", { payload }),
+  listCompilations: (projectId) => invokeCommand("list_compilations", { projectId }),
+  deleteCompilation: (id) => invokeCommand("delete_compilation", { id }),
+  // Distribution to Spotify and the rest. No distributor has a public upload API (checked July
+  // 2026), so the app builds the release package and a macro or a person does the upload.
+  listDistributors: () => invokeCommand("list_distributors"),
+  saveArtistProfile: (payload) => invokeCommand("save_artist_profile", { payload }),
+  listArtistProfiles: () => invokeCommand("list_artist_profiles"),
+  planReleases: (projectId) => invokeCommand("plan_releases", { projectId }),
+  saveRelease: (payload) => invokeCommand("save_release", { payload }),
+  listReleases: (projectId) => invokeCommand("list_releases", { projectId }),
+  deleteRelease: (id) => invokeCommand("delete_release", { id }),
+  exportReleasePackage: (id) => invokeCommand("export_release_package", { id }),
+  generateReleaseCover: (payload) => invokeCommand("generate_release_cover", { payload }),
   // ============ AI-authored macros ============
   // Command-line steps (ffmpeg, yt-dlp, imagemagick) on this device or on a remote host.
   listCliRunners: () => invokeCommand("list_cli_runners"),

@@ -22,25 +22,87 @@ fn bson_to_value(doc: Document) -> Value {
 // Static data
 // ────────────────────────────────────────────────────────────────
 
-static BIBLE_BOOKS: Lazy<Value> = Lazy::new(|| json!([
-    {"id":"genesis",      "name":"Genesis",       "chapters":50},
-    {"id":"exodus",       "name":"Exodus",        "chapters":40},
-    {"id":"leviticus",    "name":"Leviticus",     "chapters":27},
-    {"id":"numbers",      "name":"Numbers",       "chapters":36},
-    {"id":"deuteronomy",  "name":"Deuteronomy",   "chapters":34},
-    {"id":"joshua",       "name":"Joshua",        "chapters":24},
-    {"id":"psalms",       "name":"Psalms",        "chapters":150},
-    {"id":"proverbs",     "name":"Proverbs",      "chapters":31},
-    {"id":"isaiah",       "name":"Isaiah",        "chapters":66},
-    {"id":"matthew",      "name":"Matthew",       "chapters":28},
-    {"id":"mark",         "name":"Mark",          "chapters":16},
-    {"id":"luke",         "name":"Luke",          "chapters":24},
-    {"id":"john",         "name":"John",          "chapters":21},
-    {"id":"acts",         "name":"Acts",          "chapters":28},
-    {"id":"romans",       "name":"Romans",        "chapters":16},
-    {"id":"1corinthians", "name":"1 Corinthians", "chapters":16},
-    {"id":"revelation",   "name":"Revelation",    "chapters":22},
-]));
+/// The Protestant canon: id, display name, chapter count.
+///
+/// A plain table rather than a `json!` literal — sixty-six entries is past what that macro can
+/// expand, and this is the list every book-wide feature counts against (compilations, the
+/// chapter scheduler, the reference parser).
+pub(crate) const CANON: &[(&str, &str, i64)] = &[
+    // ── Old Testament ──
+    ("genesis",        "Genesis",         50),
+    ("exodus",         "Exodus",          40),
+    ("leviticus",      "Leviticus",       27),
+    ("numbers",        "Numbers",         36),
+    ("deuteronomy",    "Deuteronomy",     34),
+    ("joshua",         "Joshua",          24),
+    ("judges",         "Judges",          21),
+    ("ruth",           "Ruth",            4),
+    ("1samuel",        "1 Samuel",        31),
+    ("2samuel",        "2 Samuel",        24),
+    ("1kings",         "1 Kings",         22),
+    ("2kings",         "2 Kings",         25),
+    ("1chronicles",    "1 Chronicles",    29),
+    ("2chronicles",    "2 Chronicles",    36),
+    ("ezra",           "Ezra",            10),
+    ("nehemiah",       "Nehemiah",        13),
+    ("esther",         "Esther",          10),
+    ("job",            "Job",             42),
+    ("psalms",         "Psalms",          150),
+    ("proverbs",       "Proverbs",        31),
+    ("ecclesiastes",   "Ecclesiastes",    12),
+    ("songofsolomon",  "Song of Solomon", 8),
+    ("isaiah",         "Isaiah",          66),
+    ("jeremiah",       "Jeremiah",        52),
+    ("lamentations",   "Lamentations",    5),
+    ("ezekiel",        "Ezekiel",         48),
+    ("daniel",         "Daniel",          12),
+    ("hosea",          "Hosea",           14),
+    ("joel",           "Joel",            3),
+    ("amos",           "Amos",            9),
+    ("obadiah",        "Obadiah",         1),
+    ("jonah",          "Jonah",           4),
+    ("micah",          "Micah",           7),
+    ("nahum",          "Nahum",           3),
+    ("habakkuk",       "Habakkuk",        3),
+    ("zephaniah",      "Zephaniah",       3),
+    ("haggai",         "Haggai",          2),
+    ("zechariah",      "Zechariah",       14),
+    ("malachi",        "Malachi",         4),
+    // ── New Testament ──
+    ("matthew",        "Matthew",         28),
+    ("mark",           "Mark",            16),
+    ("luke",           "Luke",            24),
+    ("john",           "John",            21),
+    ("acts",           "Acts",            28),
+    ("romans",         "Romans",          16),
+    ("1corinthians",   "1 Corinthians",   16),
+    ("2corinthians",   "2 Corinthians",   13),
+    ("galatians",      "Galatians",       6),
+    ("ephesians",      "Ephesians",       6),
+    ("philippians",    "Philippians",     4),
+    ("colossians",     "Colossians",      4),
+    ("1thessalonians", "1 Thessalonians", 5),
+    ("2thessalonians", "2 Thessalonians", 3),
+    ("1timothy",       "1 Timothy",       6),
+    ("2timothy",       "2 Timothy",       4),
+    ("titus",          "Titus",           3),
+    ("philemon",       "Philemon",        1),
+    ("hebrews",        "Hebrews",         13),
+    ("james",          "James",           5),
+    ("1peter",         "1 Peter",         5),
+    ("2peter",         "2 Peter",         3),
+    ("1john",          "1 John",          5),
+    ("2john",          "2 John",          1),
+    ("3john",          "3 John",          1),
+    ("jude",           "Jude",            1),
+    ("revelation",     "Revelation",      22),
+];
+
+pub(crate) static BIBLE_BOOKS: Lazy<Value> = Lazy::new(|| Value::Array(
+    CANON.iter()
+        .map(|(id, name, chapters)| json!({ "id": id, "name": name, "chapters": chapters }))
+        .collect(),
+));
 
 static BIBLE_TRANSLATIONS: Lazy<Value> = Lazy::new(|| json!({
     "English (modern)": [
@@ -134,13 +196,25 @@ static BIBLE_TRANSLATIONS: Lazy<Value> = Lazy::new(|| json!({
 }));
 
 static HELLOAO_BOOK_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    // USFM book codes, the ids helloao's API paths use.
     let mut m = HashMap::new();
-    m.insert("genesis","GEN"); m.insert("exodus","EXO"); m.insert("leviticus","LEV");
-    m.insert("numbers","NUM"); m.insert("deuteronomy","DEU"); m.insert("joshua","JOS");
-    m.insert("psalms","PSA"); m.insert("proverbs","PRO"); m.insert("isaiah","ISA");
-    m.insert("matthew","MAT"); m.insert("mark","MRK"); m.insert("luke","LUK");
-    m.insert("john","JHN"); m.insert("acts","ACT"); m.insert("romans","ROM");
-    m.insert("1corinthians","1CO"); m.insert("revelation","REV");
+    m.insert("genesis","GEN"); m.insert("exodus","EXO"); m.insert("leviticus","LEV"); m.insert("numbers","NUM");
+    m.insert("deuteronomy","DEU"); m.insert("joshua","JOS"); m.insert("judges","JDG"); m.insert("ruth","RUT");
+    m.insert("1samuel","1SA"); m.insert("2samuel","2SA"); m.insert("1kings","1KI"); m.insert("2kings","2KI");
+    m.insert("1chronicles","1CH"); m.insert("2chronicles","2CH"); m.insert("ezra","EZR"); m.insert("nehemiah","NEH");
+    m.insert("esther","EST"); m.insert("job","JOB"); m.insert("psalms","PSA"); m.insert("proverbs","PRO");
+    m.insert("ecclesiastes","ECC"); m.insert("songofsolomon","SNG"); m.insert("isaiah","ISA"); m.insert("jeremiah","JER");
+    m.insert("lamentations","LAM"); m.insert("ezekiel","EZK"); m.insert("daniel","DAN"); m.insert("hosea","HOS");
+    m.insert("joel","JOL"); m.insert("amos","AMO"); m.insert("obadiah","OBA"); m.insert("jonah","JON");
+    m.insert("micah","MIC"); m.insert("nahum","NAM"); m.insert("habakkuk","HAB"); m.insert("zephaniah","ZEP");
+    m.insert("haggai","HAG"); m.insert("zechariah","ZEC"); m.insert("malachi","MAL"); m.insert("matthew","MAT");
+    m.insert("mark","MRK"); m.insert("luke","LUK"); m.insert("john","JHN"); m.insert("acts","ACT");
+    m.insert("romans","ROM"); m.insert("1corinthians","1CO"); m.insert("2corinthians","2CO"); m.insert("galatians","GAL");
+    m.insert("ephesians","EPH"); m.insert("philippians","PHP"); m.insert("colossians","COL"); m.insert("1thessalonians","1TH");
+    m.insert("2thessalonians","2TH"); m.insert("1timothy","1TI"); m.insert("2timothy","2TI"); m.insert("titus","TIT");
+    m.insert("philemon","PHM"); m.insert("hebrews","HEB"); m.insert("james","JAS"); m.insert("1peter","1PE");
+    m.insert("2peter","2PE"); m.insert("1john","1JN"); m.insert("2john","2JN"); m.insert("3john","3JN");
+    m.insert("jude","JUD"); m.insert("revelation","REV");
     m
 });
 

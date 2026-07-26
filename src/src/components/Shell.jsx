@@ -59,7 +59,7 @@ import {
   Folder,
   Globe,
   Wand2,
-  Workflow as WorkflowIcon, Megaphone, Plus} from "lucide-react";
+  Workflow as WorkflowIcon, Megaphone, Plus, Disc3} from "lucide-react";
 import { toast } from "sonner";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PageActionsContext } from "../lib/pageActions";
@@ -193,6 +193,13 @@ const NAV = [
     label: "Publicity",
     icon: Megaphone,
     testid: "nav-publicity",
+    group: "publish",
+  },
+  {
+    to: "/distribution",
+    label: "Distribution",
+    icon: Disc3,
+    testid: "nav-distribution",
     group: "publish",
   },
   {
