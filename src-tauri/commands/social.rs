@@ -103,23 +103,32 @@ pub async fn list_social_platforms() -> Res<Value> {
             "cost": "Free within the daily upload quota."
         },
         {
-            "id": "instagram", "label": "Instagram / Facebook / Threads", "tier": "review_gated",
+            "id": "instagram", "label": "Instagram / Facebook / Threads", "tier": "open",
             "can": ["post_image", "post_video"],
             "fields": [
-                { "key": "access_token", "label": "Graph API token", "placeholder": "long-lived page token", "secret": true },
-                { "key": "ig_user_id", "label": "IG user id", "placeholder": "17841400000000000", "secret": false }
+                { "key": "access_token", "label": "Graph API token", "placeholder": "long-lived token", "secret": true },
+                { "key": "ig_user_id", "label": "IG user id", "placeholder": "17841400000000000", "secret": false },
+                { "key": "media_base_url", "label": "Public media base URL", "placeholder": "https://…/media", "secret": false }
             ],
-            "help": "Free to call, but Meta App Review is required before it works beyond your own test users.",
-            "cost": "Free, gated by app review."
+            "help": "Publishes to your OWN account with no App Review, as long as that account holds a \
+                     role on your Meta app in Development mode — Access & Permissions walks through it. \
+                     Review is only needed for accounts that are not yours. Instagram fetches the file \
+                     itself, so the media needs a public URL (set the project's remote sync).",
+            "cost": "Free. 200 API calls per user per hour."
         },
         {
-            "id": "tiktok", "label": "TikTok", "tier": "review_gated",
+            "id": "tiktok", "label": "TikTok", "tier": "open",
             "can": ["post_video"],
             "fields": [
-                { "key": "access_token", "label": "Content Posting API token", "placeholder": "OAuth access token", "secret": true }
+                { "key": "access_token", "label": "Content Posting API token", "placeholder": "OAuth access token (video.upload)", "secret": true },
+                { "key": "media_base_url", "label": "Public media base URL", "placeholder": "https://…/media", "secret": false }
             ],
-            "help": "No fee, but posts stay private-only until TikTok audits the app (1–2 weeks).",
-            "cost": "Free, gated by audit."
+            "help": "Uploads to your TikTok DRAFTS with no audit at all (`video.upload`) — you tap once \
+                     to post. Direct posting needs the audited `video.publish` scope, and until that \
+                     audit passes every post is forced private, so a draft is the better outcome rather \
+                     than a consolation. TikTok pulls the file from a URL, so the media needs to be \
+                     publicly reachable.",
+            "cost": "Free."
         },
         {
             "id": "reddit", "label": "Reddit", "tier": "open",
@@ -945,11 +954,8 @@ pub async fn publish_derivative(state: State<'_, AppState>, id: String) -> Res<V
         "telegram" => post_telegram(&http, &account, &caption, media_path.as_deref()).await,
         "discord" => post_discord(&http, &caption, media_path.as_deref()).await,
         "youtube" => Err("Publish YouTube videos through the Upload page, which handles the OAuth channel and metadata.".to_string()),
-        "instagram" | "tiktok" => Err(format!(
-            "{platform} will not publish through its API until the app review/audit is done. The way \
-             through today: open {platform} in the app's browser and let the Macro Manager write the \
-             posting macro for you (\"Write a macro with the AI\"), then replay it per song."
-        )),
+        "instagram" => post_instagram(&http, &account, &caption, media_path.as_deref()).await,
+        "tiktok" => post_tiktok(&http, &account, &caption, media_path.as_deref()).await,
         "browser_macro" => Err("Replay the macro from the Macro Manager to post this — or have the AI \
              write one against the site if you have not recorded it yet.".to_string()),
         other => Err(format!("Publishing to {other} is not implemented.")),
@@ -1190,4 +1196,159 @@ mod tests {
         let (w, h, secs) = derivative_spec("something-new");
         assert!(w > 0 && h > 0 && secs > 0);
     }
+}
+
+/// Publish to Instagram through the Graph API.
+///
+/// This works **without App Review** when the target account holds a role on your Meta app in
+/// Development mode — see the Access & Permissions guide. Review is only needed for accounts that are
+/// not yours.
+///
+/// Publishing is two calls and that matters for error reporting: a container can be created and then
+/// fail to publish, which leaves nothing visible on the account and nothing obviously wrong. So each
+/// call's failure says which half it was.
+///
+/// Requires a **public URL** for the media. Instagram fetches the file itself; it does not accept an
+/// upload, which is why a local path cannot work here.
+async fn post_instagram(
+    http: &reqwest::Client,
+    account: &Value,
+    caption: &str,
+    media: Option<&str>,
+) -> Res<String> {
+    let token = vault::get(&cred_key("instagram", "token"))?.unwrap_or_default();
+    let ig_user = account["ig_user_id"].as_str().unwrap_or("").to_string();
+    if token.is_empty() || ig_user.is_empty() {
+        return Err("Instagram is not connected. Access & Permissions → Instagram publishing walks \
+                    through the token and the account id.".into());
+    }
+    let public = account["media_base_url"].as_str().unwrap_or("").trim_end_matches('/');
+    let file = media.unwrap_or("");
+    if file.is_empty() {
+        return Err("Instagram needs a video or image to post.".into());
+    }
+    // Instagram fetches the media from a URL — it has no upload endpoint for this flow.
+    let url = if file.starts_with("http") {
+        file.to_string()
+    } else if !public.is_empty() {
+        format!("{public}/{}", file.rsplit('/').next().unwrap_or(file))
+    } else {
+        return Err("Instagram fetches the file itself, so it needs a public URL. Set the project's \
+                    remote sync (Data & Sync) so rendered media has one, or post this through a \
+                    recorded macro instead.".into());
+    };
+
+    let is_video = url.to_lowercase().ends_with(".mp4") || url.to_lowercase().ends_with(".mov");
+    let mut container = vec![
+        ("caption".to_string(), caption.to_string()),
+        ("access_token".to_string(), token.clone()),
+    ];
+    if is_video {
+        container.push(("media_type".into(), "REELS".into()));
+        container.push(("video_url".into(), url.clone()));
+    } else {
+        container.push(("image_url".into(), url.clone()));
+    }
+
+    let created = http.post(format!("https://graph.instagram.com/v23.0/{ig_user}/media"))
+        .form(&container).send().await.map_err(e)?;
+    let status = created.status();
+    let body: Value = created.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        return Err(format!("Instagram refused the media container ({status}): {}",
+            body["error"]["message"].as_str().unwrap_or("no detail")));
+    }
+    let container_id = body["id"].as_str().unwrap_or("").to_string();
+    if container_id.is_empty() {
+        return Err("Instagram accepted the container but returned no id.".into());
+    }
+
+    // A video container is processed asynchronously; publishing too early fails with a generic error.
+    if is_video {
+        for _ in 0..20 {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let st = http.get(format!("https://graph.instagram.com/v23.0/{container_id}"))
+                .query(&[("fields", "status_code"), ("access_token", token.as_str())])
+                .send().await.map_err(e)?;
+            let sv: Value = st.json().await.unwrap_or(Value::Null);
+            match sv["status_code"].as_str().unwrap_or("") {
+                "FINISHED" => break,
+                "ERROR" => return Err("Instagram could not process the video — check its length, \
+                                       aspect ratio and codec against the Reels limits.".into()),
+                _ => continue,
+            }
+        }
+    }
+
+    let published = http.post(format!("https://graph.instagram.com/v23.0/{ig_user}/media_publish"))
+        .form(&[("creation_id", container_id.as_str()), ("access_token", token.as_str())])
+        .send().await.map_err(e)?;
+    let status = published.status();
+    let body: Value = published.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        return Err(format!(
+            "Instagram created the post but would not publish it ({status}): {}. The container still \
+             exists, so nothing is visible on the account.",
+            body["error"]["message"].as_str().unwrap_or("no detail")));
+    }
+    let id = body["id"].as_str().unwrap_or("");
+    Ok(format!("https://www.instagram.com/p/{id}"))
+}
+
+/// Upload to TikTok.
+///
+/// Uses `video.upload`, which puts the video in the creator's **drafts/inbox** and needs no audit. The
+/// audited `video.publish` scope posts directly, and until an app passes that audit every post it makes
+/// is forced to private visibility — so a draft the user confirms with one tap is genuinely the better
+/// outcome, not a consolation.
+///
+/// TikTok pulls the file from a URL (`PULL_FROM_URL`), so like Instagram this needs the media to be
+/// publicly reachable.
+async fn post_tiktok(
+    http: &reqwest::Client,
+    account: &Value,
+    caption: &str,
+    media: Option<&str>,
+) -> Res<String> {
+    let token = vault::get(&cred_key("tiktok", "token"))?.unwrap_or_default();
+    if token.is_empty() {
+        return Err("TikTok is not connected. Access & Permissions → TikTok publishing sets up the \
+                    `video.upload` scope, which needs no audit.".into());
+    }
+    let public = account["media_base_url"].as_str().unwrap_or("").trim_end_matches('/');
+    let file = media.unwrap_or("");
+    if file.is_empty() { return Err("TikTok needs a video to upload.".into()); }
+    let url = if file.starts_with("http") {
+        file.to_string()
+    } else if !public.is_empty() {
+        format!("{public}/{}", file.rsplit('/').next().unwrap_or(file))
+    } else {
+        return Err("TikTok fetches the file itself, so it needs a public URL. Set the project's remote \
+                    sync (Data & Sync), or post this through a recorded macro instead.".into());
+    };
+
+    let payload = json!({
+        "source_info": { "source": "PULL_FROM_URL", "video_url": url },
+        // The caption travels as the draft's title; the creator can edit it before posting.
+        "post_info": { "title": caption.chars().take(2200).collect::<String>() },
+    });
+    let r = http.post("https://open.tiktokapis.com/v2/post/publish/inbox/video/init/")
+        .bearer_auth(&token)
+        .header("Content-Type", "application/json; charset=UTF-8")
+        .json(&payload)
+        .send().await.map_err(e)?;
+    let status = r.status();
+    let body: Value = r.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        let msg = body["error"]["message"].as_str().unwrap_or("no detail");
+        return Err(format!("TikTok refused the upload ({status}): {msg}"));
+    }
+    if let Some(code) = body["error"]["code"].as_str() {
+        if code != "ok" {
+            return Err(format!("TikTok refused the upload: {} ({code})",
+                body["error"]["message"].as_str().unwrap_or("no detail")));
+        }
+    }
+    // There is no public URL yet — it is a draft until the creator posts it, which is the whole point.
+    Ok("tiktok://drafts (waiting for you to post it from the TikTok app)".to_string())
 }

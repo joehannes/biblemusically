@@ -53,13 +53,30 @@ store actually makes a shared-project workflow more plausible than the Mongo des
 could push/pull the same project repo), but conflict resolution on concurrent edits is unsolved and
 would need real thought before promising it.
 
-**Instagram/TikTok publishing beyond the app-review wall.** The code paths exist and explain
-themselves; someone has to actually complete Meta App Review and the TikTok audit, which is
-paperwork and a 1–2 week wait rather than engineering.
+**Instagram/TikTok publishing — RESOLVED (v0.84.0), and the premise was wrong.** This said both were
+blocked on paperwork. Neither is:
 
-**A macro-driven fallback for the no-API platforms.** The Macro Manager can already record and
-replay browser flows; wiring "publish this derivative" to a named macro would close the last gap in
-the publishing matrix.
+- **Instagram** publishes to your *own* account with **no App Review** when that account holds a role on
+  your Meta app in Development mode. Review is only needed for accounts that are not yours. Implemented
+  as the two-call Graph flow (`/media` then `/media_publish`), with the video container polled to
+  FINISHED before publishing, because publishing early fails with a generic error.
+- **TikTok** `video.upload` needs **no audit** and puts the video in the creator's drafts — one tap to
+  post. The audited `video.publish` scope posts directly, and until an app passes that audit *every*
+  post it makes is forced to private visibility. So a draft is the better outcome, not a consolation.
+
+Both fetch the media themselves from a URL rather than accepting an upload, so they need the project's
+remote sync configured. That precondition is stated in the error rather than discovered.
+
+Still true: App Review/audit is required for publishing on behalf of *other people's* accounts, and for
+TikTok's direct posting. Both are guided in Access & Permissions.
+
+**A macro-driven fallback for the no-API platforms — DONE (v0.84.0).** Per-platform posting recipes:
+the app prepares the day's values into the clipboard queue *in the form's own order*, you record
+yourself pasting them once, and each paste becomes a `paste-queue` step. The recorded macro therefore
+contains "paste the next prepared value" rather than yesterday's caption, so one recording posts every
+later song with no editing. A recorded macro is linked to its platform, and a mismatch between the
+number of paste steps and the number of prepared values is reported rather than silently pasting the
+caption into the hashtag field.
 
 **Mobile feature parity.** A mobile build will be "mobile-lite" — no embedded GTK browser, no
 Playwright automation. Deciding what the phone *should* do (the backlog's B2 "remote control for

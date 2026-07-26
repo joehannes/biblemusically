@@ -697,6 +697,11 @@ pub fn run() {
             commands::access_guide,
             commands::set_access_step,
             commands::save_access_capture,
+            // Posting macros: record once with prepared values, replay per song
+            commands::list_post_recipes,
+            commands::prepare_post_macro,
+            commands::link_post_macro,
+            commands::unlink_post_macro,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

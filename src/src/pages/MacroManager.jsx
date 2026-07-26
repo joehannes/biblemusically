@@ -5,13 +5,11 @@ import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import {
-  Wand2, Play, Trash2, ClipboardPaste, Plug, Globe, MousePointerClick,
-  MousePointer2, Keyboard, Type, CornerDownLeft, Save, Plus, ChevronUp, ChevronDown,
-  Copy, Zap, FilePlus2, Check, X, Hourglass, DownloadCloud, FileDown, FileUp, EyeOff, Eye,
-  Package,
+  Wand2, Play, Trash2, ClipboardPaste, Plug, Globe, MousePointerClick, MousePointer2, Keyboard, Type, CornerDownLeft, Save, Plus, ChevronUp, ChevronDown, Copy, Zap, FilePlus2, Check, X, Hourglass, DownloadCloud, FileDown, FileUp, EyeOff, Eye, Package, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { useStudio } from "../lib/store";
 import { authorMacroForOpenPage } from "../lib/macroAuthor";
 import {
   loadMacros, saveMacro, deleteMacro, updateMacro, describeStep,
@@ -120,6 +118,116 @@ function TargetEditor({ target, onChange }) {
 // steps by hand, not just what got recorded), rebind connector slots to app-wide actions, and
 // maintain the pseudo clipboard buckets. Recording itself (capturing live clicks) still only
 // happens in the Web Browser view — this is where the *result* gets shaped afterwards.
+/**
+ * Per-platform posting recipes.
+ *
+ * The insight this is built on: what changes between two posts is the *values*, not the flow. So the
+ * app prepares today's values in form order, the user records the pasting once, and every later run
+ * swaps the queue rather than the macro.
+ */
+function PostingRecipes({ macros, onLinked, navigate }) {
+  const { songs, activeSongId, selectSong } = useStudio();
+  const [recipes, setRecipes] = useState([]);
+  const [prepared, setPrepared] = useState(null);
+  const [busy, setBusy] = useState("");
+
+  const load = () => api.listPostRecipes().then((r) => setRecipes(r?.recipes || [])).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const prepare = async (platform) => {
+    if (!activeSongId) { toast.error("Pick a song — its caption and link are what get prepared."); return; }
+    setBusy(platform);
+    try {
+      const p = await api.preparePostMacro({ platform, song_id: activeSongId });
+      // Into the queue, in the form's own order, so the recorded pastes line up on every replay.
+      await api.clipboardQueueSet({ items: p.values, remember: true });
+      setPrepared(p);
+      toast.success(`${p.values.length} values queued for ${p.label}.`);
+      if (p.url) navigate(`/browser?url=${encodeURIComponent(p.url)}&label=${encodeURIComponent(p.label)}&record=1`);
+    } catch (err) { toast.error(`${err}`, { duration: 9000 }); }
+    finally { setBusy(""); }
+  };
+
+  const link = async (platform, macroId) => {
+    const m = macros.find((x) => x.id === macroId);
+    if (!m) return;
+    const queueSteps = (m.steps || []).filter((s) => s.type === "paste-queue").length;
+    try {
+      const r = await api.linkPostMacro({
+        platform, macro_id: m.id, macro_name: m.name, queue_steps: queueSteps,
+      });
+      if (r.warning) toast.warning(r.warning, { duration: 12000 });
+      else toast.success(`${m.name} will post for ${platform}.`);
+      load();
+      onLinked?.();
+    } catch (err) { toast.error(`${err}`); }
+  };
+
+  return (
+    <div className="border border-border rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Record a posting macro
+        </div>
+        <select value={activeSongId || ""} onChange={(e) => selectSong(e.target.value)}
+                className="bg-muted/30 border border-border rounded px-2 py-1 text-xs max-w-[16rem]">
+          <option value="">Pick a song…</option>
+          {(songs || []).slice(0, 60).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+        </select>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        The values go on the clipboard queue in the order the form asks for them. Record yourself
+        pasting field by field — each paste becomes a <b>paste the next queued value</b> step, so the
+        same macro posts a different song tomorrow with no editing.
+      </p>
+
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {recipes.map((r) => (
+          <div key={r.platform} className="rounded-lg border border-border/60 p-2 space-y-1">
+            <div className="text-sm font-medium flex items-center gap-1.5">
+              {r.label}
+              {r.macro && <Badge variant="outline" className="text-[9px] text-emerald-400 border-emerald-500/40">recorded</Badge>}
+            </div>
+            <div className="text-[10px] text-muted-foreground">prepares: {(r.fields || []).join(", ")}</div>
+            <div className="flex gap-1 flex-wrap">
+              <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]"
+                      disabled={busy === r.platform} onClick={() => prepare(r.platform)}>
+                {busy === r.platform ? <Loader2 className="w-3 h-3 animate-spin" /> : "Prepare & open"}
+              </Button>
+              {macros.length > 0 && (
+                <select className="bg-muted/30 border border-border rounded px-1 py-0.5 text-[10px] max-w-[9rem]"
+                        value={r.macro?.macro_id || ""}
+                        onChange={(e) => (e.target.value
+                          ? link(r.platform, e.target.value)
+                          : api.unlinkPostMacro(r.platform).then(load))}>
+                  <option value="">link a macro…</option>
+                  {macros.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              )}
+            </div>
+            <div className="text-[10px] text-muted-foreground leading-snug">{r.why}</div>
+          </div>
+        ))}
+      </div>
+
+      {prepared && (
+        <div className="rounded-lg border border-primary/30 p-2 space-y-1">
+          <div className="text-xs font-medium">While you record — {prepared.label}</div>
+          <ol className="list-decimal ml-4 text-[11px] text-muted-foreground space-y-0.5">
+            {(prepared.checklist || []).map((c, i) => <li key={i}>{c}</li>)}
+          </ol>
+          {(prepared.media || []).length > 0 && (
+            <div className="text-[10px] text-muted-foreground">
+              Files to attach (a file picker is the one thing a macro cannot drive):
+              <div className="font-mono break-all" data-no-i18n>{prepared.media.join("  ·  ")}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MacroManager() {
   const navigate = useNavigate();
   const [macros, setMacros] = useState(() => loadMacros());
@@ -340,6 +448,13 @@ export default function MacroManager() {
           — recorded (or hand-built) browser macros, their sequences, and the app-wide connector actions they plug into.
         </span>
       </div>
+
+      {/* ── Post to a platform ───────────────────────────────────────────
+          A recorded flow contains the values from the day it was recorded — replay it and you post
+          yesterday's song again. So the values are prepared into the clipboard queue FIRST, and you
+          record yourself pasting them. Each paste becomes a step that takes whatever is queued at
+          replay time, which is what makes one recording work for every later song. */}
+      <PostingRecipes macros={macros} onLinked={() => setMacros(loadMacros())} navigate={navigate} />
 
       {/* ── Write one with the AI ─────────────────────────────────────────
           Open the target page in the app's browser first: the macro is written against that page's

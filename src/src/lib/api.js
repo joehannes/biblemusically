@@ -205,6 +205,11 @@ export const api = {
   startWorkflowRun: (payload) => invokeCommand("start_workflow_run", { payload }),
   workflowRunStatus: (projectId) => invokeCommand("workflow_run_status", { projectId: projectId || null }),
   setWorkflowRunStatus: (projectId, status) => invokeCommand("set_workflow_run_status", { projectId, status }),
+  // ============ Posting macros: record once, replay per song ============
+  listPostRecipes: () => invokeCommand("list_post_recipes"),
+  preparePostMacro: (payload) => invokeCommand("prepare_post_macro", { payload }),
+  linkPostMacro: (payload) => invokeCommand("link_post_macro", { payload }),
+  unlinkPostMacro: (platform) => invokeCommand("unlink_post_macro", { platform }),
   // ============ Third-party access guides ============
   listAccessGuides: () => invokeCommand("list_access_guides"),
   accessGuide: (id) => invokeCommand("access_guide", { id }),
