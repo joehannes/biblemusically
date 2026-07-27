@@ -44,7 +44,13 @@ for (const code of codes) {
   const strings = cat.strings || {};
 
   const missing = KEYS.filter((k) => !String(strings[k] ?? "").trim());
-  const echoed = KEYS.filter((k) => strings[k] && strings[k] === k && k.split(/\s+/).length > 1);
+  // An echo is normally a bug: the runtime skips anything the catalogue claims to cover, so an
+  // English string echoed back will never be translated by anything. But some terms genuinely are
+  // the English ones — German writes "Graphic Novels" — and a catalogue can say so explicitly in
+  // `same_as_english`. Deliberate identity is fine; silent identity is not.
+  const deliberate = new Set(cat.same_as_english || []);
+  const echoed = KEYS.filter(
+    (k) => strings[k] && strings[k] === k && k.split(/\s+/).length > 1 && !deliberate.has(k));
   const lostPlaceholder = KEYS.filter(
     (k) => strings[k] && placeholders(k) && placeholders(strings[k]) !== placeholders(k));
   const runaway = KEYS.filter(
