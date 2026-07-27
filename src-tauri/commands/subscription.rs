@@ -326,8 +326,15 @@ pub async fn subs_sign_out(state: State<'_, AppState>) -> Res<Value> {
 /// promise false; switching off and leaving them sealed would make it a one-way door.
 #[tauri::command]
 pub async fn subs_seal_projects(state: State<'_, AppState>, enable: bool) -> Res<Value> {
-    if enable && cache_key_material(&state).await.is_none() {
-        return Err("Sign in first — the key that seals your projects comes from your account.".into());
+    // Both directions need the key, and for different reasons. Sealing needs it to write; unsealing
+    // needs it to *read* what it is about to write out in plain text. Refusing here with a sentence
+    // beats a report full of per-file failures that all say the same thing.
+    if cache_key_material(&state).await.is_none() {
+        return Err(if enable {
+            "Sign in first — the key that seals your projects comes from your account.".into()
+        } else {
+            "Sign in first. Unsealing has to read your projects before it can write them back              readable, and only your account can open them.".to_string()
+        });
     }
     state.db.collection::<Document>("settings")
         .update_one(doc! { "_id": "singleton" }, doc! { "$set": { "cache_sealing": enable } })

@@ -1,6 +1,6 @@
 // The explicit .js extension keeps this importable by plain node (tests/guided-flows.test.mjs) as
 // well as by vite.
-import { musicEngine, imageEngine, supports, lyricTagHint, engineContext } from "./engineCapabilities.js";
+import { musicEngine, imageEngine, supports, lyricTagHint, engineContext, visibleMusicEngines } from "./engineCapabilities.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Flow definitions: a page expressed as a short sequence of decisions.
@@ -284,8 +284,10 @@ export const musicFlow = {
       title: "Engine",
       question: "Which engine should render the audio?",
       help: (ctx) => `Currently ${musicEngine(ctx.settings?.music_engine).label}. ${musicEngine(ctx.settings?.music_engine).strengths}`,
-      options: (ctx) => Object.entries({ suno: 0, acestep: 0, heartmula: 0 }).map(([id]) => {
-        const eng = musicEngine(id);
+      // Whatever the picker offers — hardcoding the list here meant the guided flow kept offering
+      // Suno after every other surface had stopped, and never learned about Riffusion or the paid
+      // engine at all.
+      options: (ctx) => visibleMusicEngines(ctx.settings, ctx.settings?.music_engine).map(([id, eng]) => {
         return {
           id,
           label: eng.label,

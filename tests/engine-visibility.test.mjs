@@ -146,3 +146,24 @@ test("the music engines are in the decided order, free first and paid last", () 
     assert.equal(priceLine(MUSIC_ENGINES[id]), "free", id);
   }
 });
+
+// ── The surfaces that had their own copy of the list ────────────────────────
+//
+// Two places kept their own hardcoded engine list and both had gone stale in the worst way: the
+// welcome wizard offered a brand-new user Suno and Midjourney by name, and the guided music flow
+// still offered Suno while never learning that Riffusion or ElevenLabs existed. A picker that
+// disagrees with the rule is a rule that does not exist.
+
+test("the guided music flow offers exactly what the picker offers", async () => {
+  const { musicFlow } = await import("../src/src/lib/guidedFlows.js");
+  const step = musicFlow.steps.find((s) => s.id === "engine");
+  const ctx = { settings: { music_engine: "heartmula" } };
+  const offered = step.options(ctx).map((o) => o.id);
+  assert.deepEqual(offered, ids(visibleMusicEngines(ctx.settings, "heartmula")));
+  assert.ok(!offered.includes("suno"), "the flow must not offer a hidden engine");
+  assert.ok(offered.includes("riffusion"), "and must know about engines added since");
+
+  // With the flag on, it offers Suno like everything else.
+  const shown = { settings: { music_engine: "heartmula", show_risky_engines: true } };
+  assert.ok(step.options(shown).map((o) => o.id).includes("suno"));
+});

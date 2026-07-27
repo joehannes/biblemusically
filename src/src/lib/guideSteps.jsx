@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import YouTubeStepBody from "./guideYouTube";
 import VoicePicker from "../components/VoicePicker";
+import { visibleMusicEngines, visibleImageEngines } from "./engineCapabilities";
 import Markdown from "../components/Markdown";
 import {
   UI_LANGUAGES, setUiLanguage, getUiLanguage, isBundledLanguage,
@@ -32,16 +33,16 @@ import { useNavigate } from "react-router-dom";
 // caller can test a prerequisite without rendering anything.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MUSIC_ENGINES = [
-  { id: "heartmula", label: "HeartMuLa", hint: "Free, Apache-2.0 — YouTube-safe. Recommended." },
-  { id: "acestep", label: "ACE-Step", hint: "Free, self-hosted alternative." },
-  { id: "suno", label: "Suno", hint: "Highest quality, needs a Suno account cookie." },
-];
-const IMAGE_ENGINES = [
-  { id: "comfyui", label: "ComfyUI", hint: "Free, multi-model (SDXL, character consistency). Recommended." },
-  { id: "flux", label: "FLUX", hint: "Free, top-tier photoreal stills (needs a HF token)." },
-  { id: "midjourney", label: "Midjourney", hint: "Highest quality, needs a Midjourney account." },
-];
+// The engine lists come from the catalogue rather than being written again here. They were
+// duplicated, and the copy had gone stale in the worst possible place: the welcome wizard offered a
+// brand-new user Suno and Midjourney by name — the two engines that are hidden everywhere else
+// precisely because reaching them means driving an account the user would lose. The first screen
+// somebody sees is not where to leak the thing every other picker withholds.
+const engineOptions = (visible, settings, current) =>
+  visible(settings, current).map(([id, engine]) => ({
+    id, label: engine.label,
+    hint: `${engine.note}. ${engine.strengths}`,
+  }));
 
 const persist = async (patch) => {
   try { await api.saveSettings(patch); } catch (e) { console.warn("guide step save failed", e); }
@@ -286,16 +287,16 @@ function KaggleStepBody({ settings, onDone }) {
           <div className="space-y-1.5">
             <Label className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Music2 className="w-3 h-3" />Music engine</Label>
             <select value={musicEngine} onChange={(e) => setMusicEngine(e.target.value)} className="w-full bg-background border border-border rounded px-2 py-1.5 text-sm">
-              {MUSIC_ENGINES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              {engineOptions(visibleMusicEngines, settings, musicEngine).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
-            <div className="text-[11px] text-muted-foreground">{MUSIC_ENGINES.find((m) => m.id === musicEngine)?.hint}</div>
+            <div className="text-[11px] text-muted-foreground">{engineOptions(visibleMusicEngines, settings, musicEngine).find((m) => m.id === musicEngine)?.hint}</div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Img className="w-3 h-3" />Image engine</Label>
             <select value={imageEngine} onChange={(e) => setImageEngine(e.target.value)} className="w-full bg-background border border-border rounded px-2 py-1.5 text-sm">
-              {IMAGE_ENGINES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              {engineOptions(visibleImageEngines, settings, imageEngine).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
-            <div className="text-[11px] text-muted-foreground">{IMAGE_ENGINES.find((m) => m.id === imageEngine)?.hint}</div>
+            <div className="text-[11px] text-muted-foreground">{engineOptions(visibleImageEngines, settings, imageEngine).find((m) => m.id === imageEngine)?.hint}</div>
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm cursor-pointer">
