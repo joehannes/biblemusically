@@ -49,6 +49,7 @@ const decode = (s) => s
 /** Same gate as the runtime translator, plus source-only noise filters. */
 function eligible(raw) {
   const s = raw.trim();
+  if (NEVER_TRANSLATED.has(s)) return false;
   if (s.length < 2 || s.length > MAX_LEN) return false;
   if (!/[a-zA-Z]/.test(s)) return false;
   if (/^[a-z0-9_]+$/.test(s) && !/\s/.test(s)) {          // identifier / enum value
@@ -60,15 +61,66 @@ function eligible(raw) {
   if (/[{}<>]/.test(s) && !/[a-z] [a-z]/i.test(s)) return false;
   // Code that slipped through the JSX text match: statement punctuation, or a bare call/return.
   if (/;\s*$|;\s*\n|=>|\breturn\s*\(|^\w+\($/.test(s)) return false;
+  // A template literal or an unbalanced expression fragment. `(prefix ? `$` reached the inventory
+  // from a redaction helper, and a string nobody can read is a string nobody can translate.
+  if (/[`$]\{|\?\s*`|`\s*\$|^\(/.test(s)) return false;
+  // Optional chaining, a bare comparison, a lone operator: JSX text matching splits on braces, so a
+  // fragment of an expression can look like a sentence. Any of these means it is not one.
+  if (/\?\.|&&|\|\||[!=<>]=|\breturn\b|=>/.test(s)) return false;
+  // A masked example ("sk-...", "AIza...", "UC...") is a placeholder the user reads but nobody
+  // translates, and __TOKEN__ is a substitution marker in a workflow template.
+  if (/^__[A-Z_]+__$/.test(s) || /^[A-Za-z-]{2,6}\.\.\.$/.test(s)) return false;
+  // A fragment left over from a sentence split across JSX elements: it starts mid-clause and has no
+  // verb of its own, so a translator has nothing to work with.
+  if (/^(?:s |· |you (?:are|have)|use it$)/.test(s)) return false;
+  // A ternary or a call left half-open by the JSX text split: `) : ready ? (`, `status[k] ? (`.
+  if (/[?:]\s*\($|^\)|\[\w+\]/.test(s)) return false;
+  // An unbalanced bracket at either end is a fragment, not a sentence.
+  if (/\($/.test(s) || /^\S+\)/.test(s)) return false;
+  // A hostname, an env var, a package name, a branch name: identifiers a user reads but nobody
+  // translates.
+  if (/^[a-z0-9-]+\.(?:com|org|io|net|ai|co)$/i.test(s)) return false;
+  if (/^[A-Z][A-Z0-9_]{4,}$/.test(s)) return false;
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(s)) return false;
+  // Starts or ends mid-clause: a leading connective with no subject, or a dangling unit.
+  if (/^(?:in the |and the |of the |or the )/.test(s) && s.split(/\s+/).length <= 4) return false;
+  if (/^-\w/.test(s)) return false;
+  // A path, a sample credential, a placeholder address, a model file: things a user reads literally
+  // and nobody translates. Every one of these reached a translator's list before this filter.
+  if (/^(?:scripts|src|\.github)\//.test(s) || /\/$/.test(s)) return false;
+  if (/\.(?:safetensors|ya?ml|ttf|otf)$/i.test(s)) return false;
+  if (/^[\w.+-]+@[\w.-]+\.\w+$/.test(s)) return false;              // yourname@gmail.com
+  if (/^[a-z][\w-]*(?:\.[a-z][\w-]*){1,}(?:\/\S*)?$/i.test(s) && !/\s/.test(s)) return false; // hosts
+  if (/^[A-Z]+(?:-[A-Z]+)+$/.test(s)) return false;                  // GIFT-CODE-HERE
+  if (/^\w+:\s*\w+$/.test(s) && s.split(/\s+/).length <= 2) return false; // positional: item
+  if (/^(?:studio-api|sk-|bmstudio-|AIza|hf_|ghp_)/.test(s)) return false;
   if (/\)\s*;?\s*$/.test(s) && !/[a-z]\s[a-z]/i.test(s)) return false;
   if (/^(?:[\w-]+\s)*(?:flex|grid|px|py|mt|mb|ml|mr|gap|text|bg|border|rounded|w|h|min|max)-[\w./[\]-]+/.test(s)) return false; // tailwind
   if (/(^|\s)(?:className|font-mono|text-xs|text-sm|uppercase tracking)/.test(s)) return false;
   return true;
 }
 
+/// Names that are the same in every language: brands, engines, file formats, protocols. Listing
+/// them keeps them out of the inventory entirely, so a coverage figure is not diluted by strings
+/// nobody would ever translate — and so no catalogue can "translate" a product name by accident.
+const NEVER_TRANSLATED = new Set([
+  "Suno", "Midjourney", "ComfyUI", "FLUX", "FLUX.1", "ACE-Step", "HeartMuLa", "Riffusion",
+  "ElevenLabs", "ElevenLabs Music", "Leonardo", "Ideogram", "Recraft", "fal.ai", "Gemini",
+  "OpenRouter", "Anthropic", "OpenAI", "Kaggle", "Colab", "Printify", "Google", "Gmail", "YouTube",
+  "Instagram", "TikTok", "Facebook", "GitHub", "GitLab", "Codeberg", "Hugging Face", "Modal",
+  "Hotjar", "Obsidian", "Qwen-Image", "Juggernaut XL", "Krea 2 RAW", "Krea 2 Turbo", "SD 3.5",
+  "API", "CFG", "DPI", "SVG", "PNG", "JPEG", "EPUB", "MP3", "MP4", "URL", "JSON", "LoRA", "GPU",
+  "IP-Adapter", "ControlNet", "SAF", "OAuth", "LFS", "SIL OFL", "Apache 2.0",
+  "Inter", "Playfair Display", "Cormorant Garamond", "Bebas Neue", "Comic Neue", "Lora", "Montserrat",
+]);
+
 const strings = new Map();  // string -> Set(source file)
 const add = (s, file) => {
-  const t = decode(s).trim();
+  // Collapse whitespace exactly as JSX does before the browser sees it: a text block written across
+  // several indented source lines reaches the DOM as one line with single spaces. Without this the
+  // inventory holds the *source* spelling — newlines and all — which can never match a text node at
+  // runtime, so those strings are translated by somebody and then never used by anything.
+  const t = decode(s).replace(/\s*\n\s*/g, " ").replace(/[ \t]{2,}/g, " ").trim();
   if (!eligible(t)) return;
   if (!strings.has(t)) strings.set(t, new Set());
   strings.get(t).add(relative(ROOT, file));

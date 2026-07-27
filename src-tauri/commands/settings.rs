@@ -905,25 +905,25 @@ pub async fn pick_directory(
         if let Some(t) = title.filter(|s| !s.is_empty()) { dlg = dlg.set_title(t); }
         Ok(dlg.pick_folder().await.map(|f| f.path().to_string_lossy().to_string()))
     }
-    // Android: the Storage Access Framework, through the dialog plugin. `rfd` has no Android
-    // backend at all, which is why this is a separate path rather than a cfg on one call.
+    // Android has no folder picker available to this app, and it is worth being precise about why:
+    // `rfd` has no Android backend at all, and `tauri-plugin-dialog`'s `pick_folder` is
+    // `#[cfg(desktop)]` — the plugin genuinely does not implement it on mobile. A real Storage
+    // Access Framework picker would need Kotlin in `gen/android` plus a Tauri mobile plugin binding,
+    // which cannot be written blind against a device nobody here has.
     //
-    // SAF hands back a content:// URI rather than a filesystem path, and the permission it carries
-    // belongs to the picked tree — so the returned string is only meaningful to the app that asked
-    // for it. That is fine here: every caller passes it straight back to the store as a project
-    // folder. It is not fine to hand to a shell, which is one more reason `git` on mobile goes
-    // through libgit2 rather than a command line (see git_api.rs).
+    // So rather than returning `None` and making every caller invent a fallback, this returns the
+    // one directory a mobile build should be writing to anyway. Android's scoped storage means the
+    // app's own directory is the only place it can write without asking, and SAF exists for
+    // *user-visible documents* — which is not what a project folder is.
     #[cfg(not(desktop))]
     {
-        use tauri_plugin_dialog::DialogExt;
+        use tauri::Manager;
         let _ = title;
-        let (tx, rx) = std::sync::mpsc::channel();
-        app.dialog().file().pick_folder(move |picked| {
-            let _ = tx.send(picked.map(|p| p.to_string()));
-        });
-        // The picker is a separate Android activity, so this blocks until the user chooses or
-        // cancels. A minute is generous for "find a folder" and finite for "the activity died".
-        Ok(rx.recv_timeout(std::time::Duration::from_secs(60)).unwrap_or(None))
+        Ok(app.path().app_data_dir().ok().map(|p| {
+            let folder = p.join("projects");
+            let _ = std::fs::create_dir_all(&folder);
+            folder.to_string_lossy().to_string()
+        }))
     }
 }
 

@@ -542,8 +542,30 @@ All four, plus the error reporting that makes the `/v1/reports` endpoint worth h
 
 ### 8. Finish the catalogues
 
-93% across fifteen languages, ~150–300 strings each. **By hand, not Gemini** — the owner asked for this
-explicitly.
+**By hand, not Gemini** — the owner asked for this explicitly.
+
+**In progress (v0.97.0).** The inventory was stale and, worse, wrong in four ways that a coverage
+percentage hides completely. `scripts/extract-ui-strings.mjs` now drops all of them, and
+`scripts/i18n-missing.mjs` is the tool for the rest of the job:
+
+- **42 strings carried raw newlines and source indentation.** JSX collapses that whitespace before the
+  browser sees it, so those entries could never match a text node — they were translated by somebody
+  and then used by nothing.
+- **Code fragments were reaching translators**: `) : ready ? (`, `status[k] ? (`, `(prefix ? `$`.
+- **Brand and format names were counted as untranslated** — Suno, ComfyUI, DPI, EPUB. A name nobody
+  translates should not dilute a coverage figure, and no catalogue should be able to "translate" a
+  product name by accident.
+- **Paths, hostnames and sample credentials** (`scripts/kaggle_flux/`, `studio-api_key`,
+  `yourname@gmail.com`) were in the list.
+
+`i18n-missing.mjs --audit` also checks the three things a coverage number hides: an English string
+echoed back (which the runtime then never translates, because the catalogue claims to cover it), a
+dropped `{0}` placeholder, and a runaway length that means the model started explaining. All fifteen
+catalogues are clean on all three.
+
+88 interface-chrome strings are now hand-written across all fifteen languages — the buttons and labels
+where a machine goes wrong, because "Pull" is a verb here, "Check" means verify rather than tick, and
+"Shape" is an aspect ratio. Coverage is 83–92%; roughly 200 strings a language remain.
 
 ### 9. Android build
 
