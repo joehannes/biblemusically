@@ -245,3 +245,48 @@ mod tests {
         assert_eq!(deeplink_redirect("  "), None);
     }
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Coming back from a browser sign-in
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Collect a sign-in that came back through a deep link, if one is waiting.
+///
+/// Polled as well as pushed. On Android the callback intent can arrive *before* the webview has
+/// finished loading and attached its event listener, and an event fired at nobody is a sign-in that
+/// silently did nothing — so `deep_link::take()` holds it until something asks. Taking clears it,
+/// because an authorization code is good exactly once.
+#[tauri::command]
+pub async fn take_deep_link() -> Res<Value> {
+    match crate::deep_link::take() {
+        Some(cb) => Ok(json!({
+            "waiting": true,
+            "grant": cb.is_grant(),
+            "code": cb.code,
+            "state": cb.state,
+            "error": cb.error,
+            "message": cb.message(),
+        })),
+        None => Ok(json!({ "waiting": false })),
+    }
+}
+
+/// Feed a URL in by hand.
+///
+/// The escape hatch for the case the deep link cannot cover: a desktop where the scheme is not
+/// registered, or a phone whose browser refuses to hand back. The user can paste the address bar's
+/// contents and finish the sign-in that already happened rather than starting it again.
+#[tauri::command]
+pub async fn submit_deep_link(url: String) -> Res<Value> {
+    match crate::deep_link::parse(&url) {
+        Some(cb) => {
+            let out = json!({
+                "grant": cb.is_grant(), "code": cb.code, "state": cb.state,
+                "error": cb.error, "message": cb.message(),
+            });
+            Ok(out)
+        }
+        None => Err("That does not look like a sign-in callback. Copy the whole address the browser \
+                     ended on, including everything after the '?'.".into()),
+    }
+}

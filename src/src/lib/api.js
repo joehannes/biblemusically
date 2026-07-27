@@ -242,6 +242,11 @@ export const api = {
   renderTextArt: (payload) => invokeCommand("render_text_art", { payload }),
   renderBubble: (text, kind, width, height, anchorX, anchorY) =>
     invokeCommand("render_bubble", { text, kind, width, height, anchorX, anchorY }),
+  // ============ Coming back from a browser sign-in (RFC 8252) ============
+  takeDeepLink: () => invokeCommand("take_deep_link"),
+  submitDeepLink: (url) => invokeCommand("submit_deep_link", { url }),
+  oauthCallback: (code, channelState, error) =>
+    invokeCommand("oauth_callback", { code, channelState, error: error || null }),
   // ============ Devotional imagery: models, destinations, packaged intents ============
   imageryCatalogue: () => invokeCommand("imagery_catalogue"),
   composeImagePrompt: (payload) => invokeCommand("compose_image_prompt", { payload }),

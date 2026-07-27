@@ -224,10 +224,16 @@ Riffusion, then the paid one last, so nobody meets a bill before they have seen 
   `mobile-git` feature, off by default so a desktop build never compiles C.
   **Not yet verified on a real Android build** — see task 9; `git2` needs the same NDK wiring `ring`
   does.
-- **Logins → system browser + deep link: still open.** `openLoginUrl` already sends the pages that
-  refuse embedding out to the system browser, so signing in works; what is missing is the deep link
-  *back*, which needs `tauri-plugin-deep-link` and an Android intent filter, and cannot be tested
-  without a working Android build.
+- **Logins → system browser + deep link: done in v0.104.0.** `tauri-plugin-deep-link` delivers the
+  returning URL; `deep_link.rs` parses it and `lib/deepLink.js` finishes the sign-in against the
+  existing `oauth_callback`. Three things the implementation decided:
+  * **Both the query and the fragment are parsed.** The code flow answers in one, the implicit flow
+    in the other, and a provider that moves between them would otherwise break a sign-in silently.
+  * **The callback is held as well as announced.** On Android the intent can arrive before the
+    webview has attached its listener, and an event fired at nobody is a sign-in that did nothing.
+    `take_deep_link` is polled; the event is only the fast path. Taking clears it — a code is good once.
+  * **A pasted URL is an accepted input.** For a desktop where the scheme is not registered, or a
+    browser that refuses to hand back, `submit_deep_link` finishes the sign-in that already happened.
 
 ### 5 (original write-up). Mobile: the four things that make it whole
 

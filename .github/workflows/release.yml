@@ -98,7 +98,12 @@ jobs:
             src-tauri/target
           key: ${{ matrix.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
 
-      - run: npm ci
+      # --legacy-peer-deps because react-day-picker@8 declares a peer of date-fns ^2||^3 while this
+      # project is on date-fns 4. npm ci refuses that outright, which is why every release run since
+      # v0.88.0 failed in under two minutes without building anything. The pairing works — the calendar
+      # only uses formatting helpers that are unchanged across those majors — so the honest fix is to
+      # say so here rather than to downgrade a dependency the rest of the app uses.
+      - run: npm ci --legacy-peer-deps
       - run: npm run build
 
       - name: Build the app
@@ -143,7 +148,12 @@ jobs:
           sdkmanager --install "ndk;29.0.13846066" "platforms;android-36" "build-tools;36.0.0"
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13846066" >> "$GITHUB_ENV"
 
-      - run: npm ci
+      # --legacy-peer-deps because react-day-picker@8 declares a peer of date-fns ^2||^3 while this
+      # project is on date-fns 4. npm ci refuses that outright, which is why every release run since
+      # v0.88.0 failed in under two minutes without building anything. The pairing works — the calendar
+      # only uses formatting helpers that are unchanged across those majors — so the honest fix is to
+      # say so here rather than to downgrade a dependency the rest of the app uses.
+      - run: npm ci --legacy-peer-deps
       - run: npm run build
 
       # ring compiles C under rustls, and the NDK only ships API-versioned clang wrappers while cc-rs
@@ -179,7 +189,12 @@ jobs:
         with: { node-version: 20, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: "aarch64-apple-ios" }
-      - run: npm ci
+      # --legacy-peer-deps because react-day-picker@8 declares a peer of date-fns ^2||^3 while this
+      # project is on date-fns 4. npm ci refuses that outright, which is why every release run since
+      # v0.88.0 failed in under two minutes without building anything. The pairing works — the calendar
+      # only uses formatting helpers that are unchanged across those majors — so the honest fix is to
+      # say so here rather than to downgrade a dependency the rest of the app uses.
+      - run: npm ci --legacy-peer-deps
       - run: npm run build
 
       - name: Build an unsigned IPA

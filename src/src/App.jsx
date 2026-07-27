@@ -46,6 +46,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import SplitLink from "./components/SplitLink";
 import { installErrorReporting } from "./lib/errorReporting";
 import { installAnalytics, installHotjar } from "./lib/analytics";
+import { watchDeepLinks } from "./lib/deepLink";
 
 // First-run gate: show the guided onboarding wizard until `onboarded` is set in settings, then the
 // normal app. On any error reading settings we fail OPEN (show the app) so a settings hiccup can
@@ -157,6 +158,13 @@ export default function App() {
     })();
     return () => stop();
   }, []);
+
+  // A sign-in that finished in the system browser lands back here. See lib/deepLink.js for why it
+  // is both an event and a poll.
+  useEffect(() => watchDeepLinks((result) => {
+    if (result.grant) toast.success(result.message, { duration: 8000 });
+    else toast.error(result.message, { duration: 12000 });
+  }), []);
 
   useEffect(() => installErrorReporting({
     send: (report) => api.sendReport(report),

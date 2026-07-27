@@ -13,6 +13,8 @@ pub mod tray;
 
 #[path = "../comfy_registry.rs"]
 pub mod comfy_registry;
+#[path = "../deep_link.rs"]
+pub mod deep_link;
 #[path = "../git_api.rs"]
 pub mod git_api;
 #[path = "../helpers.rs"]
@@ -58,6 +60,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(move |app| {
             use tauri::Manager;
             let handle = app.handle();
@@ -123,6 +126,29 @@ pub fn run() {
                 if let Ok(text) = serde_json::to_string_pretty(&report) {
                     let _ = std::fs::write(app_state.db.global_root().join("migration-report.json"), text);
                 }
+            }
+
+            // A sign-in that finished in the system browser comes back here. Two deliveries on
+            // purpose: the URL is held in `deep_link` where a poll can always find it, *and*
+            // announced as an event. On Android the intent can arrive before the webview has
+            // attached its listener, and an event fired at nobody is a sign-in that silently did
+            // nothing — so the held value is the one that cannot be missed, and the event is only
+            // the fast path.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle_for_links = handle.clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        let Some(cb) = deep_link::parse(url.as_str()) else { continue };
+                        let payload = serde_json::json!({
+                            "grant": cb.is_grant(), "code": cb.code, "state": cb.state,
+                            "error": cb.error, "message": cb.message(),
+                        });
+                        deep_link::remember(cb);
+                        use tauri::Emitter;
+                        let _ = handle_for_links.emit("bm:deep-link", payload);
+                    }
+                });
             }
 
             // Unlock the sealed project cache from the entitlement already on disk, before any
@@ -788,6 +814,8 @@ pub fn run() {
             commands::imagery_text_allowed,
             commands::imagery_print_check,
             commands::save_imagery_choice,
+            commands::take_deep_link,
+            commands::submit_deep_link,
             // Words set in a real font, never generated — products and speech bubbles alike
             commands::typography_catalogue,
             commands::typography_fit,
