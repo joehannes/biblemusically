@@ -46,6 +46,7 @@ export default function ImageryStudio({ subject = "", projectId, onCompose }) {
   const [model, setModel] = useState("flux_dev");
   const [controls, setControls] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [draft, setDraft] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => { api.imageryCatalogue().then(setCat).catch(() => {}); }, []);
@@ -153,6 +154,22 @@ export default function ImageryStudio({ subject = "", projectId, onCompose }) {
           ))}
         </div>
       )}
+
+      {/* Draft or final, and which graph. Both only mean anything on ComfyUI, which is the one
+          engine where the workflow is a choice rather than a fixed pipeline. */}
+      <div className="flex flex-wrap gap-4">
+        <label className="flex items-start gap-2 text-xs cursor-pointer">
+          <input type="checkbox" className="accent-primary mt-0.5" checked={!!draft}
+                 data-testid="imagery-draft"
+                 onChange={(e) => { setDraft(e.target.checked); api.saveSettings({ comfyui_draft: e.target.checked }, projectId).catch(() => {}); }} />
+          <span>
+            <b>Draft quality</b>
+            <span className="text-muted-foreground"> — the same picture at a fraction of the steps.
+            Reviewing fifty images a day at final quality spends the GPU hours the free tier gives
+            you on pictures nobody keeps.</span>
+          </span>
+        </label>
+      </div>
 
       {controls && (
         <div className="flex flex-wrap gap-4">

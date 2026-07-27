@@ -1326,9 +1326,9 @@ async fn real_paid_image(
     Some(images)
 }
 
-// Bundled ComfyUI workflow templates (API format, with __TOKEN__ placeholders).
-const COMFY_WF_PHOTOREAL: &str = include_str!("comfy_workflows/photoreal_sdxl.json");
-const COMFY_WF_CHARACTER: &str = include_str!("comfy_workflows/character_ipadapter_sdxl.json");
+// The bundled ComfyUI graphs now live in `comfy_registry.rs`, which owns both the templates and the
+// numbers that go with them — the two were drifting apart while the templates were included here and
+// the steps came from a separate model profile.
 
 /// Style presets: (positive prompt prefix, base negative prompt). These are the built-in
 /// "style filters"; per-channel sticky styles (a later phase) will layer on top of these.
@@ -1375,6 +1375,22 @@ fn comfy_model_profile(ckpt: &str) -> ComfyProfile {
         // Full SDXL-family checkpoints (base, Juggernaut-style community models, etc.).
         ComfyProfile { steps: 30, cfg: 6.5, sampler: "dpmpp_2m", scheduler: "karras", label: "sdxl-standard" }
     }
+}
+
+/// Which node classes this server actually has.
+///
+/// `/object_info` lists every registered class, so a graph's custom-node requirements can be checked
+/// before anything is submitted. An empty answer means "could not tell" rather than "none installed",
+/// and the caller treats it as such — a server that will not answer must not block a render that
+/// would have worked.
+async fn comfy_installed_nodes(client: &reqwest::Client, base: &str, api_key: &str) -> Vec<String> {
+    let mut rb = client.get(format!("{base}/object_info"))
+        .timeout(std::time::Duration::from_secs(20));
+    if !api_key.is_empty() { rb = rb.header("Authorization", format!("Bearer {api_key}")); }
+    let Ok(res) = rb.send().await else { return Vec::new() };
+    if !res.status().is_success() { return Vec::new(); }
+    let Ok(body) = res.json::<Value>().await else { return Vec::new() };
+    body.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default()
 }
 
 /// Ask a running ComfyUI what checkpoints it actually has, via the same `/object_info` endpoint its
@@ -1545,19 +1561,64 @@ async fn real_comfy(
         }
     }
 
-    // Pick the template: a user-supplied custom workflow (e.g. AnimateDiff exported from the ComfyUI
-    // UI) takes precedence when workflow mode is "custom"; otherwise use the bundled photoreal /
-    // character graphs.
+    // Pick the graph. A user-supplied custom workflow (e.g. AnimateDiff exported from the ComfyUI
+    // UI) still wins when workflow mode is "custom"; otherwise `comfy_registry` decides, because the
+    // choice depends on three things at once — what is being asked for, which model is loaded, and
+    // whether this is a draft or a final — and two of the graphs cannot run on the wrong model at all.
+    use crate::comfy_registry::{self, Want, Quality};
     let wf_mode = settings.get("comfyui_workflow_mode").and_then(|v| v.as_str()).unwrap_or("auto");
     let custom = settings.get("comfyui_custom_workflow").and_then(|v| v.as_str()).unwrap_or("").trim();
-    let template: &str = if wf_mode == "custom" && !custom.is_empty() {
-        custom
-    } else if ref_name.is_some() {
-        COMFY_WF_CHARACTER
+
+    let want = if ref_name.is_some() {
+        Want::SameCharacter
     } else {
-        COMFY_WF_PHOTOREAL
+        Want::parse(settings.get("comfyui_want").and_then(|v| v.as_str()).unwrap_or(""))
     };
+    let quality = if settings.get("comfyui_draft").and_then(|v| v.as_bool()).unwrap_or(false) {
+        Quality::Draft
+    } else {
+        Quality::Final
+    };
+    let strict = settings.get("imagery").and_then(|i| i.get("controls"))
+        .and_then(|c| c.get("strict")).and_then(|v| v.as_bool()).unwrap_or(false);
+    let choice = comfy_registry::choose(want, ckpt, quality, strict);
+
+    // A missing custom node otherwise surfaces as a /prompt rejection naming an internal class,
+    // which reads like the server is broken rather than like a five-minute install. Ask first.
+    if !choice.needs_nodes.is_empty() {
+        let installed = comfy_installed_nodes(&client, &base, &api_key).await;
+        if !installed.is_empty() {
+            let missing = comfy_registry::missing_nodes(&choice, &installed);
+            if !missing.is_empty() {
+                db_log(db, job_id, &comfy_registry::missing_node_advice(&missing)).await;
+                set_stage(db, job_id, "failed", 100,
+                          "This ComfyUI server is missing a node this workflow needs.", true).await;
+                return None;
+            }
+        }
+    }
+    if let Some(note) = choice.note {
+        db_log(db, job_id, &format!("comfy: {note}")).await;
+    }
+    if !comfy_registry::honours_negative(&choice) && !negative.trim().is_empty() {
+        // Said out loud rather than dropped in silence: on FLUX the restraint has to be carried by
+        // the positive prompt, and somebody who typed it into "avoid" deserves to know it was not.
+        db_log(db, job_id,
+               "comfy: this model has no negative prompt, so the \"avoid\" text was not sent. \
+                Put the restraint in the prompt itself, or switch on strict mode.").await;
+    }
+
+    let template: &str = if wf_mode == "custom" && !custom.is_empty() { custom } else { choice.template };
+    // The registry's numbers win over the generic profile: a print pass and a draft are not the
+    // same job at different sizes, and a few-step model given thirty steps burns rather than improves.
+    let (steps, cfg) = if wf_mode == "custom" && !custom.is_empty() { (steps, cfg) } else { (choice.steps, choice.cfg) };
+    db_log(db, job_id, &format!("comfy: workflow '{}' — {} steps, cfg {:.1}", choice.name, steps, cfg)).await;
     let mut wf = template.to_string();
+    wf = wf.replace("__DENOISE__", &format!("{:.2}", choice.denoise));
+    wf = fill_str(&wf, "__INPUT_IMAGE__", ref_name.as_deref().unwrap_or(""));
+    wf = fill_str(&wf, "__UPSCALER__",
+                  settings.get("comfyui_upscaler").and_then(|v| v.as_str())
+                          .unwrap_or("4x-UltraSharp.pth"));
     wf = fill_str(&wf, "__CKPT__", ckpt);
     wf = fill_str(&wf, "__PROMPT__", &full_prompt);
     wf = fill_str(&wf, "__NEGATIVE__", &negative);

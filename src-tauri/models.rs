@@ -112,6 +112,18 @@ pub struct Settings {
     #[serde(default)]
     pub comfyui_api_key: String,
 
+    /// Which ComfyUI graph to run: fresh · character · refine · repair · print · transparent.
+    /// Empty means a fresh picture (see comfy_registry.rs).
+    #[serde(default)]
+    pub comfyui_want: String,
+    /// Draft quality — few steps, for reviewing fifty ideas without spending the day's GPU hours.
+    /// The draft and the final are the same graph, so the draft actually predicts the final.
+    #[serde(default)]
+    pub comfyui_draft: bool,
+    /// The upscale model used by the print pass.
+    #[serde(default)]
+    pub comfyui_upscaler: String,
+
     /// Riffusion's notebook server (free, on a Kaggle GPU) — see scripts/kaggle_riffusion/.
     #[serde(default)]
     pub riffusion_api_url: String,

@@ -1,0 +1,13 @@
+{
+  "_comment": "FLUX.1 Dev. Ships UNet, CLIP and VAE as SEPARATE files, so it cannot use CheckpointLoaderSimple the way an SDXL graph does — that mismatch is the single most common reason a FLUX workflow fails on a fresh server. There is deliberately no negative CLIPTextEncode here: FLUX was trained with guidance distillation and runs at CFG 1, so a negative prompt is silently ignored. The restraint is written into the positive prompt instead (see imagery.rs).",
+  "10": {"class_type": "UNETLoader", "inputs": {"unet_name": "__CKPT__", "weight_dtype": "default"}},
+  "11": {"class_type": "DualCLIPLoader", "inputs": {"clip_name1": "t5xxl_fp8_e4m3fn.safetensors", "clip_name2": "clip_l.safetensors", "type": "flux"}},
+  "12": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
+  "5": {"class_type": "EmptySD3LatentImage", "inputs": {"width": __WIDTH__, "height": __HEIGHT__, "batch_size": __BATCH__}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["11", 0]}},
+  "13": {"class_type": "FluxGuidance", "inputs": {"conditioning": ["6", 0], "guidance": __CFG__}},
+  "7": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["6", 0]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": __SEED__, "steps": __STEPS__, "cfg": 1.0, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "denoise": 1.0, "model": ["10", 0], "positive": ["13", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["12", 0]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "biblemusically", "images": ["8", 0]}}
+}

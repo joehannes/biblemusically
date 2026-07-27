@@ -11,6 +11,8 @@ pub mod epub;
 #[path = "../tray.rs"]
 pub mod tray;
 
+#[path = "../comfy_registry.rs"]
+pub mod comfy_registry;
 #[path = "../git_api.rs"]
 pub mod git_api;
 #[path = "../helpers.rs"]

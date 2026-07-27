@@ -261,9 +261,23 @@ nine destinations, ten packaged intents, and both rules enforced rather than doc
 - Tension is scale, weather and a withheld reveal; a test asserts the prompt never reaches for
   "dark", "ominous" or "horror".
 
-Still open here: the **workflow JSON** half — character-consistent IPAdapter/ControlNet, upscale and
-detail passes for print, img2img and inpainting, transparent background, and the draft/final pair per
-model. The two bundled workflows (`photoreal_sdxl`, `character_ipadapter_sdxl`) are what exists today.
+**The workflow half is done in v0.99.0.** `comfy_registry.rs` owns both the graphs and the numbers
+that go with them — those two were drifting apart while the templates were included in `jobs.rs` and
+the steps came from a separate model profile. Eight graphs: photoreal, character (IPAdapter), FLUX,
+FLUX-strict, upscale-for-print, img2img, inpaint, transparent.
+
+- **FLUX gets its own graph, always.** It loads UNet, CLIP and VAE as separate files, so an SDXL
+  `CheckpointLoaderSimple` graph fails on it with a node error that reads like a broken server.
+- **The FLUX graph has no negative text node at all** — `ConditioningZeroOut` stands where it would
+  be, which is what an empty negative honestly is. A test asserts exactly one `CLIPTextEncode`.
+- **Asking FLUX for a character says it cannot**, rather than returning a stranger: IPAdapter's
+  presets are SDXL-only, and running them against a FLUX UNet does not fail loudly.
+- **A draft and a final are the same graph** at different step counts. A different graph would change
+  the composition, which is the one thing that would make reviewing the draft pointless.
+- **A missing custom node is named, with the pack that installs it**, checked against `/object_info`
+  *before* submitting — the bare failure names an internal class and reads like a server fault.
+- A print pass runs at denoise 0.35: it puts detail back into pixels that exist rather than
+  reinterpreting the picture.
 
 Not a generic model catalogue. The images this app makes are devotional: scripture set to music, on YouTube,
 and they have to read as **clean, reverent, and morally unambiguous** while still being able to carry
