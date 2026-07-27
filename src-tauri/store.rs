@@ -49,6 +49,148 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 // ────────────────────────────────────────────────────────────────────────────
+// The sealed cache
+// ────────────────────────────────────────────────────────────────────────────
+//
+// A project's shards can be encrypted with a key derived from the signed entitlement
+// (`commands::subscription::cache_key_material`). This is the half of the licensing design that is
+// actually load-bearing: the entitlement check itself runs on the user's own machine and a
+// determined person will patch it out, but the *work* stays sealed even then, because the key was
+// never in the binary — it comes from the account's server-issued salt.
+//
+// What it closes: making a fresh trial account and re-importing the old account's projects. A new
+// account has a different salt, derives a different key, and finds noise.
+//
+// Deliberately narrow:
+//
+//   • **Only project shards.** The global folder — `settings`, `projects`, `channels` — stays plain
+//     text, because the entitlement token itself lives in `settings`. Sealing that would mean the
+//     app could not read the thing it needs in order to derive the key to read it.
+//   • **Reading plain text always works.** An existing install is not rewritten on sight; a shard
+//     turns sealed the next time it is written. So upgrading is uneventful and a half-converted
+//     folder is a normal state rather than a broken one.
+//   • **A sealed shard with no key is an error, not an empty list.** Returning "no songs" for
+//     "cannot decrypt" would look exactly like data loss and would invite the user to regenerate
+//     over the top of work that is still there.
+
+/// The key project shards are sealed with, or `None` when nothing is unlocked.
+static CACHE_KEY: once_cell::sync::Lazy<std::sync::RwLock<Option<[u8; 32]>>> =
+    once_cell::sync::Lazy::new(|| std::sync::RwLock::new(None));
+
+/// Whether new writes seal. Off until an entitlement supplies key material.
+static SEALING_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks a file as this app's sealed cache rather than a corrupt JSON document.
+const SEAL_MARKER: &str = "studio-lightkid-sealed-cache";
+
+/// Derive the shard key from the entitlement's material (`"<account>:<salt>"`).
+///
+/// Argon2id over the whole string, salted with a hash of it, so the derivation is deterministic:
+/// the same account on another machine derives the same key and can open a synced project, and a
+/// different account cannot.
+fn derive_cache_key(material: &str) -> Option<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(SEAL_MARKER.as_bytes());
+    hasher.update(material.as_bytes());
+    let salt = hasher.finalize();
+    let mut key = [0u8; 32];
+    argon2::Argon2::default()
+        .hash_password_into(material.as_bytes(), &salt[..16], &mut key)
+        .ok()?;
+    Some(key)
+}
+
+/// Hand the store the entitlement's key material, or `None` to lock it again.
+///
+/// Called at startup and whenever the entitlement changes. `enable` decides whether *new* writes
+/// seal — a user who has turned sealing off can still read what was sealed earlier.
+pub fn set_cache_key(material: Option<&str>, enable: bool) {
+    let key = material.and_then(derive_cache_key);
+    SEALING_ON.store(enable && key.is_some(), std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut guard) = CACHE_KEY.write() {
+        *guard = key;
+    }
+}
+
+/// Is a key loaded? (Not the same as "sealing is on" — an unlocked-but-not-sealing store reads
+/// sealed shards and writes plain ones.)
+pub fn cache_unlocked() -> bool {
+    CACHE_KEY.read().map(|k| k.is_some()).unwrap_or(false)
+}
+
+pub fn cache_sealing() -> bool {
+    SEALING_ON.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn cache_key() -> Option<[u8; 32]> {
+    CACHE_KEY.read().ok().and_then(|k| *k)
+}
+
+/// Is this JSON a sealed envelope rather than documents?
+fn is_sealed(v: &Value) -> bool {
+    v.get("sealed").and_then(|s| s.as_str()) == Some(SEAL_MARKER)
+}
+
+fn seal_documents(key: &[u8; 32], collection: &str, docs: &[Value]) -> Result<Value> {
+    use base64::{engine::general_purpose::STANDARD as B64, Engine};
+    use chacha20poly1305::aead::{Aead, KeyInit};
+    use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+    use rand::RngCore;
+
+    let plaintext = serde_json::to_vec(&Value::Array(docs.to_vec()))?;
+    let mut nonce_bytes = [0u8; 24];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let ciphertext = XChaCha20Poly1305::new(key.into())
+        .encrypt(XNonce::from_slice(&nonce_bytes), plaintext.as_ref())
+        .map_err(|_| Error("could not seal this collection".into()))?;
+    Ok(json!({
+        "version": 1,
+        "collection": collection,
+        "sealed": SEAL_MARKER,
+        "updated_at": now_iso(),
+        // Said plainly in the file itself, because somebody will open it in a text editor and
+        // deserve an explanation rather than a wall of base64.
+        "note": "Encrypted with a key derived from the signed-in account. Sign in with the same \
+                 account to open it; the app does this for you.",
+        "nonce": B64.encode(nonce_bytes),
+        "data": B64.encode(&ciphertext),
+    }))
+}
+
+fn open_documents(envelope: &Value, path: &Path) -> Result<Vec<Value>> {
+    use base64::{engine::general_purpose::STANDARD as B64, Engine};
+    use chacha20poly1305::aead::{Aead, KeyInit};
+    use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+
+    let key = cache_key().ok_or_else(|| {
+        Error(format!(
+            "{} is sealed to an account. Sign in with the account that made it to open this project.",
+            path.display()
+        ))
+    })?;
+    let nonce = B64
+        .decode(envelope.get("nonce").and_then(|n| n.as_str()).unwrap_or(""))
+        .map_err(|err| Error(format!("{} is damaged: {err}", path.display())))?;
+    let data = B64
+        .decode(envelope.get("data").and_then(|d| d.as_str()).unwrap_or(""))
+        .map_err(|err| Error(format!("{} is damaged: {err}", path.display())))?;
+    let plain = XChaCha20Poly1305::new((&key).into())
+        .decrypt(XNonce::from_slice(&nonce), data.as_ref())
+        .map_err(|_| {
+            Error(format!(
+                "{} belongs to a different account and cannot be opened with this one.",
+                path.display()
+            ))
+        })?;
+    let parsed: Value = serde_json::from_slice(&plain)?;
+    Ok(match parsed {
+        Value::Array(a) => a.into_iter().filter(|d| d.is_object()).collect(),
+        _ => Vec::new(),
+    })
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Error
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -832,11 +974,13 @@ struct Shard {
     docs: Vec<Value>,
     loaded_mtime: Option<std::time::SystemTime>,
     loaded: bool,
+    /// Project shards may be sealed; the global folder never is (see the sealed-cache section).
+    sealable: bool,
 }
 
 impl Shard {
-    fn new(path: PathBuf) -> Self {
-        Shard { path, docs: Vec::new(), loaded_mtime: None, loaded: false }
+    fn new(path: PathBuf, sealable: bool) -> Self {
+        Shard { path, docs: Vec::new(), loaded_mtime: None, loaded: false, sealable }
     }
 
     fn file_mtime(&self) -> Option<std::time::SystemTime> {
@@ -853,16 +997,22 @@ impl Shard {
                 let parsed: Value = serde_json::from_str(&text).map_err(|err| {
                     Error(format!("{} is not valid JSON: {err}", self.path.display()))
                 })?;
-                // Accept both the envelope and a bare array, so a hand-written file works too.
-                let list = match parsed {
-                    Value::Array(a) => a,
-                    Value::Object(mut o) => match o.remove("documents") {
-                        Some(Value::Array(a)) => a,
+                // A sealed shard needs the account key; plain text is read as it always was, so a
+                // folder that is half converted still opens.
+                if is_sealed(&parsed) {
+                    open_documents(&parsed, &self.path)?
+                } else {
+                    // Accept both the envelope and a bare array, so a hand-written file works too.
+                    let list = match parsed {
+                        Value::Array(a) => a,
+                        Value::Object(mut o) => match o.remove("documents") {
+                            Some(Value::Array(a)) => a,
+                            _ => Vec::new(),
+                        },
                         _ => Vec::new(),
-                    },
-                    _ => Vec::new(),
-                };
-                list.into_iter().filter(|d| d.is_object()).collect()
+                    };
+                    list.into_iter().filter(|d| d.is_object()).collect()
+                }
             }
             _ => Vec::new(),
         };
@@ -872,15 +1022,24 @@ impl Shard {
     }
 
     fn flush(&mut self, collection: &str) -> Result<()> {
+        self.write_as(collection, self.sealable && cache_sealing())
+    }
+
+    /// Write the shard, sealed or plain. Split out from `flush` so the "seal my projects" and
+    /// "unseal them again" conversions are the same code path as an ordinary save.
+    fn write_as(&mut self, collection: &str, sealed: bool) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let envelope = json!({
-            "version": 1,
-            "collection": collection,
-            "updated_at": now_iso(),
-            "documents": self.docs,
-        });
+        let envelope = match (sealed, cache_key()) {
+            (true, Some(key)) => seal_documents(&key, collection, &self.docs)?,
+            _ => json!({
+                "version": 1,
+                "collection": collection,
+                "updated_at": now_iso(),
+                "documents": self.docs,
+            }),
+        };
         let text = serde_json::to_string_pretty(&envelope)?;
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, text.as_bytes())?;
@@ -994,6 +1153,44 @@ impl Db {
         Ok(Value::Object(out))
     }
 
+    /// Seal (or unseal) every project shard on disk, in place.
+    ///
+    /// Turning sealing on only affects files as they are next written, which would leave a project
+    /// nobody has touched lying in plain text indefinitely. This walks them all so "my projects are
+    /// sealed" is true when the setting says it is — and unseals them again on the way back, so the
+    /// choice is reversible rather than a one-way door.
+    pub async fn reseal_projects(&self, sealed: bool) -> Result<Value> {
+        if sealed && !cache_unlocked() {
+            return Err(Error("Sign in first — the key comes from your account.".into()));
+        }
+        self.inner.refresh_project_roots().await;
+        let roots: Vec<PathBuf> = self.inner.project_roots.lock().await.values().cloned().collect();
+        let mut converted = 0usize;
+        let mut failed: Vec<String> = Vec::new();
+        for root in roots {
+            let Ok(entries) = std::fs::read_dir(&root) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Some(collection) = path.file_stem().and_then(|s| s.to_str()).map(String::from)
+                else {
+                    continue;
+                };
+                let shard = self.inner.shard(path.clone()).await;
+                let mut guard = shard.lock().await;
+                // Load then rewrite: a shard already in the wanted form is rewritten identically,
+                // which costs one file write and keeps the code a single path.
+                match guard.ensure_loaded().and_then(|_| guard.write_as(&collection, sealed)) {
+                    Ok(()) => converted += 1,
+                    Err(err) => failed.push(format!("{}: {err}", path.display())),
+                }
+            }
+        }
+        Ok(json!({ "ok": failed.is_empty(), "sealed": sealed, "files": converted, "failed": failed }))
+    }
+
     /// Every collection with at least one shard file on disk.
     pub async fn collection_names(&self) -> Result<Vec<String>> {
         self.inner.refresh_project_roots().await;
@@ -1049,9 +1246,13 @@ impl Inner {
     }
 
     async fn shard(&self, path: PathBuf) -> Arc<Mutex<Shard>> {
+        // Anything outside the global folder belongs to a project, and only those may be sealed —
+        // `settings` holds the entitlement the key is derived from, so sealing it would lock the
+        // app out of its own bootstrap.
+        let sealable = path.parent() != Some(self.global_root.as_path());
         let mut map = self.shards.lock().await;
         map.entry(path.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(Shard::new(path))))
+            .or_insert_with(|| Arc::new(Mutex::new(Shard::new(path, sealable))))
             .clone()
     }
 
@@ -1853,5 +2054,68 @@ mod tests {
         sanitize(&mut v);
         assert_eq!(v["_id"], json!("64b7f9e2c1a2b3d4e5f60718"));
         assert_eq!(v["n"], json!(42));
+    }
+
+    // ── The sealed cache ────────────────────────────────────────────────────
+    //
+    // These share one test because the key is process-global: running them separately would let
+    // them race each other over it. Nothing else in this file seals, because every other test
+    // writes to a global root and only project shards are sealable.
+
+    #[test]
+    fn a_project_shard_seals_to_one_account_and_opens_for_nobody_else() {
+        let mine = derive_cache_key("user-1:salt-aaa").expect("derives");
+        let theirs = derive_cache_key("user-2:salt-bbb").expect("derives");
+        assert_ne!(mine, theirs, "two accounts must not share a key");
+        assert_eq!(
+            mine,
+            derive_cache_key("user-1:salt-aaa").unwrap(),
+            "the same account on another machine must derive the same key, or a synced project \
+             would be unopenable there"
+        );
+
+        let docs = vec![json!({ "id": "s1", "lyrics": "the hidden manna" })];
+        let envelope = seal_documents(&mine, "songs", &docs).expect("seals");
+        assert!(is_sealed(&envelope));
+        let on_disk = serde_json::to_string(&envelope).unwrap();
+        assert!(!on_disk.contains("hidden manna"), "the work must not be readable in the file");
+        assert!(on_disk.contains("Sign in"), "a person opening the file deserves an explanation");
+
+        let path = Path::new("/tmp/songs.json");
+        // Locked: an error, not an empty list. "No songs" would look like data loss and invite the
+        // user to regenerate over work that is still there.
+        set_cache_key(None, false);
+        let err = open_documents(&envelope, path).unwrap_err().0;
+        assert!(err.contains("Sign in"), "{err}");
+
+        set_cache_key(Some("user-1:salt-aaa"), true);
+        let opened = open_documents(&envelope, path).expect("opens for its own account");
+        assert_eq!(opened, docs);
+        assert!(cache_unlocked() && cache_sealing());
+
+        // The whole point: a fresh trial account re-importing the old account's projects.
+        set_cache_key(Some("user-2:salt-bbb"), true);
+        let err = open_documents(&envelope, path).unwrap_err().0;
+        assert!(err.contains("different account"), "{err}");
+
+        // Unlocked but not sealing: still reads what was sealed earlier.
+        set_cache_key(Some("user-1:salt-aaa"), false);
+        assert!(cache_unlocked() && !cache_sealing());
+        assert_eq!(open_documents(&envelope, path).unwrap(), docs);
+
+        set_cache_key(None, false);
+    }
+
+    #[tokio::test]
+    async fn the_global_folder_is_never_sealed() {
+        // `settings` holds the entitlement the key is derived from. Sealing it would mean the app
+        // could not read the thing it needs in order to read anything.
+        let db = temp_db("global-plain");
+        let path = db.global_root().join("settings.json");
+        let shard = db.inner.shard(path).await;
+        assert!(!shard.lock().await.sealable);
+
+        let project_shard = db.inner.shard(std::env::temp_dir().join("proj").join("data").join("songs.json")).await;
+        assert!(project_shard.lock().await.sealable);
     }
 }

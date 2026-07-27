@@ -383,6 +383,9 @@ pub struct EpubRequest {
 /// Assemble the edition into an EPUB 3 file.
 #[tauri::command]
 pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res<Value> {
+    // A file written to disk leaves the app, so this is the "export" gate — checked here rather
+    // than in the interface, because a disabled button is a CSS property anybody can delete.
+    super::subscription::require(&state, "export").await?;
     let edition = state.db.collection::<Document>("editions")
         .find_one(doc! { "id": &payload.edition_id }).await.map_err(e)?
         .map(bson_to_value)

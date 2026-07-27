@@ -215,6 +215,13 @@ pub async fn save_and_push(state: State<'_, AppState>, project_id: String, view:
         &commit_message(view.as_deref().unwrap_or(""), &[], "manual"),
     )?;
 
+    // Only the *push* half is gated, and only after the commit has happened. Committing locally is
+    // how this app saves at all: refusing it would mean a trial that loses work rather than a trial
+    // that cannot send work elsewhere.
+    if let Err(reason) = super::subscription::require(&state, "remote_sync").await {
+        return Ok(json!({ "committed": committed, "pushed": false, "reason": reason }));
+    }
+
     let has_remote = crate::project_sync::git(&dir, &["remote"])
         .map(|s| !s.trim().is_empty()).unwrap_or(false);
     if !has_remote {

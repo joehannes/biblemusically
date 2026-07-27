@@ -112,6 +112,12 @@ pub fn run() {
                     let _ = std::fs::write(app_state.db.global_root().join("migration-report.json"), text);
                 }
             }
+
+            // Unlock the sealed project cache from the entitlement already on disk, before any
+            // command can read a project. Blocking rather than spawned on purpose: a window that
+            // opens and *then* becomes able to read the user's projects would show an empty app
+            // for a moment and invite them to make a second copy of work they already have.
+            tauri::async_runtime::block_on(commands::subscription::apply_cache_key(&app_state));
             
             // If we auto-detected and set MJ_PROXY_URL earlier, persist it into the settings collection
             if let Ok(proxy) = std::env::var("MJ_PROXY_URL") {
@@ -737,6 +743,8 @@ pub fn run() {
             commands::subs_redeem,
             commands::subs_referral,
             commands::subs_can,
+            commands::subs_seal_projects,
+            commands::subs_cache_state,
             commands::send_report,
             commands::track_events,
             commands::list_sessions,

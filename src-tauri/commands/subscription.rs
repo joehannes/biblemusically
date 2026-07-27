@@ -164,6 +164,23 @@ pub async fn cache_key_material(state: &AppState) -> Option<String> {
     Some(format!("{sub}:{vault}"))
 }
 
+/// Whether project data is sealed on disk. On by default; a user can turn it off, and the files are
+/// rewritten in plain text when they do, so it is a reversible choice rather than a trap.
+async fn sealing_wanted(state: &AppState) -> bool {
+    settings_of(state).await["cache_sealing"].as_bool().unwrap_or(true)
+}
+
+/// Hand the store the key derived from the current entitlement — or take it away.
+///
+/// Called at startup and after every change to the entitlement, so the store's idea of who is
+/// signed in never lags the app's. Signing out locks the cache without destroying it: the files
+/// stay, and signing back in with the same account opens them.
+pub async fn apply_cache_key(state: &AppState) {
+    let material = cache_key_material(state).await;
+    let enable = sealing_wanted(state).await;
+    crate::store::set_cache_key(material.as_deref(), enable);
+}
+
 fn http() -> Res<reqwest::Client> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -234,6 +251,7 @@ pub async fn subs_sign_in(state: State<'_, AppState>, payload: SignInRequest) ->
     let verified = verify_entitlement(&token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS)
         .ok_or("The account server returned an entitlement this app cannot verify.")?;
     store_entitlement(&state, &token).await;
+    apply_cache_key(&state).await;
     Ok(json!({ "ok": true, "state": verified }))
 }
 
@@ -255,6 +273,7 @@ pub async fn subs_refresh(state: State<'_, AppState>) -> Res<Value> {
     let verified = verify_entitlement(&token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS)
         .ok_or("The refreshed entitlement does not verify.")?;
     store_entitlement(&state, &token).await;
+    apply_cache_key(&state).await;
     Ok(json!({ "ok": true, "state": verified }))
 }
 
@@ -285,6 +304,8 @@ pub async fn subs_status(state: State<'_, AppState>) -> Res<Value> {
         "base": base_of(&settings),
         "checked_at": settings["subs_checked_at"],
         "analytics_opt_in": settings["analytics_opt_in"].as_bool().unwrap_or(false),
+        "cache_sealed": crate::store::cache_sealing(),
+        "cache_unlocked": crate::store::cache_unlocked(),
     }))
 }
 
@@ -295,7 +316,47 @@ pub async fn subs_sign_out(state: State<'_, AppState>) -> Res<Value> {
     state.db.collection::<Document>("settings")
         .update_one(doc! { "_id": "singleton" },
                     doc! { "$set": { "subs_entitlement": "" } }).await.map_err(e)?;
+    apply_cache_key(&state).await;
     Ok(json!({ "signed_in": false }))
+}
+
+/// Turn sealing on or off, and convert what is already on disk to match.
+///
+/// Both directions matter. Switching on and leaving old projects in plain text would make the
+/// promise false; switching off and leaving them sealed would make it a one-way door.
+#[tauri::command]
+pub async fn subs_seal_projects(state: State<'_, AppState>, enable: bool) -> Res<Value> {
+    if enable && cache_key_material(&state).await.is_none() {
+        return Err("Sign in first — the key that seals your projects comes from your account.".into());
+    }
+    state.db.collection::<Document>("settings")
+        .update_one(doc! { "_id": "singleton" }, doc! { "$set": { "cache_sealing": enable } })
+        .upsert(true).await.map_err(e)?;
+    // The key must be loaded before a conversion in either direction: unsealing needs it to *read*
+    // what it is about to write out plainly.
+    let material = cache_key_material(&state).await;
+    crate::store::set_cache_key(material.as_deref(), enable);
+    let report = state.db.reseal_projects(enable).await.map_err(e)?;
+    Ok(report)
+}
+
+/// What state the sealed cache is in, for the Account and Data panels.
+#[tauri::command]
+pub async fn subs_cache_state(state: State<'_, AppState>) -> Res<Value> {
+    let settings = settings_of(&state).await;
+    Ok(json!({
+        "sealing": settings["cache_sealing"].as_bool().unwrap_or(true),
+        "unlocked": crate::store::cache_unlocked(),
+        "active": crate::store::cache_sealing(),
+        "explanation": if crate::store::cache_sealing() {
+            "Your projects are encrypted on disk with a key derived from your account. Another \
+             account — including a new free trial — cannot open them."
+        } else if crate::store::cache_unlocked() {
+            "Your projects are readable on disk. Sealing is switched off."
+        } else {
+            "Sign in to unlock your projects. Nothing has been deleted."
+        },
+    }))
 }
 
 /// Prices and plans, for the subscribe screen.
@@ -328,6 +389,7 @@ pub async fn subs_redeem(state: State<'_, AppState>, code: String) -> Res<Value>
     if let Some(token) = parsed["entitlement"].as_str() {
         if verify_entitlement(token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS).is_some() {
             store_entitlement(&state, token).await;
+            apply_cache_key(&state).await;
         }
     }
     Ok(parsed)

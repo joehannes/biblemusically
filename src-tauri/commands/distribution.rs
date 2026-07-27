@@ -536,6 +536,7 @@ pub async fn delete_release(state: State<'_, AppState>, id: String) -> Res<Value
 /// the work, since a rejected release comes back days later with one line of explanation.
 #[tauri::command]
 pub async fn export_release_package(state: State<'_, AppState>, id: String) -> Res<Value> {
+    super::subscription::require(&state, "export").await?;
     let release = state.db.collection::<Document>("releases")
         .find_one(doc! { "id": &id }).await.map_err(e)?
         .map(bson_to_value)

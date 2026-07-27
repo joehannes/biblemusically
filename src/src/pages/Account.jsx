@@ -7,7 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import {
   UserCircle, Clock, Monitor, LogOut, RefreshCw, Download, Share2, Copy,
-  Loader2, ArrowUpCircle, MapPin, Eye,
+  Loader2, ArrowUpCircle, MapPin, Eye, Lock, Unlock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SubscribePrompt } from "../components/Paywall";
@@ -29,12 +29,14 @@ export default function Account() {
   const [sessions, setSessions] = useState(null);
   const [update, setUpdate] = useState(null);
   const [referral, setReferral] = useState(null);
+  const [cache, setCache] = useState(null);
   const [busy, setBusy] = useState("");
 
   useEffect(() => subscribeEntitlement(setEnt), []);
   useEffect(() => {
     api.checkUpdate().then(setUpdate).catch(() => {});
     api.subsReferral().then(setReferral).catch(() => {});
+    api.subsCacheState().then(setCache).catch(() => {});
     loadSessions();
   }, []);
 
@@ -214,6 +216,43 @@ export default function Account() {
             A device that has not been used for {sessions.stale_after_days} days frees its slot on its own,
             so three reinstalls can never lock you out of your own licence.
           </p>
+        </Card>
+      )}
+
+      {/* ── The sealed cache ─────────────────────────────────────────────── */}
+      {cache && (
+        <Card className="p-4 space-y-2">
+          <h2 className="font-medium flex items-center gap-2">
+            {cache.active ? <Lock className="w-4 h-4 text-primary" />
+                          : <Unlock className="w-4 h-4 text-muted-foreground" />}
+            Your projects on this machine
+          </h2>
+          <p className="text-xs text-muted-foreground">{cache.explanation}</p>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input type="checkbox" className="mt-1 accent-primary"
+                   checked={!!cache.sealing}
+                   disabled={busy === "seal" || !ent?.signed_in}
+                   onChange={(ev) => act("seal",
+                     () => api.subsSealProjects(ev.target.checked),
+                     async (r) => {
+                       setCache(await api.subsCacheState());
+                       toast.success(ev.target.checked
+                         ? `Sealed — ${r.files} file${r.files === 1 ? "" : "s"} rewritten.`
+                         : `Unsealed — ${r.files} file${r.files === 1 ? "" : "s"} are readable again.`);
+                     })} />
+            <span>
+              <b>Encrypt my project files.</b>
+              <span className="text-muted-foreground"> The key comes from this account, so a copy of the
+              folder opens nowhere else. Turning it off writes them back in plain text — it is a choice
+              you can reverse, not a door that locks behind you.</span>
+            </span>
+          </label>
+          {cache.sealing && (
+            <p className="text-[11px] text-muted-foreground">
+              Sealed files are still committed and synced normally; the same account on another machine
+              opens them. What you give up is a readable git diff of your own data.
+            </p>
+          )}
         </Card>
       )}
 

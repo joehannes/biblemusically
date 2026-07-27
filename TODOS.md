@@ -92,21 +92,33 @@ watching rather than forgetting.
 Ordered so each item stands on what came before. Every one of them is a decision already made; none needs
 re-litigating.
 
-### 1. Enforce the trial restriction (do this first)
+### 1. Enforce the trial restriction — **done in v0.89.0**
 
-`require()`, `refusal()` and `cache_key_material()` exist in `commands/subscription.rs` and are tested,
-but the call sites do not use them. **Right now the terms promise a restriction the software does not
-apply.** Add `require(&state, "…").await?` as the first line of:
+Every call site the list named now asks first: `save_project_version` → `save_copies`;
+`sync_project_now` and `pull_project_now` → `remote_sync`; `export_release_package`, `build_epub` and
+`export_project` (the Data & Sync path) → `export`.
 
-- `save_project_version` → `"save_copies"`
-- `sync_project_now`, `pull_project_now` → `"remote_sync"`
-- `export_release_package` → `"export"`
-- `build_epub` → `"export"`
-- the Data & Sync export path → `"export"`
-- `save_and_push` → `"remote_sync"`
+`save_and_push` is the one that is deliberately *not* gated at the top. It commits locally first and
+only refuses the push, because refusing the whole command would mean a trial that loses work rather
+than a trial that cannot send work elsewhere. It returns `{ committed, pushed: false, reason }` so the
+interface can say which half happened.
 
-Then encrypt the project cache with `cache_key_material()` so a new trial account cannot open an old
-account's projects — the route the whole design exists to close.
+**The sealed cache** (`store.rs`): project shards are encrypted with XChaCha20-Poly1305 under a key
+derived by Argon2id from `cache_key_material()`. Deliberately narrow, and each limit is load-bearing:
+
+- **Only project shards.** The global folder stays plain text because `settings` holds the entitlement
+  the key comes from — sealing it would lock the app out of its own bootstrap.
+- **Plain text still reads.** Nothing is rewritten on sight; a shard turns sealed the next time it is
+  written, so upgrading is uneventful and a half-converted folder is a normal state.
+- **A sealed shard with no key errors** rather than returning an empty list. "No songs" looks exactly
+  like data loss and would invite the user to regenerate over work that is still there.
+- **Reversible.** `subs_seal_projects(false)` walks every project and writes it back readable, so the
+  setting is a choice rather than a door that locks behind you.
+
+What it costs, and it is a real cost: a sealed project no longer produces a readable git diff of its
+own data. Sync still works — the same account derives the same key on another machine.
+
+`subs_cache_state` reports where things stand; the Account page carries the switch and the explanation.
 
 ### 2. Hide Suno and Midjourney rather than deleting them
 
@@ -478,12 +490,8 @@ work on Android. An iframe cannot: those pages refuse framing by design.
 
 ### Still open from earlier passes
 
-1. **Gate the export/save call sites.** The highest-value item: `require()` and the entitlement-derived
-   cache key exist, but `save_project_version`, `sync_project_now`, `export_release_package`, `build_epub`
-   and the data export do not call them yet — so the trial restriction is *described* in the terms and not
-   *enforced* in the app. Fix this before anything else.
-2. **Encrypt the project cache** with `cache_key_material()`, which closes the "new trial, re-import"
-   route the whole design rests on.
+1. ~~**Gate the export/save call sites.**~~ **Done in v0.89.0** — see task 1 above.
+2. ~~**Encrypt the project cache**~~ **Done in v0.89.0** — sealed shards, project-only, reversible.
 3. **Mobile git via `git2`.** One function, `project_sync::git`, already `#[cfg]`-split; 26 call sites all
    funnel through it. Becomes a typed API (commit/add/status/log/clone/pull/push/checkout_paths) with a
    desktop and a mobile implementation.

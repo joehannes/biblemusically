@@ -449,6 +449,7 @@ fn set_remote(folder: &Path, url: &str) -> Res<()> {
 /// Push a project to its configured remote, creating the repository on first use.
 #[tauri::command]
 pub async fn sync_project_now(state: State<'_, AppState>, project_id: String) -> Res<Value> {
+    super::subscription::require(&state, "remote_sync").await?;
     let mut log: Vec<String> = Vec::new();
     let cfg = load_config(&state, &project_id).await?;
     let provider = cfg["provider"].as_str().unwrap_or("huggingface").to_string();
@@ -534,6 +535,7 @@ pub async fn sync_project_now(state: State<'_, AppState>, project_id: String) ->
 /// Restore/refresh from the remote — the other half of "my laptop died".
 #[tauri::command]
 pub async fn pull_project_now(state: State<'_, AppState>, project_id: String) -> Res<Value> {
+    super::subscription::require(&state, "remote_sync").await?;
     let cfg = load_config(&state, &project_id).await?;
     let provider = cfg["provider"].as_str().unwrap_or("huggingface").to_string();
     let branch = cfg["branch"].as_str().unwrap_or("main").to_string();

@@ -329,6 +329,7 @@ pub async fn export_project(
     app_handle: AppHandle,
     pid: String,
 ) -> Res<Value> {
+    crate::commands::subscription::require(&state, "export").await?;
     let project = state.db.collection::<Document>("projects")
         .find_one(doc! { "id": &pid }).await.map_err(e)?
         .ok_or_else(|| "project missing".to_string())?;
@@ -928,6 +929,8 @@ pub async fn save_project_version(
     save_type: String,
     branch_to_create: Option<String>
 ) -> Res<Value> {
+    // Saving a named version out of the app is the "keep a copy" promise the terms describe.
+    crate::commands::subscription::require(&state, "save_copies").await?;
     let project_doc = state.db.collection::<Document>("projects")
         .find_one(doc! { "id": &project_id }).await.map_err(e)?
         .ok_or_else(|| "Project not found".to_string())?;
