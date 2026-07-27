@@ -11,14 +11,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MUSIC_ENGINES, IMAGE_ENGINES, visibleMusicEngines, visibleImageEngines,
-  musicEngine, imageEngine, isRisky,
+  musicEngine, imageEngine, isRisky, isPaid, priceLine,
 } from "../src/src/lib/engineCapabilities.js";
 
 const ids = (pairs) => pairs.map(([id]) => id);
 
 test("nothing that automates the user's own account is offered by default", () => {
   assert.deepEqual(ids(visibleMusicEngines({}, "heartmula")), ["acestep", "heartmula"]);
-  assert.deepEqual(ids(visibleImageEngines({}, "flux")), ["flux", "comfyui", "gemini"]);
+  assert.deepEqual(ids(visibleImageEngines({}, "flux")),
+    ["flux", "comfyui", "leonardo", "fal", "ideogram", "recraft", "gemini"]);
   // Including for a settings object that has never heard of the flag.
   assert.ok(!ids(visibleMusicEngines(undefined, "")).includes("suno"));
   assert.ok(!ids(visibleImageEngines(null, "")).includes("midjourney"));
@@ -48,6 +49,43 @@ test("the engine already in use is always offered, hidden or not", () => {
 test("no free engine is marked risky, so the warning keeps its meaning", () => {
   for (const id of ["acestep", "heartmula"]) assert.ok(!isRisky(MUSIC_ENGINES[id]), id);
   for (const id of ["flux", "comfyui", "gemini"]) assert.ok(!isRisky(IMAGE_ENGINES[id]), id);
+  // Paid is not the same as risky, and conflating them would either hide four legitimate engines or
+  // dilute a warning that is about somebody's account being suspended.
+  for (const id of ["leonardo", "fal", "ideogram", "recraft"]) {
+    assert.ok(!isRisky(IMAGE_ENGINES[id]), `${id} costs money but risks no account`);
+  }
+});
+
+test("a paid engine says so, and says how much, before it is ever selected", () => {
+  // Finding out what an engine costs from an invoice is the failure this prevents.
+  const paid = Object.entries(IMAGE_ENGINES).filter(([, e]) => isPaid(e)).map(([id]) => id);
+  assert.deepEqual(paid, ["leonardo", "fal", "ideogram", "recraft"]);
+  for (const id of paid) {
+    const e = IMAGE_ENGINES[id];
+    assert.ok(e.priceHint > 0, `${id} has no price`);
+    assert.match(e.note, /paid/, `${id}'s picker row must say it is paid`);
+    assert.match(priceLine(e), /^about \$\d+\.\d{3} an image$/, priceLine(e));
+  }
+  for (const id of ["flux", "comfyui", "gemini", "midjourney"]) {
+    assert.ok(!isPaid(IMAGE_ENGINES[id]), `${id} must not be marked paid`);
+    assert.equal(priceLine(IMAGE_ENGINES[id]), "free");
+  }
+});
+
+test("only the engines that honour a negative prompt advertise one", () => {
+  // A "things to avoid" box that does nothing is worse than no box: the user believes the
+  // restraint was applied. FLUX runs at CFG 1 and cannot use one at all.
+  assert.ok(!IMAGE_ENGINES.flux.caps.negativePrompt);
+  assert.ok(!IMAGE_ENGINES.fal.caps.negativePrompt);
+  assert.ok(!IMAGE_ENGINES.recraft.caps.negativePrompt);
+  assert.ok(IMAGE_ENGINES.leonardo.caps.negativePrompt);
+  assert.ok(IMAGE_ENGINES.ideogram.caps.negativePrompt);
+  assert.ok(IMAGE_ENGINES.comfyui.caps.negativePrompt);
+});
+
+test("exactly one engine returns vector, and it is the one sold for logos", () => {
+  const vector = Object.entries(IMAGE_ENGINES).filter(([, e]) => e.caps.vectorOutput).map(([id]) => id);
+  assert.deepEqual(vector, ["recraft"]);
 });
 
 test("ComfyUI is found by the id the rest of the app actually stores", () => {

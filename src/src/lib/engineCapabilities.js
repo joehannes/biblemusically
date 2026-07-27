@@ -1,6 +1,6 @@
 // What each generation engine can actually do.
 //
-// The studio speaks to three music engines and four image engines, and they differ in ways that are
+// The studio speaks to three music engines and eight image engines, and they differ in ways that are
 // invisible in the interface until something silently degrades: Suno reads rich bracketed
 // performance tags, ACE-Step only plain lowercase structure tags, HeartMuLa sings anything that is
 // not a section header. Midjourney takes `--ar/--stylize/--chaos` flags; FLUX takes steps and
@@ -21,6 +21,12 @@
 // Midjourney takes applications for one. The job branches, the cookie capture and the settings all
 // stay exactly where they are, so switching them back on is a flag and not a rewrite. When they are
 // shown, each says in one line whose account is at risk.
+//
+// ── Paid engines ────────────────────────────────────────────────────────────
+//
+// Four image engines are `paid: true` and carry a `priceHint` in US dollars per image. The picker
+// shows both, because somebody who picked a paid engine by accident and found out from an invoice
+// has been treated badly. The same figure is logged by the backend before it spends anything.
 
 export const MUSIC_ENGINES = {
   suno: {
@@ -162,6 +168,80 @@ with it. FLUX, Leonardo, Ideogram and Recraft cover the same ground without that
     },
     strengths: "Anything the loaded workflow supports, including LoRAs and reference images.",
   },
+  // ── The paid APIs ─────────────────────────────────────────────────────────
+  //
+  // `paid: true` is not decoration. Somebody who picked one of these by accident and found out from
+  // an invoice has been treated badly, so the picker shows the badge and the per-image price, and
+  // `priceHint` is what the backend logs before it spends anything (see image_apis.rs).
+  leonardo: {
+    label: "Leonardo",
+    note: "paid — one key for Flux, Ideogram, Recraft, Phoenix",
+    tier: "api",
+    paid: true,
+    priceHint: 0.007,
+    caps: {
+      flagSyntax: false,
+      aspectRatios: ["16:9", "9:16", "1:1", "4:3", "2:3"],
+      stylize: false, chaos: false, weird: false, tile: false,
+      negativePrompt: true,
+      seed: true, steps: false, guidance: true,
+      referenceImage: true, videoClip: false, batchOf4: true,
+    },
+    strengths: "A meta-platform: several of the best models behind one key and one bill. The cheapest per image of the four, and the one to start with if you do not want six accounts.",
+  },
+  fal: {
+    label: "fal.ai",
+    note: "paid — pay per image, no subscription",
+    tier: "api",
+    paid: true,
+    priceHint: 0.05,
+    caps: {
+      flagSyntax: false,
+      aspectRatios: ["16:9", "9:16", "1:1", "4:3", "2:3"],
+      stylize: false, chaos: false, weird: false, tile: false,
+      // No negative prompt on the FLUX-family models it fronts. The GUI must not offer one here:
+      // a "things to avoid" box that does nothing is worse than no box at all.
+      negativePrompt: false,
+      seed: true, steps: true, guidance: true,
+      referenceImage: true, videoClip: false, batchOf4: true,
+    },
+    strengths: "The widest model list and no subscription — you pay for what you generate. Good when you want one specific model rather than a platform.",
+  },
+  ideogram: {
+    label: "Ideogram",
+    note: "paid — best at text inside the image",
+    tier: "api",
+    paid: true,
+    priceHint: 0.06,
+    caps: {
+      flagSyntax: false,
+      aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "2:3"],
+      stylize: false, chaos: false, weird: false, tile: false,
+      negativePrompt: true,
+      seed: true, steps: false, guidance: false,
+      referenceImage: true, videoClip: false, batchOf4: true,
+      textInImage: true,
+    },
+    strengths: "Renders words inside a picture better than anything else here — verse cards and study cards. For words on a product, the typography layer is still more reliable.",
+  },
+  recraft: {
+    label: "Recraft",
+    note: "paid — logos, and real SVG output",
+    tier: "api",
+    paid: true,
+    priceHint: 0.04,
+    caps: {
+      flagSyntax: false,
+      aspectRatios: ["16:9", "9:16", "1:1", "4:3", "2:3"],
+      stylize: false, chaos: false, weird: false, tile: false,
+      negativePrompt: false,
+      seed: false, steps: false, guidance: false,
+      referenceImage: true, videoClip: false, batchOf4: false,
+      vectorOutput: true,
+      textInImage: true,
+    },
+    strengths: "The only one here that returns real vector. Logos, badges and ornaments that have to scale to a print area without going soft.",
+  },
   gemini: {
     label: "Gemini image",
     note: "the API key you already use for text",
@@ -212,6 +292,13 @@ export const visibleImageEngines = (settings, current) => offer(IMAGE_ENGINES, s
 
 /** Is this engine one the user has to switch on before it appears? */
 export const isRisky = (engine) => Boolean(engine?.risky);
+
+/** Does using this engine cost money per generation? */
+export const isPaid = (engine) => Boolean(engine?.paid);
+
+/** "about $0.05 an image" — the phrase the picker and the logs both use. */
+export const priceLine = (engine) =>
+  isPaid(engine) ? `about $${Number(engine.priceHint || 0).toFixed(3)} an image` : "free";
 
 /** Does the selected engine support this capability? Unknown engines answer "no". */
 export const supports = (engine, cap) => Boolean(engine?.caps?.[cap]);

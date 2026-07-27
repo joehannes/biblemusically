@@ -976,6 +976,115 @@ async fn real_flux(
     Some(images)
 }
 
+/// Generate through one of the paid image APIs (fal.ai, Leonardo, Ideogram, Recraft).
+///
+/// One function for four providers: `image_apis.rs` holds everything that differs between them, and
+/// everything that differs is data rather than a branch. What is left here is the part that is the
+/// same everywhere — send, wait if it polls, read the URLs out.
+///
+/// Every log line names the engine and says money is involved, because the failure that costs
+/// somebody real money is the one they cannot see happening.
+async fn real_paid_image(
+    engine: &str,
+    prompt: &str,
+    negative: Option<&str>,
+    aspect: &str,
+    settings: &Value,
+    job_id: &str,
+    db: &crate::store::Db,
+    cancelled: &CancelSet,
+) -> Option<Vec<String>> {
+    use crate::image_apis;
+
+    let p = image_apis::provider(engine)?;
+    let key = image_apis::api_key(p, settings);
+    if key.is_empty() {
+        db_log(db, job_id, &image_apis::missing_key_message(p)).await;
+        return None;
+    }
+    if is_cancelled(cancelled, job_id).await {
+        db_log(db, job_id, &format!("{}: cancelled before anything was charged", p.id)).await;
+        return None;
+    }
+
+    let (w, h) = match aspect {
+        "16:9" => (1920u32, 1080u32),
+        "9:16" => (1080, 1920),
+        "4:3" => (1440, 1080),
+        "2:3" => (1600, 2400),
+        _ => (1024, 1024),
+    };
+    let count = 1u32;
+    let body = image_apis::request_body(p, settings, prompt, negative, aspect, w, h, count);
+
+    if negative.map(|n| !n.trim().is_empty()).unwrap_or(false) && !image_apis::honours_negative(p) {
+        // Said out loud rather than dropped in silence: on an engine with no negative prompt, the
+        // restraint has to be carried by the positive one, and the user needs to know that.
+        db_log(db, job_id, &format!(
+            "{}: this engine has no negative prompt, so the \"avoid\" text was not sent. Put the \
+             restraint in the prompt itself.", p.id)).await;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build().ok()?;
+    let url = image_apis::generate_url(p, settings);
+    let (header, value) = image_apis::auth_header(p, &key);
+
+    db_log(db, job_id, &format!("{}: generating {} image(s) — about ${:.3} each",
+                                p.id, count, p.price_hint)).await;
+    let res = match client.post(&url).header(header, value.clone())
+        .header("Content-Type", "application/json").json(&body).send().await {
+        Ok(r) => r,
+        Err(err) => { db_log(db, job_id, &format!("{}: {url} could not be reached: {err}", p.id)).await; return None; }
+    };
+    let status = res.status();
+    let started: Value = match res.json().await {
+        Ok(v) => v,
+        Err(err) => { db_log(db, job_id, &format!("{}: HTTP {status}, unreadable answer: {err}", p.id)).await; return None; }
+    };
+    if !status.is_success() {
+        // The provider's own words: "insufficient credits" is worth reading, and a generic failure
+        // message would hide exactly the thing the user has to act on.
+        let detail = started["error"].as_str()
+            .or_else(|| started["detail"].as_str())
+            .or_else(|| started["message"].as_str())
+            .unwrap_or("no detail given");
+        db_log(db, job_id, &format!("{}: HTTP {status} — {detail}", p.id)).await;
+        return None;
+    }
+
+    let mut images = image_apis::extract_images(p, &started);
+    if images.is_empty() {
+        if let Some(poll) = image_apis::poll_url(p, settings, &started) {
+            // The job is running and already costing money, so a cancel from here stops waiting but
+            // cannot un-spend it; say so rather than implying the charge was avoided.
+            for attempt in 0..60 {
+                if is_cancelled(cancelled, job_id).await {
+                    db_log(db, job_id, &format!(
+                        "{}: stopped waiting. The request was already sent, so it may still be \
+                         charged.", p.id)).await;
+                    return None;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let Ok(r) = client.get(&poll).header(header, value.clone()).send().await else { continue };
+                let Ok(body) = r.json::<Value>().await else { continue };
+                if let Some(done) = image_apis::poll_done(p, &body) { images = done; break; }
+                if attempt == 59 {
+                    db_log(db, job_id, &format!("{}: still not finished after two minutes.", p.id)).await;
+                }
+            }
+        }
+    }
+
+    if images.is_empty() {
+        db_log(db, job_id, &format!("{}: no images came back.", p.id)).await;
+        return None;
+    }
+    db_log(db, job_id, &format!("{}: {} image(s) received.", p.id, images.len())).await;
+    Some(images)
+}
+
 // Bundled ComfyUI workflow templates (API format, with __TOKEN__ placeholders).
 const COMFY_WF_PHOTOREAL: &str = include_str!("comfy_workflows/photoreal_sdxl.json");
 const COMFY_WF_CHARACTER: &str = include_str!("comfy_workflows/character_ipadapter_sdxl.json");
@@ -1352,7 +1461,15 @@ async fn gen_images(
     // Discord account with a user token — self-botting, against Discord's terms, and a terminated account
     // takes the Midjourney subscription with it. That is not a risk to ship inside something sold
     // publicly, so the default is an engine with a real API and no terms to breach.
-    match settings.get("image_engine").and_then(|v| v.as_str()).unwrap_or("flux") {
+    let engine = settings.get("image_engine").and_then(|v| v.as_str()).unwrap_or("flux");
+    // The paid APIs first: fal.ai, Leonardo, Ideogram and Recraft are all one shape (see
+    // image_apis.rs), so they share a single arm rather than four near-identical ones.
+    if crate::image_apis::is_paid_api(engine) {
+        let aspect = settings.get("image_aspect").and_then(|v| v.as_str()).unwrap_or("16:9");
+        let negative = settings.get("image_negative_prompt").and_then(|v| v.as_str());
+        return real_paid_image(engine, prompt, negative, aspect, settings, job_id, db, cancelled).await;
+    }
+    match engine {
         "comfyui" | "comfy" => real_comfy(prompt, ref_image, settings, job_id, db, cancelled).await,
         // Midjourney is named explicitly rather than being the fallback arm. It used to catch every
         // unrecognised id, which meant a typo or a since-renamed engine quietly drove the user's own

@@ -111,6 +111,49 @@ pub struct Settings {
     pub comfyui_api_url: String,
     #[serde(default)]
     pub comfyui_api_key: String,
+
+    // ── The paid image APIs ─────────────────────────────────────────────────
+    // Key, model and base URL for each of fal.ai, Leonardo, Ideogram and Recraft. The last two are
+    // settings rather than constants because provider endpoints move — this app has already lived
+    // through studio-api.suno.ai becoming studio-api.prod.suno.com — and an empty value means "use
+    // the documented default" (see image_apis.rs).
+    #[serde(default)]
+    pub fal_api_key: String,
+    #[serde(default)]
+    pub fal_model: String,
+    #[serde(default)]
+    pub fal_base_url: String,
+    #[serde(default)]
+    pub leonardo_api_key: String,
+    #[serde(default)]
+    pub leonardo_model: String,
+    #[serde(default)]
+    pub leonardo_base_url: String,
+    #[serde(default)]
+    pub ideogram_api_key: String,
+    #[serde(default)]
+    pub ideogram_model: String,
+    #[serde(default)]
+    pub ideogram_base_url: String,
+    #[serde(default)]
+    pub ideogram_rendering_speed: String,
+    #[serde(default)]
+    pub recraft_api_key: String,
+    #[serde(default)]
+    pub recraft_model: String,
+    #[serde(default)]
+    pub recraft_base_url: String,
+    #[serde(default)]
+    pub recraft_style: String,
+    /// The shape paid engines are asked for, e.g. "16:9". One vocabulary in, four dialects out.
+    #[serde(default)]
+    pub image_aspect: String,
+    /// "Things to avoid", sent only to engines that actually honour one.
+    #[serde(default)]
+    pub image_negative_prompt: String,
+    /// Suno and Midjourney reach an account the user holds, so they are hidden until asked for.
+    #[serde(default)]
+    pub show_risky_engines: bool,
     /// SDXL checkpoint filename as it appears in ComfyUI's models/checkpoints folder.
     #[serde(default = "default_comfy_ckpt")]
     pub comfyui_ckpt: String,

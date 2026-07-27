@@ -13,6 +13,8 @@ pub mod tray;
 
 #[path = "../helpers.rs"]
 pub mod helpers;
+#[path = "../image_apis.rs"]
+pub mod image_apis;
 #[path = "../jobs.rs"]
 pub mod jobs;
 #[path = "../models.rs"]

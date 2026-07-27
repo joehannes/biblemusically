@@ -14,7 +14,7 @@ import { Switch } from "../components/ui/switch";
 import VoicePicker from "../components/VoicePicker";
 import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
-import { visibleMusicEngines, visibleImageEngines, musicEngine, imageEngine } from "../lib/engineCapabilities";
+import { visibleMusicEngines, visibleImageEngines, musicEngine, imageEngine, isPaid, priceLine, IMAGE_ENGINES } from "../lib/engineCapabilities";
 import { autoStartKaggleServer, subscribeKaggle } from "../lib/kaggleServerPipeline";
 import { markStopped } from "../lib/serverLifecycle";
 import { useRequireGuideStep } from "../components/GuideStepDialog";
@@ -39,12 +39,25 @@ const FREE_MODELS = [
 /// version is the one people skip.
 function EngineRisk({ engine, kind }) {
   const e = kind === "music" ? musicEngine(engine) : imageEngine(engine);
-  if (!e?.risky) return null;
+  if (!e?.risky && !isPaid(e)) return null;
   return (
-    <p className="text-xs text-amber-400/90 mt-1 flex items-start gap-1.5">
-      <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-      <span>{e.riskNote}</span>
-    </p>
+    <>
+      {e.risky && (
+        <p className="text-xs text-amber-400/90 mt-1 flex items-start gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{e.riskNote}</span>
+        </p>
+      )}
+      {isPaid(e) && (
+        <p className="text-xs text-sky-400/90 mt-1 flex items-start gap-1.5">
+          <KeyRound className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>
+            <b>This engine charges per image</b> — {priceLine(e)}. Nothing is spent until you
+            generate, and every job logs the cost before it starts.
+          </span>
+        </p>
+      )}
+    </>
   );
 }
 
@@ -1089,12 +1102,52 @@ const SettingsComponent = () => {
             <SelectTrigger className="w-full" data-testid="settings-image-engine"><SelectValue /></SelectTrigger>
             <SelectContent>
               {visibleImageEngines(s, s.image_engine).map(([id, engine]) => (
-                <SelectItem key={id} value={id}>{engine.label} ({engine.note})</SelectItem>
+                <SelectItem key={id} value={id}>
+                  {engine.label} ({engine.note}){isPaid(engine) ? ` · ${priceLine(engine)}` : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <EngineRisk engine={s.image_engine} kind="image" />
           <p className="text-xs text-muted-foreground mt-1">FLUX is a simple single-model server; ComfyUI is the multi-model engine for style presets, character consistency (IP-Adapter) and animation. Both run free on Kaggle/Colab or a local GPU. Configure whichever engine you select below.</p>
+        </div>
+      </Card>
+
+      {/* ── The paid image APIs ───────────────────────────────────────────── */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Img className="w-4 h-4 text-primary" /><h2 className="font-semibold">Paid image engines</h2></div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Four commercial APIs, each with a real licence and nothing to breach. You only need a key for
+          the one you actually select above. Base URL and model are settings rather than built in,
+          because providers move their endpoints and a rebuild is a poor way to survive that — leave
+          them empty for the documented default.
+        </p>
+        <div className="space-y-5">
+          {Object.entries(IMAGE_ENGINES).filter(([, e]) => e.paid).map(([id, engine]) => (
+            <div key={id} className="rounded-lg border border-border/60 p-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{engine.label}</span>
+                  <Badge variant="outline" className="text-[9px] text-sky-400 border-sky-500/40">
+                    {priceLine(engine)}
+                  </Badge>
+                  {s.image_engine === id && <Badge variant="default" className="text-[9px]">in use</Badge>}
+                </div>
+                {!s[`${id}_api_key`] && (
+                  <span className="text-[11px] text-muted-foreground">no key yet — this engine cannot run</span>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mb-2">{engine.strengths}</p>
+              <div className="grid md:grid-cols-3 gap-3">
+                <Field k={`${id}_api_key`} label="API key" placeholder="paste your key" type="password"
+                       testid={`settings-${id}-key`} value={s[`${id}_api_key`]} onValueChange={updateS} />
+                <Field k={`${id}_model`} label="Model (optional)" placeholder="leave empty for the default"
+                       testid={`settings-${id}-model`} value={s[`${id}_model`]} onValueChange={updateS} />
+                <Field k={`${id}_base_url`} label="Base URL (optional)" placeholder="leave empty for the default"
+                       testid={`settings-${id}-base`} value={s[`${id}_base_url`]} onValueChange={updateS} />
+              </div>
+            </div>
+          ))}
         </div>
       </Card>
 

@@ -146,11 +146,28 @@ Also fixed on the way past: `IMAGE_ENGINES` keyed ComfyUI as `comfy` while the r
 `comfyui`, so every capability lookup for ComfyUI returned the empty engine and the guided flow offered
 none of its controls. `tests/engine-visibility.test.mjs` covers all of it.
 
-### 3. Paid image engines
+### 3. Paid image engines — **done in v0.91.0**
 
-`fal.ai` and `Leonardo` as new engines, plus Ideogram and Recraft as specialists. Costs and reasoning in
-the section below. Each engine's own features (aspect ratio, style presets, negative prompts, SVG output,
-upscale) reach the GUI through `lib/engineCapabilities.js` — the seam exists, do not invent a second one.
+All four ship: Leonardo, fal.ai, Ideogram and Recraft. `image_apis.rs` holds everything that differs
+between them as *data* rather than four near-identical functions — the three things that genuinely
+differ are how the key is presented, how the picture's shape is asked for, and where the URLs sit in
+the answer. `jobs.rs` has one arm for all four.
+
+Decisions worth keeping:
+
+- **Endpoints and model ids are settings, not constants.** Empty means "the documented default".
+  Provider endpoints move — this app already lived through `studio-api.suno.ai` becoming
+  `studio-api.prod.suno.com` — and a URL baked into a binary turns a five-second edit into a release.
+- **A negative prompt only travels where it is honoured**, and when it is dropped the job log says so.
+  Leonardo and Ideogram have one; fal (FLUX family) and Recraft do not. Silently discarding it is how
+  somebody comes to believe "no lettering anywhere" was applied when it was not.
+- **The price is stated before anything is spent**: in the picker row, under the picker, and in the
+  job log before the request goes out. `priceHint` says "about" because providers change prices and a
+  precise-looking number would be a lie with a decimal point in it.
+- **Paid is not risky.** They are separate flags: one is about money, the other about somebody's
+  account being suspended. Conflating them would either hide four legitimate engines or dilute the
+  warning that matters.
+- Cancelling a polled job says the request may still be charged, rather than implying it was not.
 
 ### 4. Music engines — the decided order
 
