@@ -717,7 +717,9 @@ async fn generate_song_api(
 /// image URL. Used by the on-demand style-sample gallery (commands/style_samples.rs) so the user can
 /// see what a style/genre-mix actually looks like on their own engine — not a bundled library.
 pub(crate) async fn sample_image(style_prompt: &str, settings: &Value, db: &crate::store::Db, cancelled: &CancelSet) -> Option<String> {
-    gen_images(style_prompt, None, settings, "style-sample", db, cancelled).await
+    // A style sample is a square swatch with no restraint text of its own: it exists to show what a
+    // style looks like, not to be published.
+    gen_images(style_prompt, None, "1:1", None, settings, "style-sample", db, cancelled).await
         .and_then(|mut v| { if v.is_empty() { None } else { Some(v.remove(0)) } })
 }
 
@@ -755,13 +757,31 @@ async fn real_heartmula(song: &Value, settings: &Value, job_id: &str, db: &crate
 ///
 /// Returns the subject unchanged when nothing has been chosen. That matters: the imagery panel is
 /// an offer, not a gate, and somebody who has never opened it must still be able to generate.
-async fn apply_imagery(subject: &str, settings: &Value, job_id: &str, db: &crate::store::Db) -> String {
+/// The prompt, and the shape and negative prompt that go with it.
+///
+/// One choice has to reach every engine, not just the ones that read the prompt. The paid APIs take
+/// an aspect ratio and (where they honour one) a negative prompt as separate fields, so returning
+/// only a string meant a Leonardo render silently ignored the destination the user had picked.
+struct Imagery {
+    prompt: String,
+    negative: Option<String>,
+    aspect: String,
+}
+
+async fn apply_imagery(subject: &str, settings: &Value, job_id: &str, db: &crate::store::Db) -> Imagery {
+    let plain = |aspect: &str| Imagery {
+        prompt: subject.to_string(),
+        negative: settings.get("image_negative_prompt").and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty()).map(String::from),
+        aspect: aspect.to_string(),
+    };
+    let fallback_aspect = settings.get("image_aspect").and_then(|v| v.as_str()).unwrap_or("16:9");
     let Some(choice) = settings.get("imagery").filter(|v| v.is_object()) else {
-        return subject.to_string();
+        return plain(fallback_aspect);
     };
     let model = choice["model"].as_str().unwrap_or("flux_dev");
     let intent_id = choice["intent"].as_str().unwrap_or("chapter_opener");
-    let Some(intent) = crate::imagery::intent(intent_id) else { return subject.to_string() };
+    let Some(intent) = crate::imagery::intent(intent_id) else { return plain(fallback_aspect) };
     let controls: crate::imagery::Controls = choice.get("controls")
         .and_then(|c| serde_json::from_value(c.clone()).ok())
         .unwrap_or_else(|| crate::imagery::controls_for(intent));
@@ -777,12 +797,12 @@ async fn apply_imagery(subject: &str, settings: &Value, job_id: &str, db: &crate
             if let Some(neg) = &composed.negative {
                 db_log(db, job_id, &format!("imagery: avoiding — {neg}")).await;
             }
-            composed.positive
+            Imagery { prompt: composed.positive, negative: composed.negative, aspect: composed.aspect }
         }
         Err(why) => {
             db_log(db, job_id, &format!(
                 "imagery: keeping the section's own prompt — {why}")).await;
-            subject.to_string()
+            plain(fallback_aspect)
         }
     }
 }
@@ -1672,6 +1692,8 @@ fn urlencode(s: &str) -> String {
 /// the other engines ignore it. All return a list of image URLs.
 async fn gen_images(
     prompt: &str,
+    negative: Option<&str>,
+    aspect: &str,
     ref_image: Option<&str>,
     settings: &Value,
     job_id: &str,
@@ -1686,8 +1708,9 @@ async fn gen_images(
     // The paid APIs first: fal.ai, Leonardo, Ideogram and Recraft are all one shape (see
     // image_apis.rs), so they share a single arm rather than four near-identical ones.
     if crate::image_apis::is_paid_api(engine) {
-        let aspect = settings.get("image_aspect").and_then(|v| v.as_str()).unwrap_or("16:9");
-        let negative = settings.get("image_negative_prompt").and_then(|v| v.as_str());
+        // The destination's shape and its negative prompt travel with the prompt itself, so a
+        // Leonardo render honours the same choice a ComfyUI one does. Reading them back out of
+        // settings here meant the imagery panel's decision reached the prompt and nothing else.
         return real_paid_image(engine, prompt, negative, aspect, settings, job_id, db, cancelled).await;
     }
     match engine {
@@ -2833,7 +2856,7 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                     .or_else(|| character["image_url"].as_str().filter(|s| !s.is_empty()))
                     .or_else(|| character["image_variants"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()))
                     .map(|s| s.to_string());
-                let v = gen_images(&prompt, char_ref.as_deref(), &settings_doc, job_id, db, &state.cancelled_jobs).await
+                let v = gen_images(&prompt, None, "1:1", char_ref.as_deref(), &settings_doc, job_id, db, &state.cancelled_jobs).await
                     .ok_or_else(|| anyhow::anyhow!(
                         "Character image generation failed. For Midjourney: check proxy/profile and token. For FLUX/ComfyUI: check the server URL is set and the Kaggle/Colab notebook is running. See job logs."
                     ))?;
@@ -2886,10 +2909,11 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 // light, the mood, the restraint and the shape. Without one, the section's own
                 // prompt goes through untouched — this must never be a wall in front of somebody
                 // who has not opened that panel.
-                let prompt = apply_imagery(&subject, &settings_doc, job_id, db).await;
+                let imagery = apply_imagery(&subject, &settings_doc, job_id, db).await;
                 // Optional per-section character reference (if the section is bound to a character).
                 let sec_ref = sec["reference_image"].as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
-                let v = gen_images(&prompt, sec_ref.as_deref(), &settings_doc, job_id, db, &state.cancelled_jobs).await
+                let v = gen_images(&imagery.prompt, imagery.negative.as_deref(), &imagery.aspect,
+                                   sec_ref.as_deref(), &settings_doc, job_id, db, &state.cancelled_jobs).await
                     .ok_or_else(|| anyhow::anyhow!(
                         "Image generation failed. For Midjourney: check proxy/profile and token. For FLUX/ComfyUI: check the server URL is set and the Kaggle/Colab notebook is running. See logs for details."
                     ))?;

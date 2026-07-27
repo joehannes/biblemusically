@@ -26,7 +26,9 @@ const FORMATS = [
 ];
 
 export default function Images() {
-  // What the imagery panel composed, applied to the next batch of generations.
+  // What the imagery panel last composed. The choice itself reaches the job runner through
+  // save_imagery_choice; this is only so the page can say which one is in force, rather than
+  // holding a value nothing reads.
   const [imagery, setImagery] = useState(null);
   const { songs, activeSongId, selectSong, activeProjectId } = useStudio();
   const nav = useNavigate();
@@ -214,8 +216,17 @@ export default function Images() {
       <ImageryStudio
         subject={sections[0]?.image_prompt || sections[0]?.line || ""}
         projectId={activeProjectId}
-        onCompose={(p) => setImagery(p)}
+        onCompose={(p) => {
+          setImagery(p);
+          toast.success(`Next images: ${p.width}×${p.height}, about ${p.seconds}s each.`);
+        }}
       />
+      {imagery && (
+        <p className="text-xs text-muted-foreground -mt-4 mb-6">
+          The next generations use the imagery settings above — {imagery.aspect}, {imagery.negative
+            ? "with a negative prompt" : "restraint written into the prompt"}.
+        </p>
+      )}
 
       <Card className="p-5 mb-6 grid md:grid-cols-6 gap-4 items-center">
         <div className="md:col-span-2 flex flex-col gap-1.5">
