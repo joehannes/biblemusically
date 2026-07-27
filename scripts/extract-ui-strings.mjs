@@ -96,6 +96,12 @@ function eligible(raw) {
   if (/^(?:studio-api|sk-|bmstudio-|AIza|hf_|ghp_)/.test(s)) return false;
   if (/\)\s*;?\s*$/.test(s) && !/[a-z]\s[a-z]/i.test(s)) return false;
   if (/^(?:[\w-]+\s)*(?:flex|grid|px|py|mt|mb|ml|mr|gap|text|bg|border|rounded|w|h|min|max)-[\w./[\]-]+/.test(s)) return false; // tailwind
+  // Tailwind that starts with a bare utility (`flex justify-center …`) or a variant selector
+  // (`group-[.toast]:text-…`). The rule above only caught the hyphenated forms.
+  if (/^(?:flex|grid|block|inline|hidden|absolute|relative|fixed|sticky)(\s|$)/.test(s)) return false;
+  if (/\w+-\[[^\]]+\]:/.test(s) || /:[a-z-]+\]/.test(s)) return false;
+  // A statement, not a sentence: a call with arguments, a loop header, an escaped newline.
+  if (/\w+\([^)]*\)\s*;|\bfor\s*\(|\bawait\b|\\n/.test(s)) return false;
   if (/(^|\s)(?:className|font-mono|text-xs|text-sm|uppercase tracking)/.test(s)) return false;
   return true;
 }
