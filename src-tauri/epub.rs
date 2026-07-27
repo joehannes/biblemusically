@@ -136,6 +136,16 @@ pub struct Page {
     pub image: Option<String>,
     /// Caption under the art.
     pub caption: Option<String>,
+    /// A line of dialogue, laid over the art as a real HTML bubble rather than baked into the
+    /// picture. See typography.rs for why: the words stay selectable, reachable by a screen reader,
+    /// able to reflow — and translatable, so one artwork serves all sixteen languages this app
+    /// ships instead of one set of panels per language.
+    pub dialogue: Option<String>,
+    /// The bubble's shape: speech · thought · shout · caption.
+    pub bubble_kind: String,
+    /// Where the speaker is, as fractions of the panel. The bubble is placed away from this point,
+    /// because a bubble that covers a face is worse than no bubble.
+    pub speaker_at: (f64, f64),
     /// This page has a Media Overlay: `<page-id>.smil` narrates it.
     pub has_overlay: bool,
     /// The audio range this page covers, in seconds. Only used when `has_overlay`.
@@ -153,6 +163,11 @@ pub fn page_xhtml(page: &Page, title: &str) -> String {
             "    <figure class=\"panel\">\n      <img src=\"images/{}\" alt=\"{}\"/>\n",
             xml_escape(img), xml_escape(page.caption.as_deref().unwrap_or(&page.heading)),
         ));
+        if let Some(line) = page.dialogue.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let kind = crate::typography::Bubble::parse(&page.bubble_kind);
+            body.push_str(&format!("      {}\n",
+                crate::typography::bubble_html(line, kind, page.speaker_at.0, page.speaker_at.1)));
+        }
         if let Some(c) = &page.caption {
             body.push_str(&format!("      <figcaption>{}</figcaption>\n", xml_escape(c)));
         }
@@ -319,7 +334,10 @@ pub fn container_xml() -> &'static str {
 
 /// Page styling. Deliberately restrained: readers override most of it, and a graphic-novel page is
 /// carried by the art rather than by typography tricks that break on a six-inch screen.
-pub fn stylesheet() -> &'static str {
+pub fn stylesheet() -> String {
+    // The bubble rules come from typography.rs so the EPUB and the exported images cannot drift
+    // apart about what a speech bubble is.
+    format!("{}{}", crate::typography::BUBBLE_CSS,
     "html, body { margin: 0; padding: 0; }\n\
      body { font-family: Georgia, serif; line-height: 1.5; padding: 1em; }\n\
      h2 { font-size: 1.1em; letter-spacing: 0.08em; text-transform: uppercase; \
@@ -327,7 +345,7 @@ pub fn stylesheet() -> &'static str {
      figure.panel { margin: 0 0 1em 0; text-align: center; page-break-inside: avoid; }\n\
      figure.panel img { max-width: 100%; height: auto; }\n\
      figcaption { font-size: 0.8em; font-style: italic; opacity: 0.75; margin-top: 0.4em; }\n\
-     p { margin: 0 0 0.8em 0; text-indent: 0; }\n"
+     p { margin: 0 0 0.8em 0; text-indent: 0; }\n")
 }
 
 fn media_type(name: &str) -> &'static str {
@@ -399,6 +417,9 @@ mod tests {
                 lines: vec!["Light & dark, divided".into(), "".into()],
                 image: Some("panel-01.jpg".into()),
                 caption: Some("The first morning".into()),
+                dialogue: Some("Let there be light".into()),
+                bubble_kind: "speech".into(),
+                speaker_at: (0.5, 0.7),
                 has_overlay: true,
                 span: (0.0, 30.0),
             },
@@ -408,6 +429,9 @@ mod tests {
                 lines: vec!["A garden, and a name for every living thing".into()],
                 image: None,
                 caption: None,
+                dialogue: None,
+                bubble_kind: String::new(),
+                speaker_at: (0.5, 0.7),
                 has_overlay: true,
                 span: (30.0, 62.5),
             },

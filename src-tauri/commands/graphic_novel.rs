@@ -62,8 +62,13 @@ const REGISTERS: &[Register] = &[
         label: "Graphic-novel panels",
         hint: "Panel captions and dialogue, one beat per page.",
         direction: "Write as a graphic novel: one beat per page, each with a CAPTION of at most twelve \
-                    words and, where the text has speech, one line of dialogue. Describe nothing the \
-                    art will show — the caption carries what the art cannot.",
+                    words and, where the text has speech, one line of DIALOGUE. Describe nothing the \
+                    art will show — the caption carries what the art cannot. In each page's `art` \
+                    prompt, ask for uncluttered negative space where the words will sit (\"clear sky \
+                    in the upper third\", \"open ground to the left\"): the bubble is composited on \
+                    afterwards, and a picture composed for it reads as one image rather than as a \
+                    caption stuck over a painting. Return `dialogue` as a plain string, and `bubble` \
+                    as one of speech, thought, shout or caption.",
     },
     Register {
         id: "annotated",
@@ -153,6 +158,11 @@ pub fn pages_from_response(parsed: &Value) -> Vec<Value> {
             "lines": lines,
             "art_prompt": p["art"].as_str().or_else(|| p["art_prompt"].as_str()).unwrap_or("").trim(),
             "caption": p["caption"].as_str().unwrap_or("").trim(),
+            // The register asks for a line of dialogue and the model returns one; it was being
+            // dropped here, which is why the bubbles never appeared. It is laid over the art as
+            // real text at build time (see typography.rs), never baked into the picture.
+            "dialogue": p["dialogue"].as_str().or_else(|| p["speech"].as_str()).unwrap_or("").trim(),
+            "bubble_kind": p["bubble"].as_str().unwrap_or("speech").trim(),
             "image_url": Value::Null,
         }))
     }).collect()
@@ -422,6 +432,17 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
                 .filter_map(|l| l.as_str().map(|s| s.to_string())).collect()).unwrap_or_default(),
             image: image_name,
             caption: p["caption"].as_str().filter(|c| !c.is_empty()).map(|c| c.to_string()),
+            // The dialogue the `panels` register already produces, finally rendered. It goes on as
+            // HTML over the picture rather than into it: the words stay selectable and translatable,
+            // so one artwork serves every language instead of one set of panels per language.
+            dialogue: p["dialogue"].as_str().filter(|d| !d.is_empty()).map(|d| d.to_string()),
+            bubble_kind: p["bubble_kind"].as_str().unwrap_or("speech").to_string(),
+            speaker_at: (
+                p["speaker_x"].as_f64().unwrap_or(0.5),
+                // Assume the speaker is in the lower half unless told otherwise, which puts the
+                // bubble at the top — where a panel's negative space usually is.
+                p["speaker_y"].as_f64().unwrap_or(0.7),
+            ),
             // Filled in below, once it is known whether there is audio to read along with.
             has_overlay: false,
             span: (0.0, 0.0),
@@ -482,6 +503,9 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
             lines: vec![format!("This edition plays. If your reader supports audio, the song is here: audio/{name}")],
             image: None,
             caption: None,
+            dialogue: None,
+            bubble_kind: String::new(),
+            speaker_at: (0.5, 0.7),
             has_overlay: false,
             span: (0.0, 0.0),
         });

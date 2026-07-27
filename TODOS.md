@@ -394,7 +394,28 @@ long instructions" tells them everything. Every model needs: what it is for, wha
 long it takes on the free GPU, whether a "things to avoid" field will do anything, and its aspect-ratio
 sweet spot.
 
-### 6b. The typography layer — words on products, and speech bubbles in panels
+### 6b. The typography layer — **done in v0.94.0**
+
+`typography.rs` renders SVG and refuses what cannot be printed; `commands/typography_cmd.rs` writes it
+out and rasterises with `magick`/`convert`; `TypographyStudio.jsx` previews the *real* SVG rather than
+an approximation. Seven faces, all SIL OFL, each with what it is for. Seven layouts including verse +
+reference. Four bubble kinds.
+
+What the implementation decided:
+
+- **`fit_for()` refuses rather than warns.** Six words maximum in thread, four colours, no hairline
+  serif — and the refusal names a face that does work. A warning at fifty products a day is a thing
+  nobody reads.
+- **Bubbles reach the EPUB as HTML, not pixels**, so the words stay selectable, screen-reader
+  reachable, reflowable and translatable — one artwork serves all sixteen languages.
+- **The `panels` register's dialogue was being dropped by the parser.** The register asked for it and
+  the model returned it, and `pages_from_response` never read the field, which is why no bubble ever
+  appeared. It is carried through now, and the register also asks the art prompt for negative space
+  where the words will sit.
+- A short line no longer breaks into two: the bubble's line count was `len/22 + 1`, which doubled the
+  height of every short bubble — exactly what covers a face.
+
+### 6b (original write-up). The typography layer — words on products, and speech bubbles in panels
 
 **Decided: render the words with real fonts, never generate them.** One mechanism serves both the Printify
 phrases and the graphic-novel bubbles, because it is the same problem twice.

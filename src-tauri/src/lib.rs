@@ -31,6 +31,8 @@ pub mod project_sync;
 pub mod state;
 #[path = "../store.rs"]
 pub mod store;
+#[path = "../typography.rs"]
+pub mod typography;
 #[path = "../tests_logic.rs"]
 mod tests_logic;
 #[path = "../vault.rs"]
@@ -782,6 +784,11 @@ pub fn run() {
             commands::imagery_text_allowed,
             commands::imagery_print_check,
             commands::save_imagery_choice,
+            // Words set in a real font, never generated — products and speech bubbles alike
+            commands::typography_catalogue,
+            commands::typography_fit,
+            commands::render_text_art,
+            commands::render_bubble,
             commands::subs_seal_projects,
             commands::subs_cache_state,
             commands::send_report,

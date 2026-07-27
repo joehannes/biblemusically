@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import GuidedPanel from "../components/GuidedPanel";
+import TypographyStudio from "../components/TypographyStudio";
 import { useSectionAction } from "../lib/pageActions";
 import { podFlow } from "../lib/guidedFlows";
 import { openLoginUrl } from "../lib/openLogin";
@@ -34,6 +35,8 @@ import { openLoginUrl } from "../lib/openLogin";
 const cents = (v) => `$${((Number(v) || 0) / 100).toFixed(2)}`;
 
 export default function PrintOnDemand() {
+  // The rendered phrase art, so the product step can composite it onto the picture.
+  const [textArt, setTextArt] = useState(null);
   const { songs, activeSongId, selectSong, activeProjectId } = useStudio();
   const nav = useNavigate();
   const [tab, setTab] = useState("shop");
@@ -334,6 +337,15 @@ export default function PrintOnDemand() {
       )}
 
       {/* ── Make ─────────────────────────────────────────────────────────── */}
+      {/* The words are set in a real font and composited on. An image model that spells a mug
+          wrong has produced a returned order, not a retry. See src-tauri/typography.rs. */}
+      {tab === "make" && (
+        <TypographyStudio
+          initialPhrase={phrase}
+          onRendered={(r) => setTextArt(r)}
+        />
+      )}
+
       {tab === "make" && (
         <Card className="p-4 space-y-3" ref={makeRef}>
           <div>

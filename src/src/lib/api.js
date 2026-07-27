@@ -235,6 +235,13 @@ export const api = {
   subsRedeem: (code) => invokeCommand("subs_redeem", { code }),
   subsReferral: () => invokeCommand("subs_referral"),
   subsCan: (feature) => invokeCommand("subs_can", { feature }),
+  // ============ Typography: words set in a real font, never generated ============
+  typographyCatalogue: () => invokeCommand("typography_catalogue"),
+  typographyFit: (phrase, face, decoration, colours, height) =>
+    invokeCommand("typography_fit", { phrase, face, decoration, colours, height }),
+  renderTextArt: (payload) => invokeCommand("render_text_art", { payload }),
+  renderBubble: (text, kind, width, height, anchorX, anchorY) =>
+    invokeCommand("render_bubble", { text, kind, width, height, anchorX, anchorY }),
   // ============ Devotional imagery: models, destinations, packaged intents ============
   imageryCatalogue: () => invokeCommand("imagery_catalogue"),
   composeImagePrompt: (payload) => invokeCommand("compose_image_prompt", { payload }),
