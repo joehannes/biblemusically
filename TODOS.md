@@ -222,6 +222,26 @@ Riffusion, then the paid one last, so nobody meets a bill before they have seen 
 
 ### 6. ComfyUI on Kaggle — models, workflows, and controls built for *this* subject matter
 
+**The decision layer is done in v0.93.0** (`src-tauri/imagery.rs` + `commands/imagery_cmd.rs` +
+`components/ImageryStudio.jsx`). Six curated models with artist-readable copy, the seven controls,
+nine destinations, ten packaged intents, and both rules enforced rather than documented:
+
+- **FLUX gets no negative prompt field and never silently drops one.** On a model without
+  classifier-free guidance the restraint is written positively into the prompt, and `compose()`
+  returns a note saying so — which the panel shows and the job log repeats. Strict mode is offered
+  where it applies and states that it roughly doubles the time.
+- **A destination that forbids text refuses it.** `text_allowed()` is an error with somewhere to go,
+  not a preference, and a model that cannot spell is refused even where text is allowed.
+- **A print that would arrive as a refund is refused before the art is made.** `print_check()` names
+  the DPI and the size to generate instead.
+- Pony is absent, and a test asserts it stays absent.
+- Tension is scale, weather and a withheld reveal; a test asserts the prompt never reaches for
+  "dark", "ominous" or "horror".
+
+Still open here: the **workflow JSON** half — character-consistent IPAdapter/ControlNet, upscale and
+detail passes for print, img2img and inpainting, transparent background, and the draft/final pair per
+model. The two bundled workflows (`photoreal_sdxl`, `character_ipadapter_sdxl`) are what exists today.
+
 Not a generic model catalogue. The images this app makes are devotional: scripture set to music, on YouTube,
 and they have to read as **clean, reverent, and morally unambiguous** while still being able to carry
 suspense, mystery and glory. Two researched facts decide almost every design choice below, and both are

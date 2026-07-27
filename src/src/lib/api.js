@@ -235,6 +235,13 @@ export const api = {
   subsRedeem: (code) => invokeCommand("subs_redeem", { code }),
   subsReferral: () => invokeCommand("subs_referral"),
   subsCan: (feature) => invokeCommand("subs_can", { feature }),
+  // ============ Devotional imagery: models, destinations, packaged intents ============
+  imageryCatalogue: () => invokeCommand("imagery_catalogue"),
+  composeImagePrompt: (payload) => invokeCommand("compose_image_prompt", { payload }),
+  imageryTextAllowed: (destination, model) => invokeCommand("imagery_text_allowed", { destination, model }),
+  imageryPrintCheck: (destination, artW, artH, areaW, areaH) =>
+    invokeCommand("imagery_print_check", { destination, artW, artH, areaW, areaH }),
+  saveImageryChoice: (projectId, choice) => invokeCommand("save_imagery_choice", { projectId, choice }),
   subsCacheState: () => invokeCommand("subs_cache_state"),
   subsSealProjects: (enable) => invokeCommand("subs_seal_projects", { enable }),
   listSessions: () => invokeCommand("list_sessions"),

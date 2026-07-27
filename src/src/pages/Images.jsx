@@ -17,6 +17,7 @@ import { Switch } from "../components/ui/switch";
 import { Wand2, Layers, Grid3x3, List as ListIcon, Columns, AlertCircle, CheckCircle2, Clock, Loader2, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { getStepForPath } from "../lib/pageSteps";
+import ImageryStudio from "../components/ImageryStudio";
 
 const FORMATS = [
   { id: "yt", label: "YouTube 16:9", ar: "16:9" },
@@ -25,6 +26,8 @@ const FORMATS = [
 ];
 
 export default function Images() {
+  // What the imagery panel composed, applied to the next batch of generations.
+  const [imagery, setImagery] = useState(null);
   const { songs, activeSongId, selectSong, activeProjectId } = useStudio();
   const nav = useNavigate();
   const [sections, setSections] = useState([]);
@@ -206,6 +209,13 @@ export default function Images() {
           }}
         />
       </div>
+
+      {/* Where the picture is going, and how it should feel. See src-tauri/imagery.rs. */}
+      <ImageryStudio
+        subject={sections[0]?.image_prompt || sections[0]?.line || ""}
+        projectId={activeProjectId}
+        onCompose={(p) => setImagery(p)}
+      />
 
       <Card className="p-5 mb-6 grid md:grid-cols-6 gap-4 items-center">
         <div className="md:col-span-2 flex flex-col gap-1.5">

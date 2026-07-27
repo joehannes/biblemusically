@@ -751,6 +751,42 @@ async fn real_heartmula(song: &Value, settings: &Value, job_id: &str, db: &crate
     generate_song_api(base, key, "heartmula", song, settings, job_id, db, cancelled).await
 }
 
+/// Apply the saved imagery choice to a section's own prompt.
+///
+/// Returns the subject unchanged when nothing has been chosen. That matters: the imagery panel is
+/// an offer, not a gate, and somebody who has never opened it must still be able to generate.
+async fn apply_imagery(subject: &str, settings: &Value, job_id: &str, db: &crate::store::Db) -> String {
+    let Some(choice) = settings.get("imagery").filter(|v| v.is_object()) else {
+        return subject.to_string();
+    };
+    let model = choice["model"].as_str().unwrap_or("flux_dev");
+    let intent_id = choice["intent"].as_str().unwrap_or("chapter_opener");
+    let Some(intent) = crate::imagery::intent(intent_id) else { return subject.to_string() };
+    let controls: crate::imagery::Controls = choice.get("controls")
+        .and_then(|c| serde_json::from_value(c.clone()).ok())
+        .unwrap_or_else(|| crate::imagery::controls_for(intent));
+
+    match crate::imagery::compose(model, intent.destination, &controls, subject) {
+        Ok(composed) => {
+            // The notes are where the app admits what it decided — that a negative prompt would be
+            // ignored on this model, that a destination forbids text. Putting them in the job log
+            // means the decision is visible after the fact, not only in the panel.
+            for note in &composed.notes {
+                db_log(db, job_id, &format!("imagery: {note}")).await;
+            }
+            if let Some(neg) = &composed.negative {
+                db_log(db, job_id, &format!("imagery: avoiding — {neg}")).await;
+            }
+            composed.positive
+        }
+        Err(why) => {
+            db_log(db, job_id, &format!(
+                "imagery: keeping the section's own prompt — {why}")).await;
+            subject.to_string()
+        }
+    }
+}
+
 /// Does this music engine charge per track?
 ///
 /// One list, consulted by the fallback rule and by the job log. Kept beside the engines rather than
@@ -2841,11 +2877,16 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
             // ── IMAGE ──────────────────────────────────────────────────
             "image" => {
                 let sec = fetch_doc(db, "sections", "id", tgt).await;
-                let prompt = sec["image_prompt"].as_str()
+                let subject = sec["image_prompt"].as_str()
                     .filter(|s| !s.is_empty())
                     .or(sec["line"].as_str())
                     .unwrap_or("")
                     .to_string();
+                // The imagery choice the user made on the Images page (see imagery.rs) decides the
+                // light, the mood, the restraint and the shape. Without one, the section's own
+                // prompt goes through untouched — this must never be a wall in front of somebody
+                // who has not opened that panel.
+                let prompt = apply_imagery(&subject, &settings_doc, job_id, db).await;
                 // Optional per-section character reference (if the section is bound to a character).
                 let sec_ref = sec["reference_image"].as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
                 let v = gen_images(&prompt, sec_ref.as_deref(), &settings_doc, job_id, db, &state.cancelled_jobs).await

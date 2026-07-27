@@ -15,6 +15,8 @@ pub mod tray;
 pub mod helpers;
 #[path = "../image_apis.rs"]
 pub mod image_apis;
+#[path = "../imagery.rs"]
+pub mod imagery;
 #[path = "../local_media.rs"]
 pub mod local_media;
 #[path = "../jobs.rs"]
@@ -774,6 +776,12 @@ pub fn run() {
             commands::subs_redeem,
             commands::subs_referral,
             commands::subs_can,
+            // The devotional-imagery catalogue: models, destinations, packaged intents
+            commands::imagery_catalogue,
+            commands::compose_image_prompt,
+            commands::imagery_text_allowed,
+            commands::imagery_print_check,
+            commands::save_imagery_choice,
             commands::subs_seal_projects,
             commands::subs_cache_state,
             commands::send_report,
