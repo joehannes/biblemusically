@@ -583,9 +583,21 @@ echoed back (which the runtime then never translates, because the catalogue clai
 dropped `{0}` placeholder, and a runaway length that means the model started explaining. All fifteen
 catalogues are clean on all three.
 
-88 interface-chrome strings are now hand-written across all fifteen languages — the buttons and labels
-where a machine goes wrong, because "Pull" is a verb here, "Check" means verify rather than tick, and
-"Shape" is an aspect ratio. Coverage is 83–92%; roughly 200 strings a language remain.
+**Done in v0.106.0 — all fifteen languages at 100%, audit clean.**
+
+The inventory shrank from 2,313 to 2,134 as the noise came out, and what remains is what somebody
+actually reads. 54 more strings were excluded outright because they are not translatable at all:
+music genres (a German channel tags "Gospel", not "Evangelium"), theme names, keyboard shortcuts,
+aspect labels, shell commands and prompt examples — translating a command makes it stop working, and
+translating a prompt changes what the engine receives.
+
+Roughly 190 strings a language were hand-written across five batches, chosen by what a mistranslation
+would cost: "Pull" is a verb here, "Check" means verify rather than tick, "Shape" is an aspect ratio,
+"Shop" is a Printify storefront. The bulk in between came from the batch translator, and every
+catalogue then passed the audit: nothing echoed, no placeholder dropped, no runaway length.
+
+Where a translation is legitimately identical — German writes "Graphic Novels" — the catalogue says
+`same_as_english` so the audit can tell a decision from a gap.
 
 ### 9. Android build — **an APK exists (v0.102.0)**
 

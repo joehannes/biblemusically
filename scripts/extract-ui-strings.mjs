@@ -118,6 +118,36 @@ const NEVER_TRANSLATED = new Set([
   "API", "CFG", "DPI", "SVG", "PNG", "JPEG", "EPUB", "MP3", "MP4", "URL", "JSON", "LoRA", "GPU",
   "IP-Adapter", "ControlNet", "SAF", "OAuth", "LFS", "SIL OFL", "Apache 2.0",
   "Inter", "Playfair Display", "Cormorant Garamond", "Bebas Neue", "Comic Neue", "Lora", "Montserrat",
+
+  // Music genres. Kept in English the world over — a German channel tags "Gospel", not
+  // "Evangelium", and translating a genre would break the style string sent to the engine anyway.
+  "Pop", "Gospel", "Klezmer", "Reggaeton", "Future Bass", "Lo-Fi Hip-Hop", "Worship Pop", "Anime",
+  "Global Choir Series",
+
+  // Theme names. Proper nouns for a palette, like a paint colour: "Slate" is the name of the theme,
+  // not a description of it.
+  "Aurora", "Cosmos", "Ember", "Mint", "Rosewood", "Sandstone", "Slate", "Vellum", "Obsidian",
+
+  // Keyboard shortcuts, field labels that are literal keys, and shapes quoted as ratios.
+  "Ctrl+S", "Ctrl+Enter", "YouTube 16:9", "Shorts 9:16", "TikTok 9:16", "YT Shorts 9:16",
+  "Suno Style CSV", "Suno AI Style CSV", "Printify Personal Access Token", "YouTube Studio",
+  "Google Gemini", "Lightkid AI", "Midjourney imagine", "FLUX.1 schnell", "Open API",
+  "Google OAuth (YouTube Data API v3)", "Client ID (xxxxx.apps.googleusercontent.com)",
+  "@channelname", "Vol.", "Worker URL",
+
+  // Prompts and commands shown verbatim. Translating a prompt changes what the engine receives;
+  // translating a command makes it stop working.
+  "cinematic lighting, --ar 16:9", "sacred, gentle dawn, restful, soft chamber reverb",
+  "modal deploy scripts/remote/modal_app.py",
+  "python3 scripts/remote/cli_worker.py job.json",
+  "python3 scripts/remote/render_worker.py job.json",
+  "src-tauri/comfy_workflows/animate_sdxl.json.example",
+  "…apps.googleusercontent.com",
+  "…apps.googleusercontent.com — type Android, package com.studio.lightkid",
+
+  // Abbreviated units and field prefixes rendered next to a value. "img ·" and "med ·" are column
+  // separators, not words; "id:", "kernel:", "format:" label a literal that follows.
+  "img ·", "med ·", "Media ·", "id:", "kernel:", "format:", "API:", "Chaos", "Chaos:",
 ]);
 
 const strings = new Map();  // string -> Set(source file)
