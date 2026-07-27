@@ -43,6 +43,7 @@ import DataSync from "./pages/DataSync";
 import Settings from "./pages/Settings";
 import { Toaster, toast } from "sonner";
 import ErrorBoundary from "./components/ErrorBoundary";
+import SplitLink from "./components/SplitLink";
 import { installErrorReporting } from "./lib/errorReporting";
 import { installAnalytics, installHotjar } from "./lib/analytics";
 
@@ -186,6 +187,10 @@ export default function App() {
         <ErrorBoundary where="app">
           <RootGate />
         </ErrorBoundary>
+        {/* Holds a linked page beside the steps that sent you to it. Mounted once, driven by an
+            event, because a link rendered deep in a Markdown block should not thread a callback up
+            through six components. */}
+        <SplitLink />
         <Toaster position="bottom-right" theme="dark" richColors />
       </BrowserRouter>
     </StudioProvider>

@@ -14,6 +14,7 @@ import { Switch } from "../components/ui/switch";
 import VoicePicker from "../components/VoicePicker";
 import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
+import { setLinkPreference } from "../lib/splitScreen";
 import { visibleMusicEngines, visibleImageEngines, fallbackMusicEngines, musicEngine, imageEngine, isPaid, priceLine, IMAGE_ENGINES, MUSIC_ENGINES } from "../lib/engineCapabilities";
 import { autoStartKaggleServer, subscribeKaggle } from "../lib/kaggleServerPipeline";
 import { markStopped } from "../lib/serverLifecycle";
@@ -779,6 +780,28 @@ const SettingsComponent = () => {
               </button>
             );
           })}
+        </div>
+
+        {/* Where a link opens. The limit is real and is not hidden: the sites the guides link to
+            for keys and logins refuse to be framed, so "beside the steps" cannot always happen. */}
+        <div className="space-y-1 max-w-sm mt-4">
+          <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">When a guide links to a page</Label>
+          <Select value={s.link_target || "auto"} onValueChange={(val) => {
+            setLinkPreference(val);
+            updateS({ link_target: val });
+          }}>
+            <SelectTrigger className="w-full" data-testid="settings-link-target"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Decide for me</SelectItem>
+              <SelectItem value="split">Beside the steps, on half the screen</SelectItem>
+              <SelectItem value="browser">In my normal browser</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Google, Kaggle, GitHub and Meta all refuse to be shown inside another app, so those always
+            open in your browser whatever this says — a blank half-screen with no explanation would be
+            worse than the jump. Everything else can sit beside the instructions.
+          </p>
         </div>
 
         {/* The engines that automate an account the user holds. Hidden by default, never deleted. */}

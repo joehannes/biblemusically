@@ -206,7 +206,30 @@ Riffusion, then the paid one last, so nobody meets a bill before they have seen 
   engine, so any unrecognised id drove the user's own Suno or Midjourney account. Both now name those
   engines explicitly and fall back to the free default.
 
-### 5. Mobile: the four things that make it whole
+### 5. Mobile: the four things that make it whole — **three of four done in v0.96.0**
+
+- **Markdown links → split screen: done.** `lib/splitScreen.js` decides *before* anything renders,
+  because the sites the guides link to for keys and logins are exactly the ones that refuse framing.
+  Lower half in portrait, right half in landscape, a setting to override, and a real fallback: a frame
+  that never fires `load` is treated as a refusal, the panel closes, and a sentence says which host
+  refused and that nothing is lost. A blank half-screen would be worse than the browser jump.
+- **Folder picking → SAF: done.** `pick_directory` uses the dialog plugin on mobile (`rfd` has no
+  Android backend at all). SAF returns a `content://` URI rather than a path, which is fine for the
+  store and is one more reason git on mobile cannot be a command line.
+- **git via `git2`: done as a typed API.** `git_api.rs` replaces "argv in, string out" with named
+  operations — `Init`, `AddAll`, `Add`, `Commit`, `Status`, `Staged`, `Head`, `Log`, `Clone`, `Pull`,
+  `Push`, `CheckoutPaths`, `TakeSide`, `Show`, `RemoteGet`, `RemoteSet`, `Ahead`. Desktop shells out
+  exactly as before (a test asserts every operation produces the same argv it always did, because a
+  subtly different `git add` is a subtly different history); mobile uses libgit2 behind the
+  `mobile-git` feature, off by default so a desktop build never compiles C.
+  **Not yet verified on a real Android build** — see task 9; `git2` needs the same NDK wiring `ring`
+  does.
+- **Logins → system browser + deep link: still open.** `openLoginUrl` already sends the pages that
+  refuse embedding out to the system browser, so signing in works; what is missing is the deep link
+  *back*, which needs `tauri-plugin-deep-link` and an Android intent filter, and cannot be tested
+  without a working Android build.
+
+### 5 (original write-up). Mobile: the four things that make it whole
 
 - **Markdown links → iframe split-screen** (lower/upper portrait, left/right landscape), with detection of
   the refusal and a system-browser fallback plus one line of explanation. A setting picks the default.

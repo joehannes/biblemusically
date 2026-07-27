@@ -1,6 +1,6 @@
     [package]
 name = "ai-music-video-studio"
-version = "0.95.0"
+version = "0.96.0"
 edition = "2021"
 
 [lib]
@@ -75,6 +75,14 @@ urlencoding = "2"
 tar = "0.4.40"
 ed25519-dalek = { version = "2", default-features = false, features = ["alloc"] }
 
+[dependencies.git2]
+version = "0.19"
+optional = true
+default-features = false
+# Vendored, because a phone has no system libgit2 — and no https/ssh features, since the app's own
+# transport (reqwest) does the network half and pushing from a phone goes through the sync path.
+features = ["vendored-libgit2"]
+
 # Native file/message dialogs. No Android backend exists, and mobile has its own dialog plugin,
 # so this is desktop-only — an unconditional dependency is a hard failure on the Android target.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
@@ -94,6 +102,10 @@ javascriptcore = { package = "javascriptcore-rs", version = "=1.1.2", features =
 [features]
 default          = ["custom-protocol"]
 custom-protocol  = ["tauri/custom-protocol"]
+# libgit2 for the platforms with no `git` binary to shell out to (see git_api.rs). Off by default: it
+# compiles C, so a desktop build has no reason to pay for it, and the Android target needs the same
+# NDK wiring `ring` does before this can be switched on there.
+mobile-git       = ["dep:git2"]
 
 [profile.release]
 panic            = "abort"

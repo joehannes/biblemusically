@@ -1,4 +1,5 @@
 import { parseMarkdown } from "../lib/markdown";
+import { openBesideSteps } from "./SplitLink";
 
 // Renders Markdown as React elements — never as an HTML string.
 //
@@ -18,11 +19,14 @@ function Spans({ spans }) {
           </code>
         );
       case "link":
-        // Opens in the app's own browser rather than leaving for an external one — the guides depend on
-        // the page being *beside* the steps.
+        // Beside the steps, not instead of them. On a desktop that is the app's own browser tab; on a
+        // phone there is no tab strip to come back to, so the page takes half the screen — unless the
+        // site refuses to be framed, which most of the ones linked here do. lib/splitScreen.js decides
+        // before anything renders, and says so when it cannot.
         return (
           <a key={i} href={`#/browser?url=${encodeURIComponent(s.href)}`}
-             className="text-primary underline underline-offset-2" title={s.href}>
+             className="text-primary underline underline-offset-2" title={s.href}
+             onClick={(e) => { e.preventDefault(); openBesideSteps(s.href, s.text); }}>
             {s.text}
           </a>
         );

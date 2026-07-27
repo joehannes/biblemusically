@@ -895,19 +895,35 @@ pub async fn rotate_kaggle_account(state: State<'_, AppState>) -> Res<Value> {
 /// Native folder picker (used by onboarding to choose where project files/exports live).
 /// Returns the chosen absolute path, or null if the user cancelled.
 #[tauri::command]
-pub async fn pick_directory(title: Option<String>) -> Res<Option<String>> {
+pub async fn pick_directory(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    title: Option<String>,
+) -> Res<Option<String>> {
     #[cfg(desktop)]
     {
         let mut dlg = rfd::AsyncFileDialog::new();
         if let Some(t) = title.filter(|s| !s.is_empty()) { dlg = dlg.set_title(t); }
         Ok(dlg.pick_folder().await.map(|f| f.path().to_string_lossy().to_string()))
     }
-    // Android has no user-browsable folder picker of this shape; the caller falls back to the
-    // app's own storage directory, which is the only place a mobile build should write anyway.
+    // Android: the Storage Access Framework, through the dialog plugin. `rfd` has no Android
+    // backend at all, which is why this is a separate path rather than a cfg on one call.
+    //
+    // SAF hands back a content:// URI rather than a filesystem path, and the permission it carries
+    // belongs to the picked tree — so the returned string is only meaningful to the app that asked
+    // for it. That is fine here: every caller passes it straight back to the store as a project
+    // folder. It is not fine to hand to a shell, which is one more reason `git` on mobile goes
+    // through libgit2 rather than a command line (see git_api.rs).
     #[cfg(not(desktop))]
     {
+        use tauri_plugin_dialog::DialogExt;
         let _ = title;
-        Ok(None)
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.dialog().file().pick_folder(move |picked| {
+            let _ = tx.send(picked.map(|p| p.to_string()));
+        });
+        // The picker is a separate Android activity, so this blocks until the user chooses or
+        // cancels. A minute is generous for "find a folder" and finite for "the activity died".
+        Ok(rx.recv_timeout(std::time::Duration::from_secs(60)).unwrap_or(None))
     }
 }
 
