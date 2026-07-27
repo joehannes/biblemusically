@@ -199,11 +199,19 @@ pub async fn deeplink_setup_steps(state: State<'_, AppState>) -> Res<Value> {
             "Paste the SHA-1 of the keystore the APK is signed with (debug or release — they differ, \
              and a release build signed with a different key will not match).",
             "Copy the client id into Settings → Mobile sign-in.",
-            "The redirect is derived from the client id and shown here; it must appear in the Android \
-             manifest as an intent filter, which this app's build already includes.",
+            "The redirect is derived from the client id and shown here. The Android manifest carries \
+             an intent filter for it, but the scheme comes from *your* client id — so the APK has to \
+             be built with GOOGLE_REDIRECT_SCHEME set to the value shown above, or the browser will \
+             finish the sign-in and have nowhere to hand it back to.",
         ],
         "why_bother": "Without it the phone borrows sign-ins from the desktop, which works but means the \
                        desktop has to be reachable whenever consent expires.",
+        // Said plainly because the previous version of this claimed the build already handled it,
+        // and it did not: there was no intent filter in the manifest at all.
+        "state": "The manifest now has the intent filter. What is not yet wired is the app-side \
+                  handler that receives the returning URL — until that lands, the browser will come \
+                  back to the app but the app will not act on it. Borrowing sign-ins from the \
+                  desktop is the route that works today.",
         "alternative": "Team → Bring my sign-ins across. No client to create, works immediately.",
     }))
 }

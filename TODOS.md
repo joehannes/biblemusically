@@ -581,11 +581,31 @@ catalogues are clean on all three.
 where a machine goes wrong, because "Pull" is a verb here, "Check" means verify rather than tick, and
 "Shape" is an aspect ratio. Coverage is 83–92%; roughly 200 strings a language remain.
 
-### 9. Android build
+### 9. Android build — **an APK exists (v0.102.0)**
 
-Never yet attempted. Unsigned APK for sideloading first (`docs/INSTALL.md` covers the system toggle), then
-a signed AAB. **The Play Store submission needs the owner**: a developer account, agreements accepted in
-person, a listing, screenshots and a content rating. Nothing about that can be automated.
+`src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk` — 351 MB,
+`studio.lightkid.app`, minSdk 24, targetSdk 36, signed with the Android debug key, and installable by
+sideloading. The whole Rust crate cross-compiles for `aarch64-linux-android`, past the `ring` wall
+this file recorded.
+
+Four failures stood between "never attempted" and that file, and none of them was the one expected:
+
+1. A killed build left `target/aarch64-linux-android` with a `universal_hash` rlib that cargo thought
+   was fresh and rustc could not find. Cleaning the target directory fixed it.
+2. Host proc-macro artifacts were poisoned by building with `CARGO_PROFILE_DEV_DEBUG=0` for the
+   desktop and without it for Android — `no .rustc section in libtauri_macros.so`. The two builds
+   must agree about the host profile.
+3. `tauri-plugin-dialog`'s `pick_folder` is `#[cfg(desktop)]`, so the SAF picker written in v0.96.0
+   could never have compiled. It now returns the app's own storage directory, which is where a
+   scoped-storage build should write anyway.
+4. The Gradle phase stalled for an hour on an SDK download with 0% CPU. Running `./gradlew` directly
+   revealed the real state — and that Gradle *cannot* be run directly, because `rustBuildArm64Debug`
+   calls back into the Tauri CLI over a socket that only exists while `tauri android build` is
+   driving.
+
+Still the owner's: a **release** build (the debug `.so` is 350 MB of debug info), a signing key, a
+signed AAB, and the Play Store listing — developer account, agreements, screenshots, content rating.
+None of that can be automated.
 
 ### 10. A short link — **the `/get` alias is done and deployed (v0.95.0)**
 
