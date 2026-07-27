@@ -188,6 +188,24 @@ and found out from an invoice has been treated badly.
 `music_engine_fallback` already retries on another engine when one is down — any new engine must register
 with it, and the fallback must never silently move somebody from a free engine to a paid one.
 
+**Done in v0.92.0.** Riffusion and ElevenLabs Music both ship, in the decided order: HeartMuLa, ACE-Step,
+Riffusion, then the paid one last, so nobody meets a bill before they have seen every free option.
+
+- **Riffusion** talks to the notebook in `scripts/kaggle_riffusion/`, which has a different API from the
+  other two (`/generate_song` → poll `/status/{id}` → `/download/{id}`), so it does not go through
+  `generate_song_api`. Registered with the Kaggle auto-start machinery like the rest.
+- **ElevenLabs** answers with the MP3 itself rather than a URL, and every stage downstream fetches over
+  HTTP with `reqwest`, which has no `file://` scheme. Hence `local_media.rs`: the bytes land in a media
+  root and come back as a local URL. The `?path=` route that serves them is a file-read primitive if it
+  is wrong, so the containment rule (canonicalise, then require the result to be inside the root, then
+  require a known extension) is separated out and tested against traversal and symlinks.
+- **The free→paid fallback is refused in both places.** `fallbackMusicEngines()` never offers it, and
+  `music_engine_is_paid()` in `jobs.rs` refuses it even if the setting says otherwise, with a job-log
+  line explaining why. A rule the backend does not know is a rule the interface can be talked out of.
+- Both `gen_images` and the music dispatch had the same latent bug: the catch-all arm was the *risky*
+  engine, so any unrecognised id drove the user's own Suno or Midjourney account. Both now name those
+  engines explicitly and fall back to the free default.
+
 ### 5. Mobile: the four things that make it whole
 
 - **Markdown links → iframe split-screen** (lower/upper portrait, left/right landscape), with detection of

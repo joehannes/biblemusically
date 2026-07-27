@@ -751,6 +751,191 @@ async fn real_heartmula(song: &Value, settings: &Value, job_id: &str, db: &crate
     generate_song_api(base, key, "heartmula", song, settings, job_id, db, cancelled).await
 }
 
+/// Does this music engine charge per track?
+///
+/// One list, consulted by the fallback rule and by the job log. Kept beside the engines rather than
+/// in the interface, because a rule the backend does not know is a rule the interface can be talked
+/// out of — and the consequence of getting this one wrong arrives as an invoice.
+pub fn music_engine_is_paid(engine: &str) -> bool {
+    matches!(engine.trim().to_ascii_lowercase().as_str(), "elevenlabs")
+}
+
+/// Riffusion, on a free Kaggle GPU.
+///
+/// A different notebook API from ACE-Step and HeartMuLa — `POST /generate_song`, then poll
+/// `GET /status/{id}` and collect from `GET /download/{id}` — so it does not go through
+/// `generate_song_api`. It arranges a song from the section tags in the lyrics itself, which is why
+/// it takes minutes per track and why the poll window here is generous.
+async fn real_riffusion(song: &Value, settings: &Value, job_id: &str, db: &crate::store::Db, cancelled: &CancelSet) -> Option<Vec<Value>> {
+    let mut base = trim_base_url(settings.get("riffusion_api_url").and_then(|v| v.as_str()).unwrap_or(""));
+    if base.is_empty() {
+        db_log(db, job_id, "riffusion: no saved server URL — auto-discovering from the running Kaggle kernel…").await;
+        match crate::commands::settings::refresh_kaggle_url(db, "riffusion").await {
+            Some(found) => { db_log(db, job_id, &format!("riffusion: discovered {found}")).await; base = found; }
+            None => {
+                db_log(db, job_id, "riffusion: no server URL saved and none could be discovered.                                     Settings → Riffusion → Start & connect.").await;
+                return None;
+            }
+        }
+    }
+    let key = settings.get("riffusion_api_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let with_auth = |rb: reqwest::RequestBuilder| {
+        if key.is_empty() { rb } else { rb.header("Authorization", format!("Bearer {key}")) }
+    };
+
+    let title = song.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+    let lyrics = song.get("lyrics").and_then(|v| v.as_str()).unwrap_or("");
+    // The notebook takes minutes, not seconds, and refuses anything outside 5–10.
+    let minutes = song.get("duration").and_then(|v| v.as_f64())
+        .or_else(|| settings.get("acestep_duration").and_then(|v| v.as_f64()))
+        .map(|secs| secs / 60.0)
+        .unwrap_or(5.0)
+        .clamp(5.0, 10.0);
+    let style = adapt_styles_for_engine("riffusion", song, settings, job_id, db).await;
+
+    set_stage(db, job_id, "submitting", 8, "Sending the song to Riffusion…", true).await;
+    let client = reqwest::Client::new();
+    let payload = serde_json::json!({
+        "title": title, "lyrics": lyrics,
+        "style_preset": style, "target_duration_minutes": minutes,
+    });
+    let res = with_auth(client.post(format!("{base}/generate_song")))
+        .json(&payload).timeout(std::time::Duration::from_secs(60)).send().await;
+    let res = match res {
+        Ok(r) => r,
+        Err(err) => { db_log(db, job_id, &format!("riffusion: {base} is unreachable: {err}")).await; return None; }
+    };
+    if !res.status().is_success() {
+        let status = res.status();
+        let body: String = res.text().await.unwrap_or_default().chars().take(300).collect();
+        db_log(db, job_id, &format!("riffusion: submit returned HTTP {status} — {body}")).await;
+        return None;
+    }
+    let started: Value = res.json().await.ok()?;
+    let task = started["job_id"].as_str().or_else(|| started["id"].as_str())?.to_string();
+    db_log(db, job_id, &format!("riffusion: job {task} queued ({minutes:.0} minutes of audio)")).await;
+
+    // A 5–10 minute arrangement on a free T4 is slow, and polling also counts as activity for the
+    // notebook's idle watchdog, so a long window here can never strand a healthy run.
+    for attempt in 0..360u32 {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        if is_cancelled(cancelled, job_id).await {
+            let _ = with_auth(client.post(format!("{base}/cancel/{task}"))).send().await;
+            db_log(db, job_id, "riffusion: cancelled by user").await;
+            return None;
+        }
+        let Ok(r) = with_auth(client.get(format!("{base}/status/{task}"))).send().await else { continue };
+        let Ok(body) = r.json::<Value>().await else { continue };
+        match body["status"].as_str().unwrap_or("") {
+            "completed" | "complete" | "done" => {
+                let url = format!("{base}/download/{task}");
+                set_stage(db, job_id, "fetching", 92, "Rendered — fetching audio…", true).await;
+                return Some(vec![serde_json::json!({ "audio_url": url, "duration": minutes * 60.0 })]);
+            }
+            "failed" | "error" => {
+                let why = body["error"].as_str().unwrap_or("no detail returned");
+                db_log(db, job_id, &format!("riffusion: the server reported a failure — {why}")).await;
+                return None;
+            }
+            _ => {
+                let pct = body["progress"]["percent"].as_f64().unwrap_or(0.0);
+                let done = 15.0 + (pct.clamp(0.0, 100.0) * 0.7);
+                set_stage(db, job_id, "generating", done as i32,
+                          "Arranging the song section by section…", attempt == 0).await;
+            }
+        }
+    }
+    db_log(db, job_id, "riffusion: gave up waiting after thirty minutes.").await;
+    None
+}
+
+/// ElevenLabs Music — the paid one.
+///
+/// A genuine public API with commercial licensing, so nothing here automates anybody's account. Two
+/// things make it different from every other engine in this file:
+///
+///   * **It costs money**, so the log says what it is about to spend before it spends it, and a
+///     cancellation after the request has gone says the charge may already have happened rather
+///     than implying it did not.
+///   * **It answers with the audio itself**, not a URL. The bytes go to the media root and come back
+///     as a local URL, because every stage downstream fetches over HTTP (see local_media.rs).
+async fn real_elevenlabs(song: &Value, settings: &Value, job_id: &str, db: &crate::store::Db, cancelled: &CancelSet) -> Option<Vec<Value>> {
+    let key = settings.get("elevenlabs_api_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    if key.is_empty() {
+        db_log(db, job_id, "ElevenLabs Music needs an API key — Settings → Music engine → ElevenLabs.                             It is a paid engine, at roughly $0.10 a track, and nothing is charged                             until a song is generated.").await;
+        return None;
+    }
+    if is_cancelled(cancelled, job_id).await {
+        db_log(db, job_id, "elevenlabs: cancelled before anything was charged").await;
+        return None;
+    }
+
+    let base = {
+        let configured = settings.get("elevenlabs_base_url").and_then(|v| v.as_str()).unwrap_or("").trim();
+        if configured.is_empty() { "https://api.elevenlabs.io".to_string() }
+        else { configured.trim_end_matches('/').to_string() }
+    };
+    let title = song.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let lyrics = song.get("lyrics").and_then(|v| v.as_str()).unwrap_or("");
+    let styles = adapt_styles_for_engine("elevenlabs", song, settings, job_id, db).await;
+    let seconds = song.get("duration").and_then(|v| v.as_f64())
+        .or_else(|| settings.get("acestep_duration").and_then(|v| v.as_f64()))
+        .unwrap_or(180.0)
+        .clamp(10.0, 300.0);
+
+    // One prompt carrying style, title and words: the music endpoint takes a description rather
+    // than separate lyric and style fields.
+    let prompt = format!("{styles}. Song title: {title}.\n\nLyrics:\n{lyrics}");
+    let payload = serde_json::json!({
+        "prompt": prompt,
+        "music_length_ms": (seconds * 1000.0) as i64,
+    });
+
+    set_stage(db, job_id, "submitting", 8, "Sending the song to ElevenLabs…", true).await;
+    db_log(db, job_id, &format!(
+        "elevenlabs: generating {seconds:.0}s of music — this is a paid engine, roughly $0.10 a track."
+    )).await;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(600))
+        .build().ok()?;
+    let res = match client.post(format!("{base}/v1/music"))
+        .header("xi-api-key", &key)
+        .header("Accept", "audio/mpeg")
+        .json(&payload).send().await {
+        Ok(r) => r,
+        Err(err) => { db_log(db, job_id, &format!("elevenlabs: request failed: {err}")).await; return None; }
+    };
+    let status = res.status();
+    if !status.is_success() {
+        // The provider's own words. "quota exceeded" is the thing the user must act on, and a
+        // generic message would hide exactly that.
+        let body: String = res.text().await.unwrap_or_default().chars().take(400).collect();
+        db_log(db, job_id, &format!("elevenlabs: HTTP {status} — {body}")).await;
+        return None;
+    }
+    let bytes = match res.bytes().await {
+        Ok(b) if !b.is_empty() => b,
+        _ => { db_log(db, job_id, "elevenlabs: the answer carried no audio.").await; return None; }
+    };
+
+    set_stage(db, job_id, "fetching", 92, "Saving the track…", true).await;
+    let path = match crate::local_media::store("elevenlabs", "mp3", &bytes) {
+        Ok(p) => p,
+        Err(err) => {
+            // Worth being loud: the money is already spent at this point.
+            db_log(db, job_id, &format!(
+                "elevenlabs: the track was generated and paid for but could not be saved: {err}")).await;
+            return None;
+        }
+    };
+    db_log(db, job_id, &format!("elevenlabs: {} KB of audio saved.", bytes.len() / 1024)).await;
+    Some(vec![serde_json::json!({
+        "audio_url": crate::local_media::url_for(&path),
+        "duration": seconds,
+    })])
+}
+
 // ────────────────────────────────────────────────────────────────
 // Real Midjourney (proxy) integration
 // ────────────────────────────────────────────────────────────────
@@ -2416,11 +2601,24 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 // fails, even though a free self-hosted engine may be sitting there ready. With
                 // `music_engine_fallback` set, one engine's outage costs a retry instead of the
                 // night's output. `none` (the default) keeps the old fail-loudly behaviour.
-                let fallback = settings_doc
+                let configured_fallback = settings_doc
                     .get("music_engine_fallback")
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty() && *s != "none" && *s != engine);
+
+                // A fallback may never take somebody from a free engine to one that charges. The
+                // whole point of a fallback is that a tunnel dying overnight does not cost the
+                // night's output — being quietly billed for it instead is a different and worse
+                // failure, and one nobody would find until the invoice.
+                let fallback = match configured_fallback {
+                    Some(f) if music_engine_is_paid(f) && !music_engine_is_paid(engine) => {
+                        db_log(db, job_id, &format!(
+                            "Not falling back to {f}: it charges per track and {engine} does not.                              Pick {f} as the engine itself if that is what you want.")).await;
+                        None
+                    }
+                    other => other,
+                };
 
                 let mut attempts: Vec<&str> = vec![engine];
                 attempts.extend(fallback);
@@ -2434,8 +2632,13 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                     }
                     let produced = match candidate {
                         "acestep" => real_acestep(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
-                        "heartmula" => real_heartmula(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
-                        _ => real_suno(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                        "riffusion" => real_riffusion(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                        "elevenlabs" => real_elevenlabs(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                        // Suno is named rather than being the fallback arm: as the catch-all it
+                        // meant any unrecognised id drove the user's own Suno session, which is the
+                        // one thing hiding the engine was meant to prevent.
+                        "suno" => real_suno(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                        _ => real_heartmula(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
                     };
                     match produced {
                         Some(c) => {
@@ -2445,8 +2648,10 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                         }
                         None => failures.push(match candidate {
                             "acestep" => "ACE-Step failed — check acestep_api_url is reachable, the Kaggle/Colab notebook is still running (share URLs expire), and the API key if one is required.".to_string(),
-                            "heartmula" => "HeartMuLa failed — check heartmula_api_url is reachable, the notebook is still running, and the API key if required.".to_string(),
-                            _ => "Suno failed — check the session cookie's validity, network connectivity and Suno's service status.".to_string(),
+                            "riffusion" => "Riffusion failed — check riffusion_api_url is reachable and the notebook is still running.".to_string(),
+                            "elevenlabs" => "ElevenLabs failed — check the API key and whether the account still has credit.".to_string(),
+                            "suno" => "Suno failed — check the session cookie's validity, network connectivity and Suno's service status.".to_string(),
+                            _ => "HeartMuLa failed — check heartmula_api_url is reachable, the notebook is still running, and the API key if required.".to_string(),
                         }),
                     }
                 }

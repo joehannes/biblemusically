@@ -112,6 +112,18 @@ pub struct Settings {
     #[serde(default)]
     pub comfyui_api_key: String,
 
+    /// Riffusion's notebook server (free, on a Kaggle GPU) — see scripts/kaggle_riffusion/.
+    #[serde(default)]
+    pub riffusion_api_url: String,
+    #[serde(default)]
+    pub riffusion_api_key: String,
+    /// ElevenLabs Music: the one music engine that charges. A real public API with commercial
+    /// licensing, so nothing here automates an account — but a free engine never falls back to it.
+    #[serde(default)]
+    pub elevenlabs_api_key: String,
+    #[serde(default)]
+    pub elevenlabs_base_url: String,
+
     // ── The paid image APIs ─────────────────────────────────────────────────
     // Key, model and base URL for each of fal.ai, Leonardo, Ideogram and Recraft. The last two are
     // settings rather than constants because provider endpoints move — this app has already lived

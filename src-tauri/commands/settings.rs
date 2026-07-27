@@ -656,6 +656,7 @@ pub(crate) fn kaggle_kernel_for(engine: &str) -> Option<(&'static str, &'static 
         "heartmula" => Some(("joehannes/biblemusically-heartmula-server", "heartmula_api_url")),
         "comfyui" | "comfy" => Some(("joehannes/biblemusically-comfyui-server", "comfyui_api_url")),
         "flux" => Some(("joehannes/biblemusically-flux-server", "flux_api_url")),
+        "riffusion" => Some(("joehannes/biblemusically-riffusion-server", "riffusion_api_url")),
         _ => None,
     }
 }

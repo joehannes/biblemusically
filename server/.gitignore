@@ -2,3 +2,9 @@
 .env
 .secrets
 *.key
+
+# The deploy state holds the Ed25519 PRIVATE signing key and the admin token. Anyone holding the
+# private key can mint themselves a lifetime entitlement this app would happily verify, so it must
+# never be committed — it was, up to v0.91.0, and untracking it here does not remove it from the
+# history that already exists.
+.deploy-state.json

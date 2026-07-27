@@ -11,13 +11,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MUSIC_ENGINES, IMAGE_ENGINES, visibleMusicEngines, visibleImageEngines,
-  musicEngine, imageEngine, isRisky, isPaid, priceLine,
+  fallbackMusicEngines, musicEngine, imageEngine, isRisky, isPaid, priceLine,
 } from "../src/src/lib/engineCapabilities.js";
 
 const ids = (pairs) => pairs.map(([id]) => id);
 
 test("nothing that automates the user's own account is offered by default", () => {
-  assert.deepEqual(ids(visibleMusicEngines({}, "heartmula")), ["acestep", "heartmula"]);
+  assert.deepEqual(ids(visibleMusicEngines({}, "heartmula")),
+    ["acestep", "heartmula", "riffusion", "elevenlabs"]);
   assert.deepEqual(ids(visibleImageEngines({}, "flux")),
     ["flux", "comfyui", "leonardo", "fal", "ideogram", "recraft", "gemini"]);
   // Including for a settings object that has never heard of the flag.
@@ -47,7 +48,9 @@ test("the engine already in use is always offered, hidden or not", () => {
 });
 
 test("no free engine is marked risky, so the warning keeps its meaning", () => {
-  for (const id of ["acestep", "heartmula"]) assert.ok(!isRisky(MUSIC_ENGINES[id]), id);
+  for (const id of ["acestep", "heartmula", "riffusion", "elevenlabs"]) {
+    assert.ok(!isRisky(MUSIC_ENGINES[id]), id);
+  }
   for (const id of ["flux", "comfyui", "gemini"]) assert.ok(!isRisky(IMAGE_ENGINES[id]), id);
   // Paid is not the same as risky, and conflating them would either hide four legitimate engines or
   // dilute a warning that is about somebody's account being suspended.
@@ -103,5 +106,43 @@ test("every engine carries the one line a picker needs", () => {
     assert.ok(engine.label, `${id} has no label`);
     assert.ok(engine.note, `${id} has no picker note — the label alone tells an artist nothing`);
     assert.ok(engine.strengths, `${id} has no strengths line`);
+  }
+});
+
+// ── The fallback rule ───────────────────────────────────────────────────────
+//
+// A fallback exists so one engine's outage costs a retry rather than the night's output. Being
+// billed for that retry instead is a worse surprise, and one nobody notices until the invoice.
+
+test("a free engine is never offered a paid fallback", () => {
+  const offered = ids(fallbackMusicEngines({}, "heartmula", "none"));
+  assert.ok(offered.includes("acestep"));
+  assert.ok(offered.includes("riffusion"));
+  assert.ok(!offered.includes("elevenlabs"), "a free engine must not fall back to a paid one");
+  assert.ok(!offered.includes("heartmula"), "falling back to yourself is not a fallback");
+});
+
+test("somebody already paying may fall back to another paid engine", () => {
+  // The rule is about an unexpected charge, not about paid engines being untouchable.
+  const offered = ids(fallbackMusicEngines({}, "elevenlabs", "none"));
+  assert.ok(offered.includes("heartmula"));
+  assert.ok(!offered.includes("elevenlabs"));
+});
+
+test("a paid fallback already configured stays visible so it can be changed", () => {
+  // Silently dropping it from the list would leave a saved setting nobody can see or undo.
+  const offered = ids(fallbackMusicEngines({}, "heartmula", "elevenlabs"));
+  assert.ok(offered.includes("elevenlabs"));
+});
+
+test("the music engines are in the decided order, free first and paid last", () => {
+  // HeartMuLa is the default and ACE-Step follows it; the paid one is last so nobody meets it
+  // before they have seen every free option.
+  const visible = ids(visibleMusicEngines({}, "heartmula"));
+  assert.ok(visible.indexOf("elevenlabs") === visible.length - 1, visible.join(","));
+  assert.ok(MUSIC_ENGINES.elevenlabs.paid);
+  assert.equal(priceLine(MUSIC_ENGINES.elevenlabs), "about $0.100 a track");
+  for (const id of ["heartmula", "acestep", "riffusion"]) {
+    assert.equal(priceLine(MUSIC_ENGINES[id]), "free", id);
   }
 });

@@ -14,7 +14,7 @@ import { Switch } from "../components/ui/switch";
 import VoicePicker from "../components/VoicePicker";
 import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
-import { visibleMusicEngines, visibleImageEngines, musicEngine, imageEngine, isPaid, priceLine, IMAGE_ENGINES } from "../lib/engineCapabilities";
+import { visibleMusicEngines, visibleImageEngines, fallbackMusicEngines, musicEngine, imageEngine, isPaid, priceLine, IMAGE_ENGINES, MUSIC_ENGINES } from "../lib/engineCapabilities";
 import { autoStartKaggleServer, subscribeKaggle } from "../lib/kaggleServerPipeline";
 import { markStopped } from "../lib/serverLifecycle";
 import { useRequireGuideStep } from "../components/GuideStepDialog";
@@ -830,7 +830,9 @@ const SettingsComponent = () => {
             <SelectTrigger className="w-full" data-testid="settings-music-engine"><SelectValue /></SelectTrigger>
             <SelectContent>
               {visibleMusicEngines(s, s.music_engine).map(([id, engine]) => (
-                <SelectItem key={id} value={id}>{engine.label} ({engine.note})</SelectItem>
+                <SelectItem key={id} value={id}>
+                  {engine.label} ({engine.note}){isPaid(engine) ? ` · ${priceLine(engine)}` : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -843,12 +845,21 @@ const SettingsComponent = () => {
             <SelectTrigger className="w-full" data-testid="settings-music-engine-fallback"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Nothing — fail and tell me</SelectItem>
-              {visibleMusicEngines(s, s.music_engine_fallback).map(([id, engine]) => (
-                <SelectItem key={id} value={id}>{engine.label}</SelectItem>
+              {fallbackMusicEngines(s, s.music_engine, s.music_engine_fallback).map(([id, engine]) => (
+                <SelectItem key={id} value={id}>
+                  {engine.label}{isPaid(engine) ? ` · ${priceLine(engine)}` : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground mt-1">A Suno cookie that expires overnight, or a Kaggle notebook that times out, otherwise fails every song queued behind it. With a fallback set, the job retries once on the other engine before giving up — the job log records which engine actually produced the audio.</p>
+          <p className="text-xs text-muted-foreground mt-1">A Kaggle notebook that times out otherwise fails every song queued behind it. With a fallback set, the job retries once on the other engine before giving up — the job log records which engine actually produced the audio.</p>
+          {!isPaid(musicEngine(s.music_engine)) && (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Paid engines are not offered here on purpose. A fallback exists so an outage costs a
+              retry rather than the night's output; being billed for that retry instead is a worse
+              surprise, so a free engine never falls back to one that charges.
+            </p>
+          )}
         </div>
       </Card>
 
@@ -891,6 +902,46 @@ const SettingsComponent = () => {
         <div className="mt-3 text-xs text-muted-foreground">Run the HeartMuLa notebook (<code>scripts/kaggle_heartmula/</code>, pushed as <code>biblemusically-heartmula-server</code>). Apache-2.0, commercially usable. Shares the ACE-Step song-length setting above. Full songs on a free T4 can take a few minutes — keep length modest.</div>
       </Card>
 
+
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Music2 className="w-4 h-4 text-primary" /><h2 className="font-semibold">Riffusion (free, open weights)</h2><StatusPill k="riffusion" /></div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Reads the section tags in your lyrics and arranges around them, so it holds a five to ten
+          minute structure better than the others. Slow on a free T4 — minutes per track. Run the
+          notebook in <code>scripts/kaggle_riffusion/</code> and paste the URL it prints.
+        </p>
+        <div className="grid md:grid-cols-2 gap-4">
+          <Field k="riffusion_api_url" label="Riffusion server URL" placeholder="https://xxxx.trycloudflare.com or http://localhost:8004" testid="settings-riffusion-url" value={s.riffusion_api_url} onValueChange={updateS} />
+          <Field k="riffusion_api_key" label="API key (optional)" placeholder="only if the server sets one" type="password" testid="settings-riffusion-key" value={s.riffusion_api_key} onValueChange={updateS} />
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Button size="sm" data-testid="settings-kaggle-auto-riffusion" onClick={()=>autoStartServer("riffusion")}><Bot className="w-3 h-3 mr-2" />Start &amp; connect</Button>
+          <Button size="sm" variant="outline" data-testid="settings-kaggle-open-riffusion" onClick={()=>openKaggleNb("riffusion")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>
+          <Button size="sm" variant="secondary" data-testid="settings-kaggle-fetch-riffusion" onClick={()=>fetchKaggleUrl("riffusion")}><DownloadCloud className="w-3 h-3 mr-2" />Fetch live URL</Button>
+          <Button size="sm" variant="secondary" data-testid="settings-test-riffusion" onClick={()=>testS("riffusion")}><KeyRound className="w-3 h-3 mr-2" />Test connection</Button>
+        </div>
+        <KaggleAutoStatus engine="riffusion" />
+      </Card>
+
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Music2 className="w-4 h-4 text-primary" />
+          <h2 className="font-semibold">ElevenLabs Music</h2>
+          <Badge variant="outline" className="text-[9px] text-sky-400 border-sky-500/40">
+            {priceLine(MUSIC_ENGINES.elevenlabs)}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          The only paid music engine here, and the only one that sounds close to Suno without
+          touching anybody's account: a real public API with licensing that permits commercial
+          release. You are charged per track. Nothing is spent until you generate, the job log says
+          what a run will cost before it starts, and a free engine never falls back to this one.
+        </p>
+        <div className="grid md:grid-cols-2 gap-4">
+          <Field k="elevenlabs_api_key" label="API key" placeholder="paste your key" type="password" testid="settings-elevenlabs-key" value={s.elevenlabs_api_key} onValueChange={updateS} />
+          <Field k="elevenlabs_base_url" label="Base URL (optional)" placeholder="leave empty for the default" testid="settings-elevenlabs-base" value={s.elevenlabs_base_url} onValueChange={updateS} />
+        </div>
+      </Card>
 
       {/* Hidden with the engine it configures. Kept, not deleted — see the toggle above. */}
       {riskyShown && (

@@ -94,6 +94,53 @@ their own interface. The subscription at risk is yours. An official API is repor
     },
     strengths: "Free on your own GPU with strong melodic phrasing. Sings anything that is not a section header, so no inline notes.",
   },
+  riffusion: {
+    label: "Riffusion",
+    note: "free, open weights, your own GPU",
+    tier: "gpu",
+    lyricDialect: "acestep",      // section tags drive the arrangement; no performance direction
+    caps: {
+      structureTags: "plain",
+      performanceHints: false,
+      styleCsv: true,
+      styleCsvLimit: 120,
+      negativeStyle: false,
+      lyricsLimit: 4000,
+      durationControl: true,      // 5–10 minutes, and it refuses anything outside that
+      seed: true,
+      instrumental: true,
+      referenceAudio: false,
+      vocalGender: false,
+      guidance: false,
+    },
+    strengths: "Reads the section tags and arranges around them, so it holds a five to ten minute structure better than the others. Slow on a free T4 — minutes per track, not seconds.",
+  },
+  // The paid one, last and clearly marked. A genuine public API with commercial licensing, so
+  // unlike Suno there is nobody's account at risk — only a bill.
+  elevenlabs: {
+    label: "ElevenLabs Music",
+    note: "paid — a real API, commercially licensed",
+    tier: "api",
+    paid: true,
+    priceHint: 0.10,
+    priceUnit: "a track",
+    lyricDialect: "heartmula",    // a prompt, not a tag language
+    caps: {
+      structureTags: "headers",
+      performanceHints: true,
+      styleCsv: true,
+      styleCsvLimit: 300,
+      negativeStyle: false,
+      lyricsLimit: 5000,
+      durationControl: true,
+      seed: false,
+      instrumental: true,
+      referenceAudio: false,
+      vocalGender: false,
+      guidance: false,
+    },
+    strengths: "The best-sounding option that does not touch anybody's account, with licensing that permits commercial release. It charges per track.",
+  },
 };
 
 export const IMAGE_ENGINES = {
@@ -296,9 +343,26 @@ export const isRisky = (engine) => Boolean(engine?.risky);
 /** Does using this engine cost money per generation? */
 export const isPaid = (engine) => Boolean(engine?.paid);
 
-/** "about $0.05 an image" — the phrase the picker and the logs both use. */
+/** "about $0.05 an image" / "about $0.100 a track" — the phrase the picker and the logs share. */
 export const priceLine = (engine) =>
-  isPaid(engine) ? `about $${Number(engine.priceHint || 0).toFixed(3)} an image` : "free";
+  isPaid(engine)
+    ? `about $${Number(engine.priceHint || 0).toFixed(3)} ${engine.priceUnit || "an image"}`
+    : "free";
+
+/**
+ * The engines a *fallback* picker may offer, given what the main engine is.
+ *
+ * A fallback exists so that one engine's outage costs a retry instead of the night's output. Being
+ * quietly billed for that retry is a different and worse failure — and one nobody would notice until
+ * the invoice — so a free engine may never fall back to a paid one. The backend enforces the same
+ * rule (see `music_engine_is_paid` in jobs.rs); this is only so the choice is never offered.
+ */
+export function fallbackMusicEngines(settings, current, fallbackValue) {
+  const primaryPaid = isPaid(musicEngine(current));
+  return visibleMusicEngines(settings, fallbackValue).filter(([id, engine]) =>
+    id !== String(current || "").toLowerCase()
+    && (primaryPaid || !isPaid(engine) || id === String(fallbackValue || "").toLowerCase()));
+}
 
 /** Does the selected engine support this capability? Unknown engines answer "no". */
 export const supports = (engine, cap) => Boolean(engine?.caps?.[cap]);

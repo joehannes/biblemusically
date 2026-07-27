@@ -15,6 +15,8 @@ pub mod tray;
 pub mod helpers;
 #[path = "../image_apis.rs"]
 pub mod image_apis;
+#[path = "../local_media.rs"]
+pub mod local_media;
 #[path = "../jobs.rs"]
 pub mod jobs;
 #[path = "../models.rs"]
@@ -285,8 +287,35 @@ pub fn run() {
                             ))
                         });
 
+                    // Generated media that arrived as bytes rather than as a URL — ElevenLabs
+                    // answers a generation request with the MP3 itself, and every stage downstream
+                    // fetches with reqwest, which has no file:// scheme. See local_media.rs; the
+                    // containment rule that keeps this from being a file-read primitive lives in
+                    // `local_media::resolve` and is tested there.
+                    let media_route = warp::get()
+                        .and(warp::path("media"))
+                        .and(warp::query::<std::collections::HashMap<String, String>>())
+                        .and_then(|q: std::collections::HashMap<String, String>| async move {
+                            let param = q.get("path").cloned().unwrap_or_default();
+                            let Some(file) = local_media::resolve(&param, &local_media::media_root()) else {
+                                return Ok::<_, std::convert::Infallible>(warp::reply::with_status(
+                                    warp::reply::with_header(Vec::new(), "content-type", "text/plain"),
+                                    warp::http::StatusCode::NOT_FOUND));
+                            };
+                            let ctype = local_media::content_type(&file);
+                            match tokio::fs::read(&file).await {
+                                Ok(bytes) => Ok(warp::reply::with_status(
+                                    warp::reply::with_header(bytes, "content-type", ctype),
+                                    warp::http::StatusCode::OK)),
+                                Err(_) => Ok(warp::reply::with_status(
+                                    warp::reply::with_header(Vec::new(), "content-type", "text/plain"),
+                                    warp::http::StatusCode::NOT_FOUND)),
+                            }
+                        });
+
                     let cors = warp::cors().allow_any_origin().allow_methods(vec!["POST", "GET"]).allow_headers(vec!["content-type"]);
-                    let route = suno_route.or(scrape_route).or(macro_step_route).or(macro_state_route).with(cors);
+                    let route = suno_route.or(scrape_route).or(macro_step_route).or(macro_state_route)
+                        .or(media_route).with(cors);
 
                     warp::serve(route).run(([127, 0, 0, 1], 3337)).await;
                 });
