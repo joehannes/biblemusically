@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "ai-music-video-studio"
-version = "0.103.0"
+version = "0.104.0"
 dependencies = [
  "anyhow",
  "argon2",

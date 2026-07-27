@@ -12,7 +12,19 @@ src-tauri/Cargo.lock
 node_modules
 
 dist/
-src-tauri/gen/
+# The Android project carries real customisation — the OAuth intent filter, the signing config,
+# the manifest placeholders — and `tauri android init` regenerates it from a template. Ignoring the
+# whole directory meant those edits lived on one machine only, so a CI-built APK silently lacked the
+# deep-link filter that makes a browser sign-in able to come back. Track the sources; ignore the
+# build outputs, the caches, and the native libraries cargo produces.
+src-tauri/gen/apple/
+src-tauri/gen/schemas/
+src-tauri/gen/android/**/build/
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/**/jniLibs/
+src-tauri/gen/android/app/keystore.properties
+src-tauri/gen/android/app/tauri.properties
 
 # large mongod sidecar binaries (kept on disk, bundled at build time)
 binaries/mongod-x86_64-unknown-linux-gnu

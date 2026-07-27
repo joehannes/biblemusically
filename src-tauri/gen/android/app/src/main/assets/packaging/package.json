@@ -1,0 +1,16 @@
+{
+  "name": "packaging",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Playwright-driven Midjourney integration",
+  "main": "midjourney-generator.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.61.0"
+  }
+}

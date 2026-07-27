@@ -63,6 +63,17 @@ has moved around over the years:
 
 Turn it back off afterwards if you like; the installed app keeps working.
 
+**Debug or release?** Both install the same way. The release APK is the one to hand to somebody else:
+it is minified, roughly a tenth the size, and signed with the project's own release key. The debug APK
+carries 350 MB of debug symbols and is only worth having when something needs diagnosing.
+
+**About that signature.** Android identifies an app by the key it was signed with, not by its name. An
+APK signed with a *different* key cannot update one already installed — the phone refuses, and the only
+way through is to uninstall first, which takes the app's data with it. So every release has to be
+signed with the same key, and that key lives at `~/.config/studio-lightkid/android-release.keystore`,
+outside the repository. **Back it up.** Losing it means everyone who installed a previous version has
+to uninstall and start again.
+
 **What the phone does and does not do.** Everything except two things. It has no ffmpeg — command-line
 steps run on Modal, which the app sets up for you. And it cannot drive a hidden browser, so Suno works
 through your captured session rather than through automation. Guides, voice, microphone input, generation
