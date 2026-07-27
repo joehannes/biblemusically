@@ -120,16 +120,31 @@ own data. Sync still works — the same account derives the same key on another 
 
 `subs_cache_state` reports where things stand; the Account page carries the switch and the explanation.
 
-### 2. Hide Suno and Midjourney rather than deleting them
+### 2. Hide Suno and Midjourney rather than deleting them — **done in v0.90.0**
 
-The owner's instruction, and the right call: their terms may change, and Suno has an API in progress.
+`show_risky_engines` (default **false**) is the settings flag, and `visibleMusicEngines()` /
+`visibleImageEngines()` in `lib/engineCapabilities.js` are the one place that decides what a picker may
+offer. Both engine pickers, the fallback picker, the quick-setup presets, the assistant's control
+catalogue and the Suno/Midjourney configuration cards all read from it. Nothing was deleted: the job
+branches, `real_suno`, the cookie capture, `midjourney-generator.js` and the `mj_*` settings are exactly
+where they were.
 
-- A settings flag (`show_risky_engines`, default **false**) hides the `suno` and `midjourney` options from
-  the engine pickers and from `list_ai_providers` / the engine capability lists.
-- The job-runner branches, `real_suno`, the cookie capture route, `midjourney-generator.js` and the `mj_*`
-  settings all **stay exactly as they are**. Hidden, not removed.
-- When shown, each carries one line saying whose account is at risk and why.
-- Defaults already moved to FLUX and ACE-Step (v0.88.x) — leave them there.
+Three things the implementation decided that the list did not say:
+
+- **The engine already in use is always offered.** A picker whose value is missing from its own list
+  renders blank, and somebody on a hidden engine could not see it in order to leave it.
+- **`real_mj` is no longer the fallback arm** of the image-engine match. It used to catch every
+  unrecognised id, so a typo drove the user's own Midjourney account — the exact outcome this exists to
+  prevent. FLUX is the fallback now; Midjourney is named explicitly.
+- **Two quick-setup presets were lying.** "Premium — Suno + Midjourney" quietly set HeartMuLa and FLUX.
+  They now set what they say and are hidden with the rest.
+
+Defaults in `models.rs` still said `suno` and `midjourney`; they say `heartmula` and `flux` now, as do
+the fallbacks in `health.rs` and `Workflow.jsx`.
+
+Also fixed on the way past: `IMAGE_ENGINES` keyed ComfyUI as `comfy` while the rest of the app stores
+`comfyui`, so every capability lookup for ComfyUI returned the empty engine and the guided flow offered
+none of its controls. `tests/engine-visibility.test.mjs` covers all of it.
 
 ### 3. Paid image engines
 

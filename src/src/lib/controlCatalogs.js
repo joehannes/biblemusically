@@ -1,4 +1,4 @@
-import { imageEngine, musicEngine, supports } from "./engineCapabilities.js";
+import { imageEngine, musicEngine, supports, visibleMusicEngines } from "./engineCapabilities.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Control catalogues: the settings a template is allowed to decide, per view.
@@ -101,7 +101,9 @@ export const musicControls = (ctx = {}) => {
   const list = [
     {
       id: "music_engine", label: "Music engine", kind: "enum", section: "engine",
-      options: ["suno", "acestep", "heartmula"],
+      // Whatever the picker offers, so the assistant cannot talk somebody onto an engine the
+      // interface has deliberately hidden from them.
+      options: visibleMusicEngines(ctx.settings, ctx.settings?.music_engine).map(([id]) => id),
       apply: (c, v) => c.setEngine?.(String(v)),
     },
     {

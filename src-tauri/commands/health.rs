@@ -87,8 +87,8 @@ pub async fn service_health(state: State<'_, AppState>) -> Res<Value> {
         .map(|d| crate::store::doc_to_json(&d))
         .unwrap_or_else(|| json!({}));
 
-    let music_engine = settings["music_engine"].as_str().unwrap_or("suno").to_string();
-    let image_engine = settings["image_engine"].as_str().unwrap_or("midjourney").to_string();
+    let music_engine = settings["music_engine"].as_str().unwrap_or("heartmula").to_string();
+    let image_engine = settings["image_engine"].as_str().unwrap_or("flux").to_string();
     let ai_provider = settings["ai_provider"].as_str().unwrap_or("openrouter").to_string();
 
     let services = vec![

@@ -9,11 +9,27 @@
 // Declaring that here lets the guided flow offer only controls the selected engine honours, and lets
 // prompts be written in the dialect that engine parses. Anything absent from a capability set is
 // simply not offered — the alternative (offering it and hoping) produces prompts the engine ignores.
+//
+// ── Hidden engines ──────────────────────────────────────────────────────────
+//
+// Two engines are marked `risky` and are not offered unless the user turns them on. Suno and
+// Midjourney have no public API, so the only way to reach them is to drive *the user's own* logged-in
+// account — which their terms restrict to their own interface. The account that dies is the user's,
+// not ours, and that is exactly why it must not be a default somebody stumbles into.
+//
+// They are hidden rather than deleted, on purpose: Suno has said an official API is coming, and
+// Midjourney takes applications for one. The job branches, the cookie capture and the settings all
+// stay exactly where they are, so switching them back on is a flag and not a rewrite. When they are
+// shown, each says in one line whose account is at risk.
 
 export const MUSIC_ENGINES = {
   suno: {
     label: "Suno",
+    note: "unofficial, needs a cookie",
     tier: "account",              // needs a logged-in Suno session
+    risky: true,
+    riskNote: "Reaches Suno by driving your own logged-in session, which Suno's terms restrict to \
+their own interface. The subscription at risk is yours. An official API is reportedly in progress.",
     lyricDialect: "suno",         // [Verse] + performance hints
     caps: {
       structureTags: "rich",      // [Intro], [Soft female vocal], …
@@ -32,6 +48,7 @@ export const MUSIC_ENGINES = {
   },
   acestep: {
     label: "ACE-Step",
+    note: "free, open weights, your own GPU",
     tier: "gpu",                  // self-served on Kaggle/Colab GPU
     lyricDialect: "acestep",      // [verse] lowercase, no directions
     caps: {
@@ -52,6 +69,7 @@ export const MUSIC_ENGINES = {
   },
   heartmula: {
     label: "HeartMuLa",
+    note: "free, Apache-2.0, your own GPU",
     tier: "gpu",
     lyricDialect: "heartmula",    // plain [Verse] headers only — everything else is sung
     caps: {
@@ -75,7 +93,12 @@ export const MUSIC_ENGINES = {
 export const IMAGE_ENGINES = {
   midjourney: {
     label: "Midjourney",
+    note: "browser automation of your own account",
     tier: "account",
+    risky: true,
+    riskNote: "Driven through your own Midjourney account in a browser. Every route to it automates a \
+session Midjourney's terms reserve for their own interface, and a termination takes the subscription \
+with it. FLUX, Leonardo, Ideogram and Recraft cover the same ground without that.",
     caps: {
       flagSyntax: true,           // --ar --stylize --chaos --weird --no
       aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:2", "21:9"],
@@ -95,6 +118,7 @@ export const IMAGE_ENGINES = {
   },
   flux: {
     label: "FLUX.1 schnell",
+    note: "free, single-model, your own GPU",
     tier: "gpu",
     caps: {
       flagSyntax: false,
@@ -113,8 +137,12 @@ export const IMAGE_ENGINES = {
     },
     strengths: "Free on your own GPU, excellent prompt adherence, very fast at 4 steps. No negative prompt.",
   },
-  comfy: {
+  // Keyed `comfyui` because that is the id the settings and the job runner use. It was `comfy` here
+  // and nowhere else, so every capability lookup for ComfyUI quietly returned the empty engine and
+  // the guided flow offered none of its controls.
+  comfyui: {
     label: "ComfyUI",
+    note: "free, multi-model: styles, character consistency, animation",
     tier: "gpu",
     caps: {
       flagSyntax: false,
@@ -136,6 +164,7 @@ export const IMAGE_ENGINES = {
   },
   gemini: {
     label: "Gemini image",
+    note: "the API key you already use for text",
     tier: "api",
     caps: {
       flagSyntax: false,
@@ -158,8 +187,31 @@ export const IMAGE_ENGINES = {
 
 const EMPTY = { label: "Unknown engine", tier: "unknown", caps: {}, strengths: "" };
 
-export const musicEngine = (id) => MUSIC_ENGINES[String(id || "").toLowerCase()] || EMPTY;
-export const imageEngine = (id) => IMAGE_ENGINES[String(id || "").toLowerCase()] || EMPTY;
+/** Ids that older settings files may still carry. */
+const ALIASES = { comfy: "comfyui" };
+const canonical = (id) => {
+  const key = String(id || "").toLowerCase();
+  return ALIASES[key] || key;
+};
+
+export const musicEngine = (id) => MUSIC_ENGINES[canonical(id)] || EMPTY;
+export const imageEngine = (id) => IMAGE_ENGINES[canonical(id)] || EMPTY;
+
+/** The engines a picker should offer, as `[id, engine]` pairs. */
+function offer(catalogue, settings, current) {
+  const show = settings?.show_risky_engines === true;
+  return Object.entries(catalogue).filter(([id, engine]) =>
+    // The one already selected is always offered, even when it is hidden. A picker whose value is
+    // missing from its own list renders blank, and somebody on an engine they cannot see cannot
+    // choose to leave it.
+    !engine.risky || show || id === canonical(current));
+}
+
+export const visibleMusicEngines = (settings, current) => offer(MUSIC_ENGINES, settings, current);
+export const visibleImageEngines = (settings, current) => offer(IMAGE_ENGINES, settings, current);
+
+/** Is this engine one the user has to switch on before it appears? */
+export const isRisky = (engine) => Boolean(engine?.risky);
 
 /** Does the selected engine support this capability? Unknown engines answer "no". */
 export const supports = (engine, cap) => Boolean(engine?.caps?.[cap]);

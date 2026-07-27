@@ -1353,9 +1353,12 @@ async fn gen_images(
     // takes the Midjourney subscription with it. That is not a risk to ship inside something sold
     // publicly, so the default is an engine with a real API and no terms to breach.
     match settings.get("image_engine").and_then(|v| v.as_str()).unwrap_or("flux") {
-        "comfyui" => real_comfy(prompt, ref_image, settings, job_id, db, cancelled).await,
-        "flux" => real_flux(prompt, settings, job_id, db, cancelled).await,
-        _ => real_mj(prompt, settings, job_id, db, cancelled).await,
+        "comfyui" | "comfy" => real_comfy(prompt, ref_image, settings, job_id, db, cancelled).await,
+        // Midjourney is named explicitly rather than being the fallback arm. It used to catch every
+        // unrecognised id, which meant a typo or a since-renamed engine quietly drove the user's own
+        // Midjourney account — the one outcome this whole arrangement exists to avoid.
+        "midjourney" => real_mj(prompt, settings, job_id, db, cancelled).await,
+        _ => real_flux(prompt, settings, job_id, db, cancelled).await,
     }
 }
 

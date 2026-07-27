@@ -14,6 +14,7 @@ import { Switch } from "../components/ui/switch";
 import VoicePicker from "../components/VoicePicker";
 import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
+import { visibleMusicEngines, visibleImageEngines, musicEngine, imageEngine } from "../lib/engineCapabilities";
 import { autoStartKaggleServer, subscribeKaggle } from "../lib/kaggleServerPipeline";
 import { markStopped } from "../lib/serverLifecycle";
 import { useRequireGuideStep } from "../components/GuideStepDialog";
@@ -33,6 +34,20 @@ const FREE_MODELS = [
   { id: "cognitivecomputations/dolphin-mistral-24b-venice-edition:free", name: "Dolphin Mistral 24B (Free)" },
 ];
 
+/// One line under a picker naming whose account is at stake, shown only when a risky engine is the
+/// one selected. It says "your account", not "this engine is unofficial", because the abstract
+/// version is the one people skip.
+function EngineRisk({ engine, kind }) {
+  const e = kind === "music" ? musicEngine(engine) : imageEngine(engine);
+  if (!e?.risky) return null;
+  return (
+    <p className="text-xs text-amber-400/90 mt-1 flex items-start gap-1.5">
+      <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+      <span>{e.riskNote}</span>
+    </p>
+  );
+}
+
 // Quick-setup engine combos: bundles the two engine choices most people actually want together.
 // `browserFree` flags whether the combo needs the embedded Browser tab kept open — only Suno
 // does (it has no public API, so it's driven by DOM automation); every other engine here is a
@@ -50,23 +65,26 @@ const ENGINE_PRESETS = [
   {
     id: "free-acestep-flux",
     label: "Free & unattended — ACE-Step + FLUX",
-    music_engine: "heartmula", image_engine: "flux",
+    music_engine: "acestep", image_engine: "flux",
     browserFree: true,
     hint: "The other free pair — ACE-Step for music, FLUX.1 schnell for images. FLUX needs a one-time Hugging Face token (see the FLUX section below).",
   },
+  // The two below drive accounts the user holds, so they only appear once "show the risky engines"
+  // is on. A preset whose label promises Suno while quietly setting HeartMuLa is worse than no
+  // preset — it teaches people the picker lies to them.
   {
     id: "premium-suno-mj",
-    label: "Premium — Suno + Midjourney",
-    music_engine: "heartmula", image_engine: "flux",
-    browserFree: false,
-    hint: "Best output quality, but Suno has no public API — it's driven by the embedded Browser tab, so expect the app to switch you there during music generation. Midjourney itself runs through a proxy, not the browser.",
+    label: "Your own accounts — Suno + Midjourney",
+    music_engine: "suno", image_engine: "midjourney",
+    browserFree: false, risky: true,
+    hint: "Best output quality, and the one that puts your own subscriptions at risk: neither has a public API, so both are driven through sessions their terms reserve for their own interface.",
   },
   {
     id: "hybrid-suno-comfyui",
     label: "Hybrid — Suno + ComfyUI",
     music_engine: "suno", image_engine: "comfyui",
-    browserFree: false,
-    hint: "Suno for music quality, ComfyUI for fully-unattended images and character consistency. Only the music stage needs the Browser tab.",
+    browserFree: false, risky: true,
+    hint: "Suno for music quality, ComfyUI for fully-unattended images and character consistency. Only the music stage needs the Browser tab — and only that stage risks your Suno account.",
   },
 ];
 
@@ -202,6 +220,12 @@ const SettingsComponent = () => {
   const updateS = useCallback((updates) => {
     setS(prev => ({ ...prev, ...updates }));
   }, []);
+  // Suno and Midjourney are hidden unless asked for — or unless one of them is already the engine
+  // in use, since a panel that vanishes under somebody mid-project is worse than one they can see
+  // and choose to leave.
+  const riskyShown = s.show_risky_engines === true
+    || s.music_engine === "suno" || s.image_engine === "midjourney"
+    || s.music_engine_fallback === "suno";
   const [status, setStatus] = useState({});
   const [kaggleState, setKaggleState] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -724,7 +748,7 @@ const SettingsComponent = () => {
         <div className="flex items-center gap-2 mb-4"><Sparkles className="w-4 h-4 text-primary" /><h2 className="font-semibold">Quick setup — engine presets</h2></div>
         <p className="text-xs text-muted-foreground mb-3">One click sets both the music and image engine below to a combo that makes sense together. You still need to fill in each engine's own URL/key/cookie — this just picks which ones to configure.</p>
         <div className="grid sm:grid-cols-2 gap-3">
-          {ENGINE_PRESETS.map((p) => {
+          {ENGINE_PRESETS.filter((p) => !p.risky || riskyShown).map((p) => {
             const active = s.music_engine === p.music_engine && s.image_engine === p.image_engine;
             return (
               <button
@@ -743,6 +767,20 @@ const SettingsComponent = () => {
             );
           })}
         </div>
+
+        {/* The engines that automate an account the user holds. Hidden by default, never deleted. */}
+        <label className="flex items-start gap-2 mt-4 cursor-pointer" data-testid="settings-show-risky-engines">
+          <input type="checkbox" className="accent-primary mt-0.5"
+                 checked={s.show_risky_engines === true}
+                 onChange={(e) => updateS({ show_risky_engines: e.target.checked })} />
+          <span className="text-xs">
+            <span className="font-medium">Show Suno and Midjourney</span>
+            <span className="text-muted-foreground"> — neither has a public API, so the app reaches
+            them by driving a session you are logged into, which their terms reserve for their own
+            interface. The account that could be suspended is yours. They are kept working and simply
+            not offered by default; an official Suno API is reportedly on the way.</span>
+          </span>
+        </label>
       </Card>
 
       <Card className="p-6 mb-5">
@@ -775,15 +813,16 @@ const SettingsComponent = () => {
         <div className="flex items-center gap-2 mb-4"><Music2 className="w-4 h-4 text-primary" /><h2 className="font-semibold">Music engine</h2></div>
         <div className="space-y-1 max-w-sm">
           <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Which backend generates songs</Label>
-          <Select value={s.music_engine || "suno"} onValueChange={(val) => updateS({ music_engine: val })}>
+          <Select value={s.music_engine || "heartmula"} onValueChange={(val) => updateS({ music_engine: val })}>
             <SelectTrigger className="w-full" data-testid="settings-music-engine"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="suno">Suno (unofficial, needs cookie)</SelectItem>
-              <SelectItem value="acestep">ACE-Step 1.5 (free, open source, self-hosted)</SelectItem>
-              <SelectItem value="heartmula">HeartMuLa (free, Apache-2.0 Suno competitor)</SelectItem>
+              {visibleMusicEngines(s, s.music_engine).map(([id, engine]) => (
+                <SelectItem key={id} value={id}>{engine.label} ({engine.note})</SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground mt-1">ACE-Step is a free MIT-licensed alternative that runs on your own GPU (locally or a free Kaggle/Colab notebook) and generates up to 10-minute songs with vocals. Configure whichever engine you select below.</p>
+          <EngineRisk engine={s.music_engine} kind="music" />
+          <p className="text-xs text-muted-foreground mt-1">HeartMuLa and ACE-Step are free, open-weight engines that run on your own GPU (locally or a free Kaggle/Colab notebook) and generate long songs with vocals. Configure whichever engine you select below.</p>
         </div>
         <div className="space-y-1 max-w-sm mt-4">
           <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">If it fails, retry with</Label>
@@ -791,9 +830,9 @@ const SettingsComponent = () => {
             <SelectTrigger className="w-full" data-testid="settings-music-engine-fallback"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Nothing — fail and tell me</SelectItem>
-              <SelectItem value="suno">Suno</SelectItem>
-              <SelectItem value="acestep">ACE-Step 1.5</SelectItem>
-              <SelectItem value="heartmula">HeartMuLa</SelectItem>
+              {visibleMusicEngines(s, s.music_engine_fallback).map(([id, engine]) => (
+                <SelectItem key={id} value={id}>{engine.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground mt-1">A Suno cookie that expires overnight, or a Kaggle notebook that times out, otherwise fails every song queued behind it. With a fallback set, the job retries once on the other engine before giving up — the job log records which engine actually produced the audio.</p>
@@ -839,6 +878,9 @@ const SettingsComponent = () => {
         <div className="mt-3 text-xs text-muted-foreground">Run the HeartMuLa notebook (<code>scripts/kaggle_heartmula/</code>, pushed as <code>biblemusically-heartmula-server</code>). Apache-2.0, commercially usable. Shares the ACE-Step song-length setting above. Full songs on a free T4 can take a few minutes — keep length modest.</div>
       </Card>
 
+
+      {/* Hidden with the engine it configures. Kept, not deleted — see the toggle above. */}
+      {riskyShown && (
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Music2 className="w-4 h-4 text-primary" /><h2 className="font-semibold">Suno (unofficial)</h2><StatusPill k="suno" /></div>
         <Field k="suno_cookie" label="Suno session cookie (studio-api_key / __session / session_id)" placeholder="cookie string..." testid="settings-suno-cookie" value={s.suno_cookie} onValueChange={updateS} />
@@ -872,6 +914,7 @@ const SettingsComponent = () => {
         </div>
         <div className="mt-3 text-xs text-muted-foreground">After you log in to Suno, use the browser capture flow to persist the <code>studio-api_key</code>, <code>studio-api_key_local</code>, <code>__session</code> or <code>session_id</code> cookie to Settings. If you paste a bare token, it will be normalized to <code>studio-api_key=...</code>.</div>
       </Card>
+      )}
 
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Bot className="w-4 h-4 text-primary" /><h2 className="font-semibold">AI text provider (lyrics &amp; assist)</h2></div>
@@ -1045,11 +1088,12 @@ const SettingsComponent = () => {
           <Select value={s.image_engine || "flux"} onValueChange={(val) => updateS({ image_engine: val })}>
             <SelectTrigger className="w-full" data-testid="settings-image-engine"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="midjourney">Midjourney (browser automation)</SelectItem>
-              <SelectItem value="flux">FLUX.1 [schnell] (free, single-model, self-hosted)</SelectItem>
-              <SelectItem value="comfyui">ComfyUI (free, multi-model: styles, character consistency, animation)</SelectItem>
+              {visibleImageEngines(s, s.image_engine).map(([id, engine]) => (
+                <SelectItem key={id} value={id}>{engine.label} ({engine.note})</SelectItem>
+              ))}
             </SelectContent>
           </Select>
+          <EngineRisk engine={s.image_engine} kind="image" />
           <p className="text-xs text-muted-foreground mt-1">FLUX is a simple single-model server; ComfyUI is the multi-model engine for style presets, character consistency (IP-Adapter) and animation. Both run free on Kaggle/Colab or a local GPU. Configure whichever engine you select below.</p>
         </div>
       </Card>
@@ -1192,6 +1236,9 @@ const SettingsComponent = () => {
       </Card>
 
       {/* ── Suno without a browser ────────────────────────────────────────── */}
+
+      {/* Hidden with the engine it configures: a Suno panel with no Suno option is a puzzle. */}
+      {riskyShown && (
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Sparkles className="w-4 h-4 text-primary" /><h2 className="font-semibold">Suno session &amp; fallback</h2></div>
         <div className="text-sm text-muted-foreground mb-3">
@@ -1234,6 +1281,7 @@ const SettingsComponent = () => {
           for research: an account can be rate-limited or suspended.
         </p>
       </Card>
+      )}
 
       {/* ── Print on demand ───────────────────────────────────────────────── */}
       <Card className="p-6 mb-5">
@@ -1383,6 +1431,9 @@ const SettingsComponent = () => {
         <div className="mt-3 text-xs text-muted-foreground">Run the FLUX notebook (<code>scripts/kaggle_flux/</code>) on a free Kaggle/Colab GPU — it prints a public URL you paste above. Kaggle/Colab share URLs rotate roughly every 72 hours, so re-paste when it expires. For a permanent setup, run the server on a local GPU and use <code>http://localhost:8002</code>.</div>
       </Card>
 
+
+      {/* Hidden unless the risky engines are switched on — the panel follows the engine. */}
+      {riskyShown && (
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Img className="w-4 h-4 text-primary" /><h2 className="font-semibold">Midjourney</h2><StatusPill k="mj" /></div>
         <div className="space-y-3">
@@ -1440,6 +1491,7 @@ const SettingsComponent = () => {
         <div className="mt-3 text-xs text-muted-foreground">Use the visible Midjourney browser flow to capture a Playwright profile directory. No legacy session cookie entry is required.</div>
         <Button size="sm" variant="secondary" data-testid="settings-test-mj" className="mt-3" onClick={()=>testS("mj")}><Cookie className="w-3 h-3 mr-2" />Test</Button>
       </Card>
+      )}
 
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Film className="w-4 h-4 text-primary" /><h2 className="font-semibold">Video composition</h2></div>

@@ -190,7 +190,10 @@ pub struct Settings {
     pub video_transition_dur: f64,
 }
 
-fn default_music_engine() -> String { "suno".into() }
+// The default is an engine with nothing to breach and no account to lose. Suno and Midjourney are
+// hidden behind `show_risky_engines` (see lib/engineCapabilities.js) precisely because reaching them
+// means driving the user's own logged-in session — so neither may be what a fresh install picks.
+fn default_music_engine() -> String { "heartmula".into() }
 fn default_none() -> String { "none".into() }
 fn default_acestep_duration() -> f64 { 240.0 }
 fn default_ffmpeg() -> String  { "ffmpeg".into() }
@@ -203,7 +206,7 @@ fn default_ai_provider() -> String { "openrouter".into() }
 fn default_anthropic_model() -> String { "claude-opus-5".into() }
 fn default_openai_model() -> String { "gpt-5.1".into() }
 fn default_gemini_model() -> String { "gemini-3.5-flash".into() }
-fn default_image_engine() -> String { "midjourney".into() }
+fn default_image_engine() -> String { "flux".into() }
 fn default_comfy_ckpt() -> String { "sd_xl_base_1.0.safetensors".into() }
 fn default_comfy_style() -> String { "photoreal".into() }
 fn default_comfy_steps() -> i64 { 30 }

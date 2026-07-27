@@ -139,7 +139,7 @@ export default function Workflow() {
   useEffect(() => {
     if (!activeProjectId) return;
     api.getSettings(activeProjectId)
-      .then((s) => setEngines({ music_engine: s?.music_engine || "suno", image_engine: s?.image_engine || "midjourney" }))
+      .then((s) => setEngines({ music_engine: s?.music_engine || "heartmula", image_engine: s?.image_engine || "flux" }))
       .catch(() => {});
   }, [activeProjectId]);
 
