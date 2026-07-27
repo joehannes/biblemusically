@@ -254,6 +254,17 @@ export default {
       if (path === "/") {
         return new Response(SITE_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
+
+      // A short path worth saying out loud. The workers.dev subdomain is fixed to the account name
+      // and cannot be shortened, so until a real domain is attached this is the shortest thing that
+      // can be read down a phone: ".../get". Any ?ref= is carried through, so a share link still
+      // credits whoever sent it.
+      if (path === "/get" || path === "/download") {
+        const ref = (url.searchParams.get("ref") || "").trim().slice(0, 40);
+        await bump(env, "visit_get");
+        const target = ref ? `/?ref=${encodeURIComponent(ref)}#get` : "/#get";
+        return Response.redirect(new URL(target, url).toString(), 302);
+      }
       if (path === "/health") return json({ ok: true, service: "studio-lightkid", now: nowIso() });
 
       // The terms as a readable page rather than only as JSON for the app. Rendered client-side from the

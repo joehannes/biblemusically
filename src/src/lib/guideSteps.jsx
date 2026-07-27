@@ -8,10 +8,11 @@ import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 import {
   Bot, KeyRound, Cpu, FolderOpen, Youtube, CheckCircle2, ExternalLink,
-  Loader2, Music2, Image as Img, Upload, Languages, Target, Volume2, ShieldCheck,
+  Loader2, Music2, Image as Img, Upload, Languages, Target, Volume2, ShieldCheck, ScrollText,
 } from "lucide-react";
 import YouTubeStepBody from "./guideYouTube";
 import VoicePicker from "../components/VoicePicker";
+import Markdown from "../components/Markdown";
 import {
   UI_LANGUAGES, setUiLanguage, getUiLanguage, isBundledLanguage,
   customLanguages, addCustomLanguage,
@@ -611,7 +612,60 @@ function PermissionsStepBody({ settings, onDone }) {
 }
 
 // ── The registry ─────────────────────────────────────────────────────────────
+/// The terms, read from the server so they are never a stale copy compiled into the binary.
+///
+/// First in the guide on purpose. Everything here is about what leaves the machine, and asking
+/// somebody to agree to that *after* they have set up four API keys is asking at the point where
+/// saying no is expensive.
+function TermsStepBody({ settings, save }) {
+  const [terms, setTerms] = useState("");
+  useEffect(() => {
+    api.subsTerms()
+      .then((t) => setTerms(t?.markdown || t?.text || "The terms could not be loaded right now."))
+      .catch(() => setTerms("The terms could not be loaded — check your connection."));
+  }, []);
+  return (
+    <div className="space-y-3">
+      <div className="max-h-64 overflow-y-auto rounded-lg border border-border/60 p-3 text-xs leading-relaxed">
+        <Markdown text={terms} />
+      </div>
+      <label className="flex items-start gap-2 text-sm cursor-pointer">
+        <input type="checkbox" className="accent-primary mt-1"
+               data-testid="guide-terms-accept"
+               checked={!!settings?.terms_accepted_at}
+               onChange={(e) => save({ terms_accepted_at: e.target.checked ? new Date().toISOString() : "" })} />
+        <span>
+          <b>I have read these.</b>
+          <span className="text-muted-foreground"> The short version: your work stays on your
+          machine, crashes are reported automatically so they can be fixed, and during the free week
+          which screens you open is counted. Nothing you write is ever sent unless you press send.</span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-sm cursor-pointer">
+        <input type="checkbox" className="accent-primary mt-1"
+               data-testid="guide-hotjar-optin"
+               checked={settings?.hotjar_opt_in === true}
+               onChange={(e) => save({ hotjar_opt_in: e.target.checked })} />
+        <span>
+          <b>Record how I use the app, to help fix it.</b>
+          <span className="text-muted-foreground"> Off unless you switch it on, and off by default
+          forever. This one loads a third-party script (Hotjar) that watches clicks and scrolling in
+          the interface — which is why it is a question rather than a default.</span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
 export const GUIDE_STEPS = [
+  {
+    id: "terms",
+    title: "What this does with what it sees",
+    icon: ScrollText,
+    blurb: "The terms, in the order that matters — before anything is connected.",
+    isDone: (s) => !!s?.terms_accepted_at,
+    Body: TermsStepBody,
+  },
   {
     id: "language",
     title: "Your language",

@@ -23,6 +23,7 @@ import Clipboard from "./pages/Clipboard";
 import AccessGuides from "./pages/AccessGuides";
 import Team from "./pages/Team";
 import Account from "./pages/Account";
+import Feedback from "./pages/Feedback";
 import BibleSources from "./pages/BibleSources";
 import AIComposer from "./pages/AIComposer";
 import FreeformComposer from "./pages/FreeformComposer";
@@ -40,7 +41,10 @@ import Insights from "./pages/Insights";
 import Social from "./pages/Social";
 import DataSync from "./pages/DataSync";
 import Settings from "./pages/Settings";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { installErrorReporting } from "./lib/errorReporting";
+import { installAnalytics, installHotjar } from "./lib/analytics";
 
 // First-run gate: show the guided onboarding wizard until `onboarded` is set in settings, then the
 // normal app. On any error reading settings we fail OPEN (show the app) so a settings hiccup can
@@ -113,6 +117,7 @@ function RootGate() {
             <Route path="/access" element={<AccessGuides />} />
             <Route path="/team" element={<Team />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/feedback" element={<Feedback />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/characters" element={<Characters />} />
             <Route path="/upload" element={<Upload />} />
@@ -129,10 +134,58 @@ function RootGate() {
 }
 
 export default function App() {
+  // Errors are caught and sent on their own; anything with the user's own words in it is only ever
+  // sent because they pressed send. See lib/errorReporting.js — and the terms, which say so plainly.
+  // Counting views and steps, batched. The backend decides whether it is allowed to send at all
+  // (trial: yes and the terms say so; paying: only if they said yes), because a rule the interface
+  // owns is a rule the interface can be talked out of.
+  useEffect(() => installAnalytics((payload) => api.trackEvents(payload)), []);
+
+  // Hotjar is a third party watching the interface, so it is opt-in, off by default, and removed
+  // again the moment it is switched off — script and cookies both.
+  useEffect(() => {
+    let stop = () => {};
+    (async () => {
+      try {
+        const [settings, pricing] = await Promise.all([api.getSettings(), api.subsPricing()]);
+        stop = installHotjar({
+          optedIn: settings?.hotjar_opt_in === true,
+          siteId: pricing?.hotjar_site_id || "",
+        });
+      } catch { /* no analytics is the safe failure */ }
+    })();
+    return () => stop();
+  }, []);
+
+  useEffect(() => installErrorReporting({
+    send: (report) => api.sendReport(report),
+    notify: ({ message, fingerprint, count }) => {
+      toast.error("Something went wrong — I have been told about it.", {
+        description: count > 1 ? `${message} (${count} times this session)` : message,
+        duration: 12000,
+        action: {
+          label: "Add what you were doing",
+          onClick: () => {
+            const comment = window.prompt(
+              "What were you doing when this happened? It goes straight to the author, with nothing else.");
+            if (comment?.trim()) {
+              api.sendReport({ kind: "error", fingerprint, comment: comment.trim(), message })
+                .then(() => toast.success("Sent. Thank you — that is genuinely how things get fixed."))
+                .catch(() => toast.error("That could not be sent. It will be in the next report."));
+            }
+          },
+        },
+      });
+    },
+  }), []);
+
   return (
     <StudioProvider>
       <BrowserRouter>
-        <RootGate />
+        {/* One boundary around the whole interface: a white screen tells nobody anything. */}
+        <ErrorBoundary where="app">
+          <RootGate />
+        </ErrorBoundary>
         <Toaster position="bottom-right" theme="dark" richColors />
       </BrowserRouter>
     </StudioProvider>

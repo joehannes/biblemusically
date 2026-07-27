@@ -500,10 +500,22 @@ should say so.
 Lettering conventions are worth respecting: comic lettering is conventionally all-caps in a lettering face
 rather than a body face. Comic Neue is OFL; there are proper lettering faces in the Google pool.
 
-### 7. The rest of the subscription surface
+### 7. The rest of the subscription surface — **done in v0.95.0**
 
-Feedback view with templates and share-to-social; the T&C in the Welcome Guide (the `Markdown` component
-already renders it); analytics event wiring through `track_events`; Hotjar as an opt-in only.
+All four, plus the error reporting that makes the `/v1/reports` endpoint worth having:
+
+- **Errors report themselves.** `lib/errorReporting.js` installs `window.onerror` and
+  `unhandledrejection`, and `ErrorBoundary` catches a render crash instead of showing a white screen.
+  Four things it must get right, each tested: never ship a secret (`redact()` covers every provider
+  key shape this app holds, and a macOS home directory with a space in it), never storm (one report
+  per fingerprint per hour, 25 a session), never interrupt twice for the same fault, never throw.
+- **Feedback view** with five templates. The three-line bug template is the point: "it broke" is not
+  actionable and neither is silence.
+- **The terms are the first step of the welcome guide**, not the last. Asking somebody to agree after
+  they have set up four API keys is asking at the point where saying no is expensive.
+- **Analytics** batch through `track_events`, with a session ceiling and a flush on hide/unload.
+- **Hotjar is opt-in**, off by default forever, and switching it off removes the script *and* the
+  cookies it set.
 
 ### 8. Finish the catalogues
 
@@ -516,10 +528,13 @@ Never yet attempted. Unsigned APK for sideloading first (`docs/INSTALL.md` cover
 a signed AAB. **The Play Store submission needs the owner**: a developer account, agreements accepted in
 person, a listing, screenshots and a content rating. Nothing about that can be automated.
 
-### 10. A short link
+### 10. A short link — **the `/get` alias is done and deployed (v0.95.0)**
 
-Needs a domain (~$10/yr, free to attach to the Worker). `workers.dev` subdomains are fixed to the account
-name and cannot be made short. Until then, add a `/get` path as an alias.
+`…workers.dev/get` and `/download` both redirect to the site's download section, carrying any `?ref=`
+through so a shared link still credits whoever sent it, and counting `visit_get`.
+
+A real domain is still the actual answer (~$10/yr, free to attach to the Worker): `workers.dev`
+subdomains are fixed to the account name and cannot be made short. That needs the owner to buy one.
 
 ## Open milestones (2026-07-26, decided) — the commercial pass
 
