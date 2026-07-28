@@ -329,8 +329,42 @@ pub async fn author_publicity_set(state: State<'_, AppState>, song_id: String, p
         return Err("No social accounts are connected yet — connect one in Social Presence first.".into());
     }
 
+    // One request per platform, and deliberately not batched: these are long-form pieces with
+    // platform-specific rules, and asking for five in one reply invites a truncated answer that
+    // loses all five. So the cost is real — and the honest thing is to check it can be paid before
+    // spending any of it.
+    //
+    // Starting five when three remain does not produce three good pieces and a clear error; it
+    // produces three pieces, a failure, and no allowance left for the retry. Trimming to what fits
+    // and naming what was left out spends the same requests and leaves the user able to act.
+    let mut targets = targets;
+    let mut skipped: Vec<Value> = Vec::new();
+    {
+        let settings = state.db.collection::<Document>("settings")
+            .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
+            .map(bson_to_value).unwrap_or_default();
+        let budget: u64 = ["openrouter", "gemini"].iter()
+            .filter(|p| crate::ai_budget::configured(p, &settings))
+            .filter_map(|p| crate::ai_budget::remaining(p, &settings))
+            .sum();
+        // Only meaningful when something is actually rationed; a billed key has no ceiling to trim to.
+        let rationed = ["openrouter", "gemini"].iter()
+            .any(|p| crate::ai_budget::configured(p, &settings)
+                  && crate::ai_budget::daily_cap(p, &settings).is_some());
+        if rationed && (budget as usize) < targets.len() {
+            let keep = budget as usize;
+            for platform in targets.split_off(keep) {
+                skipped.push(json!({
+                    "platform": platform,
+                    "error": "Left for tomorrow — today's free AI allowance would not cover it. \
+                              It resets at midnight UTC, or another provider's key covers it now.",
+                }));
+            }
+        }
+    }
+
     let mut written = Vec::new();
-    let mut failed = Vec::new();
+    let mut failed = skipped;
     for platform in targets {
         // Sequential on purpose: a free tier that gets four concurrent requests answers with 429s.
         match author_piece(&state, AuthorPieceRequest {

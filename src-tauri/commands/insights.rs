@@ -408,6 +408,15 @@ pub async fn quota_report(state: State<'_, AppState>) -> Res<Value> {
     let kaggle_accounts = settings["kaggle_accounts"].as_array().map(|a| a.len()).unwrap_or(0);
     let disk = disk_free(state.db.global_root());
 
+    // Computed before the json! below rather than inside it: the macro cannot parse a method chain
+    // hanging off an array literal in value position.
+    let ai_used_today = crate::ai_budget::usage_today();
+    let ai_free_remaining: u64 = ["openrouter", "gemini"].iter()
+        .filter(|p| crate::ai_budget::configured(p, &settings))
+        .filter_map(|p| crate::ai_budget::remaining(p, &settings))
+        .sum();
+    let ai_rotation = crate::ai_budget::rotation(&settings);
+
     Ok(json!({
         "youtube": {
             "label": "YouTube uploads",
@@ -422,12 +431,20 @@ pub async fn quota_report(state: State<'_, AppState>) -> Res<Value> {
             "limit_note": "30 GPU hours per account per week, resetting Saturday 00:00 UTC. Add accounts to rotate when one runs out.",
             "active": settings["kaggle_active"],
         },
+        // Real counts, from the ledger every provider call is recorded in — not the job count this
+        // used to report. That proxy was wrong in both directions: most AI calls never create a job
+        // (lyrics, styles, translation, the guide, upload metadata), and most jobs are not AI calls
+        // (music, images, video, uploads). `jobs_today` is kept because it is a true and separate
+        // fact worth seeing next to it, but it no longer pretends to be the AI number.
         "ai": {
             "label": "AI requests",
             "provider": settings["ai_provider"],
+            "used_today": ai_used_today,
+            "free_remaining": ai_free_remaining,
+            "rotation": ai_rotation,
             "jobs_today": ai_jobs_today,
             "failed_today": failed_today,
-            "limit_note": "OpenRouter free models allow ~50 requests/day (1,000 with credits); Gemini's free tier is per-minute and per-day per model. Repeated failures today usually mean the limit, not a bug.",
+            "limit_note": "OpenRouter's free tier is 50 requests a day for the whole account (1,000 with credits); Gemini's free tier is per-minute and per-day per model. The app rotates to another configured provider when one is spent, and stops asking one that has nothing left.",
         },
         "disk": disk,
     }))
