@@ -313,11 +313,31 @@ function repaintDocument(code) {
   return applyKnown(textNodes, attrTargets, st.catalog, null);
 }
 
+/**
+ * Put every string we translated back to English.
+ *
+ * The condition here used to be `nodeValue === __i18nApplied` — restore only what still looks
+ * exactly like what we wrote. That is one whitespace change away from stranding a translation
+ * forever, and stranding it is not a cosmetic failure:
+ *
+ *   1. the node keeps its German text and is not restored;
+ *   2. `baselineOriginal` sees a value that is neither the original nor what we applied, so it
+ *      concludes the app wrote it and re-baselines — the German becomes the node's "English";
+ *   3. the Hebrew catalogue is keyed by English, so that node now matches nothing, ever.
+ *
+ * Which is exactly the reported bug: switching to Hebrew left some titles in German, permanently,
+ * because by then the app believed German was the source text.
+ *
+ * So ownership decides, not equality. `__i18nApplied !== undefined` means we wrote this node and
+ * have not restored it since — enough to put the original back. If the app really did change the
+ * text underneath us, `baselineOriginal` re-baselines on the next pass and the mistake lasts one
+ * frame; the old rule's mistake lasted until reload.
+ */
 function restoreOriginals() {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
   let n;
   while ((n = walker.nextNode())) {
-    if (n.__i18nOriginal !== undefined && n.nodeValue === n.__i18nApplied) {
+    if (n.__i18nOriginal !== undefined && n.__i18nApplied !== undefined) {
       n.nodeValue = n.__i18nOriginal;
       n.__i18nApplied = undefined;
     }
@@ -327,7 +347,7 @@ function restoreOriginals() {
     if (!store) return;
     for (const attr of ATTRS) {
       const rec = store[attr];
-      if (rec && rec.original != null && el.getAttribute(attr) === rec.applied) {
+      if (rec && rec.original != null && rec.applied !== undefined) {
         el.setAttribute(attr, rec.original);
         rec.applied = undefined;
       }

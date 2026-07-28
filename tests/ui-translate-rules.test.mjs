@@ -100,3 +100,29 @@ test("a long name is truncated without leaving a trailing separator", () => {
   assert.ok(slug.length <= 24, `got ${slug.length}`);
   assert.ok(!slug.endsWith("-"), `trailing dash in ${slug}`);
 });
+
+// ── The two length ceilings, and what falls between them ────────────────────
+//
+// Reported from a phone: switching to German left the long explanatory paragraphs in English, and
+// switching on to Hebrew left some already-German titles in German. Two unrelated causes, and this
+// file can only pin the first — the second is a DOM-restore bug, fixed in uiTranslate.js.
+//
+// A sentence over 140 characters never reaches the inventory (MAX_LEN in scripts/extract-ui-strings.mjs),
+// and `mayTranslate` refuses anything over 80 that the inventory does not already vouch for. So the
+// app's descriptive paragraphs — most of which sit well past both — are not "missing a translation".
+// They are unreachable by construction, in every language including the bundled ones.
+test("a long description is refused unless the extractor already vouched for it", () => {
+  const description =
+    "Applies to every engine. Kaggle gives about thirty GPU hours a week and a session holds its " +
+    "slot whether or not anything is generating, so a server nobody stopped costs next week's rendering.";
+  assert.ok(description.length > 140, "the fixture must be the length that is actually the problem");
+
+  // Not in the inventory: refused, because it is over 80 characters.
+  assert.equal(mayTranslate(description, new Set(), 0, 300), false,
+    "over 80 chars and unvouched — this is the English-description bug");
+
+  // In the inventory: allowed at any length. Which is the fix — raising the extractor's MAX_LEN
+  // puts these strings in the inventory, and once there the runtime cap does not apply to them.
+  assert.equal(mayTranslate(description, new Set([description]), 0, 0), true,
+    "the inventory overrides the length cap, so extraction is where this is decided");
+});
