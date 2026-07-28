@@ -545,11 +545,38 @@ pub async fn sync_channel_to_youtube(
     // read back from YouTube but are not writable through this endpoint, so a payload built
     // under `snippet` (as this used to do) is silently ignored by the API: the call succeeds
     // but nothing actually changes on the channel.
-    let mut branding_channel = serde_json::json!({
-        "title": channel["name"],
-        "description": description,
-        "keywords": keywords,
-    });
+    // Read what is on the channel before writing over it.
+    //
+    // `channels.update` treats the `brandingSettings` part as the whole resource, not as a patch:
+    // fields absent from the payload are reset. Sending just title/description/keywords therefore
+    // clears anything else living under `brandingSettings.channel` — the unsubscribed trailer most
+    // painfully, since that is a video the owner chose and nothing in this app would put back. The
+    // API reports success either way, so the loss would show up as "my channel trailer disappeared"
+    // days later, with no reason to connect it to a description sync.
+    //
+    // A failed read is not a reason to refuse the write — the user asked for a sync — but it is a
+    // reason not to pretend the merge happened, so it starts from empty and says so in the log.
+    let existing = http
+        .get("https://www.googleapis.com/youtube/v3/channels")
+        .query(&[("part", "brandingSettings"), ("id", youtube_channel_id)])
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .ok();
+    let mut branding_channel = match existing {
+        Some(r) if r.status().is_success() => r
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|v| v["items"][0]["brandingSettings"]["channel"].as_object().cloned())
+            .map(Value::Object)
+            .unwrap_or_else(|| serde_json::json!({})),
+        _ => serde_json::json!({}),
+    };
+
+    branding_channel["title"] = channel["name"].clone();
+    branding_channel["description"] = serde_json::json!(description);
+    branding_channel["keywords"] = serde_json::json!(keywords);
     // `region` may be an explicit override or the AI's inferred `suggested_region` (see
     // translate_and_apply_settings) — either way it's an ISO 3166-1 alpha-2 code, which is
     // exactly what brandingSettings.channel.country expects.
