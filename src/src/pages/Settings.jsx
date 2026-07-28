@@ -177,6 +177,11 @@ const initialSettings = {
   comfyui_ip_weight: 0.7,
   comfyui_prompt_prefix: "",
   comfyui_workflow_mode: "auto",
+  // Which bundled graph "auto" reaches for, and the LoRA the style graph carries. Defaults keep an
+  // untouched install on the one-pass graph it used before these existed.
+  comfyui_want: "fresh",
+  comfyui_lora: "",
+  comfyui_lora_strength: "",
   comfyui_custom_workflow: "",
   video_width: 1280,
   video_height: 720,
@@ -1288,7 +1293,51 @@ const SettingsComponent = () => {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Which of the bundled graphs "auto" should reach for. The registry still overrides this
+              when a picture has a character reference — holding a face needs a specific graph, and
+              silently ignoring the reference to honour a dropdown would be the wrong trade. */}
+          {s.comfyui_workflow_mode !== "custom" && (
+            <div className="space-y-1">
+              <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Picture style</Label>
+              <Select value={s.comfyui_want || "fresh"} onValueChange={(val) => updateS({ comfyui_want: val })}>
+                <SelectTrigger className="w-full" data-testid="settings-comfy-want"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fresh">Standard — one pass, fastest</SelectItem>
+                  <SelectItem value="hires">Extra detail — two passes, slower and sharper</SelectItem>
+                  <SelectItem value="lora">Style LoRA — a consistent look a prompt cannot describe</SelectItem>
+                  <SelectItem value="transparent">Cut out — no background, for products</SelectItem>
+                  <SelectItem value="print">Print — enlarged with detail put back</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {s.comfyui_want === "hires" && "Generated, enlarged, then re-sampled. Roughly twice the time of standard for detail a single pass cannot resolve."}
+                {s.comfyui_want === "lora" && "SDXL only — a FLUX checkpoint is generated without the LoRA and the job log says so."}
+                {s.comfyui_want === "transparent" && "Generated on a flat backdrop and cut out, because a white rectangle behind a design prints as a white rectangle."}
+                {s.comfyui_want === "print" && "A second pass over a picture you already have, not a new one."}
+                {(!s.comfyui_want || s.comfyui_want === "fresh") && "Pictures with a character reference always use the character graph, whatever is chosen here."}
+              </p>
+            </div>
+          )}
         </div>
+
+        {/* Only where it does something. A LoRA filename with no LoRA graph selected is a setting
+            that silently has no effect, which is worse than not offering it. */}
+        {s.comfyui_workflow_mode !== "custom" && s.comfyui_want === "lora" && (
+          <div className="mt-3 grid md:grid-cols-2 gap-4">
+            <Field k="comfyui_lora" label="LoRA file name"
+                   placeholder="e.g. sacred-illumination-xl.safetensors"
+                   testid="settings-comfy-lora" value={s.comfyui_lora} onValueChange={updateS} />
+            <Field k="comfyui_lora_strength" label="LoRA strength (0–2, default 0.85)" type="number"
+                   testid="settings-comfy-lora-strength" value={s.comfyui_lora_strength} onValueChange={updateS} />
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              The name must match a file in the ComfyUI server's <code>models/loras</code> folder exactly,
+              extension included. ComfyUI has no default to fall back to, so a misspelt name is a node
+              error rather than a picture without the style. Around 0.8 carries a look; above about 1.2
+              it starts overwhelming the prompt.
+            </p>
+          </div>
+        )}
         {s.comfyui_workflow_mode === "custom" && (
           <div className="mt-3 space-y-1">
             <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Custom ComfyUI workflow (API format JSON)</Label>
