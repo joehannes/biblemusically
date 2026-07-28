@@ -199,6 +199,40 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
     let mut uploads = Vec::new();
     while let Some(Ok(d)) = cursor.next().await { uploads.push(bson_to_value(d)); }
 
+    // ── Pass one: what needs saying, and what the model needs to know to say it ──────────────
+    //
+    // Gathered before anything is asked, so the AI can be called once for the whole set instead of
+    // twice per upload. See enrich_batch — this split is the whole reason a day's free allowance
+    // now covers a workflow it previously could not.
+    let mut ask: Vec<Value> = Vec::new();
+    for u in &uploads {
+        let Some(song_id) = u["song_id"].as_str() else { continue };
+        if !regenerate && !only_empty { continue; }
+        let needs_desc = regenerate || u["description"].as_str().map_or(true, |s| s.is_empty());
+        let needs_tags = regenerate || u["tags"].as_array().map_or(true, |a| a.is_empty());
+        if !needs_desc && !needs_tags { continue; }
+
+        let song = state.db.collection::<Document>("songs")
+            .find_one(doc! { "id": song_id }).await.map_err(e)?
+            .map(bson_to_value).unwrap_or_default();
+        let ch = if let Some(cid) = u["channel_id"].as_str() {
+            state.db.collection::<Document>("channels")
+                .find_one(doc! { "id": cid }).await.map_err(e)?
+                .map(bson_to_value).unwrap_or_default()
+        } else { Value::default() };
+
+        ask.push(serde_json::json!({
+            "id": u["id"].as_str().unwrap_or(""),
+            "title": song["title"].as_str().unwrap_or(""),
+            "language": song["language"].as_str().unwrap_or("English"),
+            "style": song["styles"].as_str().unwrap_or(""),
+            "channel": ch["name"].as_str().unwrap_or(""),
+            "lyrics": song["lyrics"].as_str().unwrap_or("").chars().take(300).collect::<String>(),
+        }));
+    }
+    let enriched = enrich_batch(&state.db, &ask, &global_desc).await;
+
+    // ── Pass two: write it, falling back per upload for anything the batch did not answer ─────
     let mut updated = 0usize;
     for u in &uploads {
         let Some(song_id) = u["song_id"].as_str() else { continue; };
@@ -231,13 +265,13 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
             chunk.insert("title".into(), song["title"].clone());
         }
         if need_desc {
-            let ai_desc = qwen_text(
-                &state.db,
-                "You adapt YouTube video descriptions for different languages and music styles. Reply ONLY with the adapted description text — no preamble, no markdown.",
-                &format!("Source description (English):\n{global_desc}\n\nAdapt for: language={lang}, style='{style}', channel='{}'. Keep tone, include the song title '{}' near top, end with up to 5 relevant hashtags.",
-                    ch["name"].as_str().unwrap_or(""),
-                    song["title"].as_str().unwrap_or("")),
-            ).await;
+            // From the one batched request, not a request of its own.
+            let ai_desc = enriched
+                .get(u["id"].as_str().unwrap_or(""))
+                .and_then(|v| v["description"].as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             let desc = if ai_desc.is_empty() {
                 format!("{}\n\nA {style} interpretation in {lang}.\n\n{global_desc}\n\n#AIMusicVideo #{lang} #{}", 
                     song["title"].as_str().unwrap_or(""), style.replace(' ', ""))
@@ -247,16 +281,13 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
             chunk.insert("description".into(), Value::String(desc));
         }
         if need_tags {
-            let ai_tags = qwen_text(
-                &state.db,
-                "You generate a JSON array of 8-12 short, lowercase, hyphen-free YouTube tags (no leading #). Reply ONLY with the JSON array.",
-                &format!("Music style: {style}\nLanguage: {lang}\nTitle: {}\nLyrics snippet: {lyrics}", song["title"].as_str().unwrap_or("")),
-            ).await;
+            // Likewise from the batch.
+            let ai_tags: Vec<Value> = enriched
+                .get(u["id"].as_str().unwrap_or(""))
+                .and_then(|v| v["tags"].as_array().cloned())
+                .unwrap_or_default();
             let tags: Vec<Value> = if !ai_tags.is_empty() {
-                let re = Regex::new(r"\[[\s\S]*\]").unwrap();
-                re.find(&ai_tags)
-                    .and_then(|m| serde_json::from_str::<Vec<Value>>(m.as_str()).ok())
-                    .unwrap_or_default()
+                ai_tags
                     .into_iter()
                     .filter_map(|v| v.as_str().map(|s| Value::String(s.trim().trim_start_matches('#').to_string())))
                     .take(12)
@@ -281,6 +312,61 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
         }
     }
     Ok(serde_json::json!({ "updated": updated, "total_pending": uploads.len() }))
+}
+
+/// How many uploads go into one enrichment request.
+///
+/// Eight rather than "all of them": a prompt carrying forty songs invites a truncated answer, and a
+/// truncated answer loses the whole batch rather than one entry. Eight keeps the reply comfortably
+/// inside a default token budget while still turning what used to be sixteen requests into one.
+const ENRICH_BATCH: usize = 8;
+
+/// Description and tags for a batch of uploads, in one request instead of two per upload.
+///
+/// This function is the difference between "a full workflow fits in a day's free allowance" and "it
+/// does not". The loop it replaces called the AI twice for every pending upload — once for the
+/// description, once for the tags — so ten uploads spent twenty of OpenRouter's fifty daily
+/// requests on metadata alone, and a batch of forty could not complete at all.
+///
+/// Returns a map from upload id to whatever the model produced. A missing entry is not an error:
+/// the caller keeps its own non-AI fallback for anything not answered, so a partial reply degrades
+/// to the previous behaviour for the stragglers rather than failing the batch.
+async fn enrich_batch(db: &crate::store::Db, items: &[Value], global_desc: &str) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
+    if items.is_empty() { return out; }
+
+    for chunk in items.chunks(ENRICH_BATCH) {
+        let list = Value::Array(chunk.to_vec());
+        let reply = qwen_text(
+            db,
+            "You write YouTube metadata for music videos. You are given a JSON array of songs. \
+             Reply with ONLY a JSON array, same length and same order, each element \
+             {\"id\": \"<the id you were given>\", \"description\": \"...\", \"tags\": [\"...\"]}. \
+             Each description keeps the source tone, names the song title near the top, is written \
+             in that entry's language, and ends with up to 5 relevant hashtags. Each tags array has \
+             8-12 short lowercase tags with no leading '#'. No preamble, no markdown.",
+            &format!(
+                "Source description (English), to adapt for every entry:\n{global_desc}\n\nSongs:\n{}",
+                serde_json::to_string(&list).unwrap_or_default()
+            ),
+        ).await;
+
+        if reply.trim().is_empty() { continue; }
+        // The model is asked for a bare array; some wrap it in prose anyway, so take the first array
+        // in the reply rather than trusting the whole string to parse.
+        let Some(found) = Regex::new(r"\[[\s\S]*\]").ok().and_then(|re| re.find(&reply).map(|m| m.as_str().to_string())) else { continue };
+        let Ok(parsed) = serde_json::from_str::<Vec<Value>>(&found) else { continue };
+
+        for entry in parsed {
+            // Keyed by the id the model was given, not by position: an answer that drops or reorders
+            // an entry would otherwise write one song's description onto another's upload, which is
+            // worse than no enrichment at all and would not look like a bug until it was published.
+            let Some(id) = entry["id"].as_str().filter(|s| !s.is_empty()) else { continue };
+            if !chunk.iter().any(|c| c["id"].as_str() == Some(id)) { continue; }
+            out.insert(id.to_string(), entry);
+        }
+    }
+    out
 }
 
 // ────────────────────────────────────────────────────────────────

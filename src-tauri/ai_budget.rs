@@ -179,7 +179,8 @@ pub fn workflow_cost() -> Value {
               "note": "One request for the whole song when batched." },
             { "id": "characters","label": "Character proposals",          "requests": 1, "once": true },
             { "id": "upload",    "label": "Title, description, tags",     "requests": 1, "once": false,
-              "note": "One request per song; per channel only when the channel language differs." },
+              "note": "One request per eight uploads, not per upload — descriptions and tags for the \
+                       whole batch come back together. Counted as 1 here so the estimate errs high." },
             { "id": "publicity", "label": "Publicity pieces",             "requests": 1, "once": false,
               "optional": true },
             { "id": "guide",     "label": "The guide answering questions","requests": 2, "once": false,
