@@ -107,10 +107,19 @@ pub async fn service_health(state: State<'_, AppState>) -> Res<Value> {
     ];
 
     // The AI provider has no periodic validator; report configuration only, and say so.
-    let ai_configured = match ai_provider.as_str() {
-        "gemini" => has(&settings, "gemini_api_key"),
-        _ => has(&settings, "openrouter_api_key"),
-    };
+    //
+    // Any configured provider counts, not just the selected one. This used to check the *selected*
+    // provider and default everything that was not Gemini to OpenRouter — so a user who pasted an
+    // Anthropic or OpenAI key was told they had no AI key at all, and so was anyone whose key and
+    // `ai_provider` had drifted apart. It was reported from a phone as exactly that: a saved Gemini
+    // key, and the next screen refusing to plan because there was "no API key".
+    //
+    // Matching the guide step's own isDone, and matching what actually happens at call time —
+    // `provider_chat` rotates to any configured provider with budget left, so a key that exists is a
+    // key that gets used (see ai_budget::rotation).
+    let ai_configured = ["openrouter", "gemini", "anthropic", "openai"]
+        .iter()
+        .any(|p| crate::ai_budget::configured(p, &settings));
 
     let blocking: Vec<Value> = services
         .iter()

@@ -396,3 +396,19 @@ pub fn pick_folder_blocking(_app: &tauri::AppHandle) -> Result<PathBuf, String> 
          directory instead."
         .to_string())
 }
+
+/// Open a URL in whatever the platform considers the user's browser.
+///
+/// Not `open::that`. That crate shells out to xdg-open/open/start, none of which exist on Android —
+/// so every "open the Kaggle settings page" and "open Google Cloud credentials" button returned an
+/// OS error and opened nothing, which is exactly how it was reported from a phone.
+///
+/// The opener plugin's *standalone* `open_url` is the same trap: it wraps the same crate. Only
+/// `OpenerExt` on an AppHandle reaches the mobile plugin, which fires a real ACTION_VIEW intent —
+/// hence the handle argument, which is the whole reason this helper exists.
+pub fn open_external<R: tauri::Runtime>(app: &tauri::AppHandle<R>, url: &str) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|err| format!("Could not open {url}: {err}"))
+}

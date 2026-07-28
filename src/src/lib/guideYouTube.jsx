@@ -6,6 +6,7 @@ import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 import { CheckCircle2, ExternalLink, Loader2, Youtube, Plus, ShieldCheck, Copy, ShieldAlert } from "lucide-react";
 import { DEFAULT_OAUTH_REDIRECT, isLoopbackRedirect } from "./oauthRedirect";
+import { openExternalUrl } from "../lib/openLogin";
 
 // Guided YouTube publishing setup, reusable both in the first-run wizard and on demand (e.g. the
 // upload step checks this prerequisite and re-opens just this panel when it isn't satisfied).
@@ -133,7 +134,7 @@ export default function YouTubeStepBody({ onDone }) {
                 a missing or extra trailing slash is a different URI to Google, and the sign-in fails with
                 <span className="font-mono"> redirect_uri_mismatch</span>.
               </div>
-              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer"
+              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" onClick={(e) => { e.preventDefault(); openExternalUrl("https://console.cloud.google.com/apis/credentials"); }}
                 className="text-primary inline-flex items-center gap-1 pt-0.5">
                 Open Google Cloud Credentials <ExternalLink className="w-3 h-3" />
               </a>

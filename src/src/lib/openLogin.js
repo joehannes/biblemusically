@@ -39,10 +39,28 @@ export function needsExternalBrowser(url) {
  * a caller outside the router (a dialog, a toast action) fall back to the system browser.
  * Returns "internal" | "external" so the caller can tell the user where it went.
  */
+/**
+ * A phone has one webview and the app is already using it.
+ *
+ * The in-app browser is a second webview positioned over the window — machinery that exists only on
+ * desktop (see `install_layout`, a no-op everywhere else). On Android, routing a sign-in "internally"
+ * therefore navigates *the app's own window* to that page, or does nothing at all. Reported as both:
+ * the OpenRouter key page opening inside the app instead of a browser, and the Kaggle and Google
+ * links raising an OS error and opening nothing.
+ *
+ * So mobile always leaves. This is not a preference to be overridden — a remembered "internal" from
+ * a desktop session must not follow the user onto a phone and break every sign-in there.
+ */
+const isMobile = () => {
+  try {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  } catch { return false; }
+};
+
 export function openLoginUrl(url, { navigate, label, recommended, force } = {}) {
   const pref = force || loginPreference();
-  const mustLeave = needsExternalBrowser(url);
-  const target = pref || (mustLeave ? "external" : recommended || "internal");
+  const mustLeave = needsExternalBrowser(url) || isMobile();
+  const target = pref && !isMobile() ? pref : (mustLeave ? "external" : recommended || "internal");
 
   if (target === "internal" && !mustLeave && navigate) {
     navigate(`/browser?url=${encodeURIComponent(url)}&label=${encodeURIComponent(label || "Sign in")}`);
@@ -61,4 +79,18 @@ export function openLoginUrl(url, { navigate, label, recommended, force } = {}) 
     try { window.open(url, "_blank", "noopener"); } catch { /* nothing left to try */ }
   });
   return "external";
+}
+
+/**
+ * Open a plain link out to the system browser.
+ *
+ * For `<a target="_blank">` anchors, which are a silent no-op inside an Android WebView exactly as
+ * `window.open` is — the Google Cloud credentials link was reported as "does nothing" for this
+ * reason. The anchor stays in the markup so it is still a real link to a screen reader and still
+ * middle-clickable on desktop; this just intercepts the ordinary click.
+ */
+export function openExternalUrl(url) {
+  openUrl(url).catch(() => {
+    try { window.open(url, "_blank", "noopener"); } catch { /* nothing left to try */ }
+  });
 }

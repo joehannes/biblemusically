@@ -1010,9 +1010,9 @@ pub async fn refresh_all_channel_metadata(state: State<'_, AppState>) -> Res<Val
 /// Google session and YouTube's own UI — it cannot be automated — so the app opens the official page
 /// and the user then imports the fresh channel here by its @handle.
 #[tauri::command]
-pub async fn open_youtube_create_channel() -> Res<Value> {
+pub async fn open_youtube_create_channel(app: tauri::AppHandle) -> Res<Value> {
     let url = "https://www.youtube.com/create_channel";
-    open::that(url).map_err(|err| format!("Failed to open YouTube: {err}"))?;
+    crate::helpers::open_external(&app, url)?;
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
 

@@ -610,14 +610,14 @@ pub async fn test_ffmpeg(state: State<'_, AppState>) -> Res<Value> {
 }
 
 #[tauri::command]
-pub async fn open_suno_login() -> Res<Value> {
+pub async fn open_suno_login(app: tauri::AppHandle) -> Res<Value> {
     let url = "https://suno.com";
-    open::that(url).map_err(|err| format!("Failed to open browser for Suno login: {}", err))?;
+    crate::helpers::open_external(&app, url)?;
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
 
 #[tauri::command]
-pub async fn open_midjourney_login() -> Res<Value> {
+pub async fn open_midjourney_login(app: tauri::AppHandle) -> Res<Value> {
     let url = "https://www.midjourney.com";
     // Prefer launching the bundled Playwright-based visible browser flow when available
     if let Some(script) = locate_resource_file("midjourney-session-capture.js") {
@@ -638,7 +638,7 @@ pub async fn open_midjourney_login() -> Res<Value> {
     }
 
     // Fallback: open system browser
-    open::that(url).map_err(|err| format!("Failed to open browser for Midjourney login: {}", err))?;
+    crate::helpers::open_external(&app, url)?;
     Ok(serde_json::json!({ "ok": true, "url": url, "method": "system" }))
 }
 
@@ -713,10 +713,10 @@ async fn stream_logs_for_tunnel_url(kaggle: &str, slug: &str, secs: u64) -> Opti
 }
 
 #[tauri::command]
-pub async fn open_kaggle_notebook(engine: String) -> Res<Value> {
+pub async fn open_kaggle_notebook(app: tauri::AppHandle, engine: String) -> Res<Value> {
     let (slug, _) = kaggle_kernel_for(&engine).ok_or_else(|| format!("Unknown engine '{}'.", engine))?;
     let url = format!("https://www.kaggle.com/code/{}", slug);
-    open::that(&url).map_err(|err| format!("Failed to open Kaggle notebook: {}", err))?;
+    crate::helpers::open_external(&app, &url)?;
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
 
@@ -729,10 +729,10 @@ pub async fn kaggle_notebook_url(engine: String) -> Res<Value> {
 }
 
 #[tauri::command]
-pub async fn open_kaggle_token_page() -> Res<Value> {
+pub async fn open_kaggle_token_page(app: tauri::AppHandle) -> Res<Value> {
     // The "Create New API Token" button lives on the account settings page.
     let url = "https://www.kaggle.com/settings";
-    open::that(url).map_err(|err| format!("Failed to open Kaggle settings: {}", err))?;
+    crate::helpers::open_external(&app, url)?;
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
 
@@ -740,9 +740,9 @@ pub async fn open_kaggle_token_page() -> Res<Value> {
 /// Kaggle step — the user can sign in (Google is fine there, unlike the embedded webview which
 /// Google blocks) and then create an API token.
 #[tauri::command]
-pub async fn open_kaggle_login() -> Res<Value> {
+pub async fn open_kaggle_login(app: tauri::AppHandle) -> Res<Value> {
     let url = "https://www.kaggle.com/account/login";
-    open::that(url).map_err(|err| format!("Failed to open Kaggle sign-in: {}", err))?;
+    crate::helpers::open_external(&app, url)?;
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
 

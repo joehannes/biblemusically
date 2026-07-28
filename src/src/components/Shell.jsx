@@ -70,6 +70,12 @@ import {
 import {
   installAutosave, setAutosaveProject, setAutosaveView, commitPending,
 } from "../lib/autosave";
+// Called in an effect below and never imported — a plain ReferenceError that took the whole Shell
+// down the moment onboarding handed off to it ("This screen stopped working"). It survived because
+// the crash only happens on the *first* render of the Shell after setup completes; an install that
+// was already past onboarding mounts the Shell before that effect can matter, and the error boundary
+// made it look like a page fault rather than a missing import.
+import { installEntitlement } from "../lib/entitlement";
 import { subscribePipeline } from "../lib/genPipeline";
 
 // ── Navigation configuration with groups ──
