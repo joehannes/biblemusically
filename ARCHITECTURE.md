@@ -273,10 +273,43 @@ Four stages, each usable on its own:
   isn't knowable without paying for it, the report states what the app observed and names the limit
   rather than inventing precision.
 
+## 13. Free-tier budgets (`ai_budget.rs`, `idle_guard.rs`, new 2026-07-27)
+
+The two scarcest things this app spends are other people's free tiers, and until now it tracked
+neither.
+
+**AI requests (`ai_budget.rs`).** OpenRouter's free tier is 50 requests a day *for the whole
+account*. Every call through `provider_chat` is recorded per provider per UTC day in
+`<config>/studio-lightkid/ai-usage.json` — a file rather than the document store, because
+`provider_chat` has ~35 call sites that do not all hold a `Db`. Failures are counted too: a rejected
+request still consumed the allowance that rejected it.
+
+Rotation is across **providers**, not models. The previous fallback swapped one OpenRouter model for
+another, which does nothing when the limit is per account — it spent a second request to receive the
+same 429. Order is: chosen provider → other free ones → billed ones last, so the app never reaches
+for a credit card on its own. A provider with nothing left is not asked at all.
+
+Two consequences elsewhere:
+- `ai_enrich_uploads` is **batched** (8 uploads per request, results keyed by id never by position).
+  It was two calls per upload — the single largest drain.
+- `author_publicity_set` is deliberately **not** batched (long-form pieces, one per platform;
+  batching invites a truncation that loses all of them) but it now trims to the remaining budget
+  rather than dying halfway with nothing left to retry with.
+
+**GPU hours (`idle_guard.rs`).** Kaggle gives ~30 GPU hours a week and a session holds its slot
+whether or not anything is generating. A sweeper ends engines untouched for 25 minutes
+(`kaggle_idle_stop_minutes`, 0 = off). The rule is deliberately timid because the failure modes are
+not symmetric: stopping early costs a cold start, stopping mid-generation costs the generation. So
+nothing stops while *any* job is queued or running, and a busy sweep pushes every clock forward so a
+long run cannot age out. Engines become candidates only via `idle_guard::touch()` — currently called
+for `acestep` and `comfyui`; an engine without one is silently never stopped.
+
 ## 8. Known architectural gaps
 
-- **No automated tests.** No `#[test]` in Rust, no JS test runner wired up (the `craco test` script in `src/package.json` is part of the dead CRA config, not actually run).
+- **Coverage is uneven, not absent.** 238 Rust unit tests run under `cargo test --lib`; the JS side still has no runner wired up (the `craco test` script in `src/package.json` is part of the dead CRA config). The tested parts are the ones with sharp edges — the ComfyUI registry, version comparison, budget rotation, the store — while most command handlers have none.
+- **Adding a ComfyUI graph is a two-file change.** The runtime filler in `jobs.rs` replaces a fixed placeholder list; a new `__TOKEN__` in a graph JSON survives into the submitted prompt and fails at submit as "workflow template invalid after fill", pointing at the template rather than the empty setting. Two registry tests catch it, but only for `Want`s listed in `every_choice()`.
 - **Manual command registration** in `lib.rs` is the only thing connecting a `#[tauri::command]` fn to the frontend; nothing enforces it stays in sync. (This already caused one real gap — `probe_node` — fixed 2026-07-08.)
 - **Two parallel frontend API wrapper files** (`lib/api.js`, used; `lib/tauri-api.js`, dead) and **two parallel frontend build configs** (root Vite, used; `src/craco.config.js` + CRA `src/package.json` scripts, dead).
 - **Two overlapping schedule fields on `Project`**: the original free-text `schedule` (still shown on the Dashboard creation form/cards) and the new structured `schedule_config` (drives actual automation) can say different things about the same project.
-- **The scheduler's AI calls aren't gated by `job_semaphore`** — they run synchronously inside the 5-minute background tick rather than as jobs, so several projects becoming due in the same tick fire their OpenRouter calls concurrently rather than queued.
+- **The scheduler's AI calls aren't gated by `job_semaphore`** — they run synchronously inside the 5-minute background tick rather than as jobs, so several projects becoming due in the same tick fire their OpenRouter calls concurrently rather than queued. The budget ledger now counts them and rotation survives the resulting 429s, but concurrency itself is still what provokes them.
+- **`idle_guard` only knows the engines that call `touch()`.** `acestep` and `comfyui` do; the others do not, so their sessions are never auto-stopped. The gap is silent — nothing reports an engine it is not watching.
