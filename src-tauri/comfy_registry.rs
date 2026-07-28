@@ -41,6 +41,10 @@ pub enum Want {
     Print,
     /// Product art with the background cut out.
     Transparent,
+    /// A picture generated small and then re-sampled larger, for detail a single pass will not give.
+    HiRes,
+    /// A picture carrying a style LoRA, for a look a prompt alone cannot reach.
+    StyleLora,
 }
 
 impl Want {
@@ -51,6 +55,8 @@ impl Want {
             "repair" | "inpaint" => Want::Repair,
             "print" | "upscale" => Want::Print,
             "transparent" | "product" => Want::Transparent,
+            "hires" | "hires_fix" | "detailed" => Want::HiRes,
+            "lora" | "style_lora" => Want::StyleLora,
             _ => Want::Fresh,
         }
     }
@@ -85,6 +91,8 @@ const UPSCALE: &str = include_str!("comfy_workflows/upscale_print.json");
 const IMG2IMG: &str = include_str!("comfy_workflows/img2img.json");
 const INPAINT: &str = include_str!("comfy_workflows/inpaint.json");
 const TRANSPARENT: &str = include_str!("comfy_workflows/transparent.json");
+const HIRES: &str = include_str!("comfy_workflows/hires_fix.json");
+const LORA: &str = include_str!("comfy_workflows/lora_style_sdxl.json");
 
 /// Is this checkpoint a FLUX one? Decided by name, because that is all the server tells us.
 pub fn is_flux(ckpt: &str) -> bool {
@@ -156,6 +164,42 @@ pub fn choose(want: Want, ckpt: &str, quality: Quality, strict: bool) -> Choice 
             note: Some("Generated on a flat backdrop and then cut out, because a white rectangle \
                         behind a design prints as a white rectangle on the product."),
         },
+        // Two passes over one picture: generate at the asked-for size, enlarge the latent, sample
+        // again at low denoise. It is the cheapest real quality gain in ComfyUI — the second pass
+        // adds detail the first could not resolve without changing the composition, which is why the
+        // denoise is low. FLUX is sent to its own graph instead: a second pass at CFG 1 mostly
+        // re-renders what is already there, for twice the time.
+        Want::HiRes if flux => Choice {
+            template: FLUX, name: "flux_dev", steps, cfg, denoise: 1.0,
+            needs_nodes: &["UNETLoader", "DualCLIPLoader", "FluxGuidance"],
+            note: Some("FLUX resolves detail in one pass, so a second one costs time without \
+                        adding much. This is the ordinary FLUX graph."),
+        },
+        Want::HiRes => Choice {
+            template: HIRES, name: "hires_fix", steps,
+            cfg,
+            // Enough for the second pass to add detail, little enough to keep the picture it was
+            // given. Higher and the enlargement becomes a different image.
+            denoise: 0.45,
+            needs_nodes: &[],
+            note: Some("Two passes: generated, enlarged, then re-sampled for detail. Slower than \
+                        one pass and sharper than enlarging afterwards."),
+        },
+        // A style LoRA is the one way to get a consistent *look* that a prompt cannot describe.
+        // SDXL only — FLUX LoRAs load through a different node and a mismatched pair fails with a
+        // shape error that reads like a broken server.
+        Want::StyleLora if flux => Choice {
+            template: FLUX, name: "flux_dev", steps, cfg, denoise: 1.0,
+            needs_nodes: &["UNETLoader", "DualCLIPLoader", "FluxGuidance"],
+            note: Some("This LoRA graph is SDXL-only; a FLUX checkpoint is generated without it. \
+                        Choose an SDXL model to use the LoRA."),
+        },
+        Want::StyleLora => Choice {
+            template: LORA, name: "lora_style_sdxl", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Carrying the style LoRA named in Settings. An empty or misnamed LoRA is a \
+                        node error, not a silent fallback — ComfyUI has no default to reach for."),
+        },
         Want::Fresh if flux && strict => Choice {
             template: FLUX_STRICT, name: "flux_strict", steps: steps * 2, cfg: 5.0, denoise: 1.0,
             needs_nodes: &["UNETLoader", "DualCLIPLoader", "DynamicThresholdingFull"],
@@ -223,13 +267,14 @@ mod tests {
         for t in ["__WIDTH__", "__HEIGHT__", "__BATCH__", "__SEED__", "__STEPS__"] {
             s = s.replace(t, "8");
         }
-        for t in ["__CFG__", "__IPWEIGHT__", "__DENOISE__"] {
+        for t in ["__CFG__", "__IPWEIGHT__", "__DENOISE__", "__LORA_STRENGTH__"] {
             s = s.replace(t, "1.0");
         }
         for (t, v) in [("__CKPT__", "m.safetensors"), ("__PROMPT__", "a lamp"),
                        ("__NEGATIVE__", "nothing"), ("__SAMPLER__", "euler"),
                        ("__SCHEDULER__", "normal"), ("__REF_IMAGE__", "ref.png"),
-                       ("__INPUT_IMAGE__", "in.png"), ("__UPSCALER__", "up.pth")] {
+                       ("__INPUT_IMAGE__", "in.png"), ("__UPSCALER__", "up.pth"),
+                       ("__LORA__", "style.safetensors")] {
             s = s.replace(t, v);
         }
         serde_json::from_str(&s).unwrap_or_else(|e| panic!("template is not valid JSON: {e}\n{s}"))
@@ -237,7 +282,7 @@ mod tests {
 
     fn every_choice() -> Vec<Choice> {
         let mut out = Vec::new();
-        for want in [Want::Fresh, Want::SameCharacter, Want::Refine, Want::Repair,
+        for want in [Want::Fresh, Want::SameCharacter, Want::Refine, Want::Repair, Want::HiRes, Want::StyleLora,
                      Want::Print, Want::Transparent] {
             for ckpt in ["juggernautXL_v9.safetensors", "flux1-dev.safetensors",
                          "sdxl_turbo.safetensors"] {

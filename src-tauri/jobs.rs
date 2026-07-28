@@ -1619,6 +1619,16 @@ async fn real_comfy(
     wf = fill_str(&wf, "__UPSCALER__",
                   settings.get("comfyui_upscaler").and_then(|v| v.as_str())
                           .unwrap_or("4x-UltraSharp.pth"));
+    // The style LoRA, for the graph that carries one. Filled unconditionally rather than only for
+    // that graph: an unfilled placeholder survives into the submitted JSON and fails as "workflow
+    // template invalid after fill", which points at the template instead of at the empty setting
+    // that actually caused it. No default name — ComfyUI has no LoRA to fall back to, and inventing
+    // a filename produces a node error further away from the cause.
+    wf = fill_str(&wf, "__LORA__",
+                  settings.get("comfyui_lora").and_then(|v| v.as_str()).unwrap_or(""));
+    wf = wf.replace("__LORA_STRENGTH__", &format!("{:.2}",
+                  settings.get("comfyui_lora_strength").and_then(|v| v.as_f64())
+                          .filter(|v| *v > 0.0 && *v <= 2.0).unwrap_or(0.85)));
     wf = fill_str(&wf, "__CKPT__", ckpt);
     wf = fill_str(&wf, "__PROMPT__", &full_prompt);
     wf = fill_str(&wf, "__NEGATIVE__", &negative);
