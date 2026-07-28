@@ -137,6 +137,26 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npm run build
 
+      # `bundle.resources` in tauri.conf.json declares packaging/node_modules, and .gitignore excludes
+      # it — so it exists on a developer's machine and never in a fresh clone. tauri_build fails on
+      # the missing resource before compiling a line, which is why all three platforms died
+      # identically in build.rs with nothing useful in the log.
+      #
+      # The repo already carries node_modules_backup (tracked, 171 files) for exactly this. Restoring
+      # it is cheaper and more reproducible than an `npm install` that could resolve a different
+      # Playwright than the one the app was tested against.
+      - name: Restore bundled packaging resources
+        shell: bash
+        run: |
+          if [ ! -d src-tauri/packaging/node_modules ]; then
+            if [ -d src-tauri/packaging/node_modules_backup ]; then
+              cp -r src-tauri/packaging/node_modules_backup src-tauri/packaging/node_modules
+              echo "restored packaging/node_modules from the tracked backup"
+            else
+              (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
+            fi
+          fi
+
       - name: Build the app
         run: npx tauri build
         env:
@@ -243,6 +263,26 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npm run build
 
+      # `bundle.resources` in tauri.conf.json declares packaging/node_modules, and .gitignore excludes
+      # it — so it exists on a developer's machine and never in a fresh clone. tauri_build fails on
+      # the missing resource before compiling a line, which is why all three platforms died
+      # identically in build.rs with nothing useful in the log.
+      #
+      # The repo already carries node_modules_backup (tracked, 171 files) for exactly this. Restoring
+      # it is cheaper and more reproducible than an `npm install` that could resolve a different
+      # Playwright than the one the app was tested against.
+      - name: Restore bundled packaging resources
+        shell: bash
+        run: |
+          if [ ! -d src-tauri/packaging/node_modules ]; then
+            if [ -d src-tauri/packaging/node_modules_backup ]; then
+              cp -r src-tauri/packaging/node_modules_backup src-tauri/packaging/node_modules
+              echo "restored packaging/node_modules from the tracked backup"
+            else
+              (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
+            fi
+          fi
+
       # ring compiles C under rustls, and the NDK only ships API-versioned clang wrappers while cc-rs
       # looks for an unversioned name. Without these the build fails on a missing compiler that is
       # actually present under a different name.
@@ -309,6 +349,26 @@ jobs:
       # every platform fails at once, before compiling a line.
       - run: npm ci --legacy-peer-deps
       - run: npm run build
+
+      # `bundle.resources` in tauri.conf.json declares packaging/node_modules, and .gitignore excludes
+      # it — so it exists on a developer's machine and never in a fresh clone. tauri_build fails on
+      # the missing resource before compiling a line, which is why all three platforms died
+      # identically in build.rs with nothing useful in the log.
+      #
+      # The repo already carries node_modules_backup (tracked, 171 files) for exactly this. Restoring
+      # it is cheaper and more reproducible than an `npm install` that could resolve a different
+      # Playwright than the one the app was tested against.
+      - name: Restore bundled packaging resources
+        shell: bash
+        run: |
+          if [ ! -d src-tauri/packaging/node_modules ]; then
+            if [ -d src-tauri/packaging/node_modules_backup ]; then
+              cp -r src-tauri/packaging/node_modules_backup src-tauri/packaging/node_modules
+              echo "restored packaging/node_modules from the tracked backup"
+            else
+              (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
+            fi
+          fi
 
       - name: Build an unsigned IPA
         run: |
