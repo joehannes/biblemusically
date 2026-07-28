@@ -116,6 +116,20 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    /// Every name `touch()` is called with must be one `stop_kaggle_server` recognises.
+    ///
+    /// A mismatch is the worst kind of bug this module could have: `stale()` would keep offering the
+    /// engine up, every stop would fail with "Unknown engine", and the session would run all week
+    /// while the app believed it was managing it. Nothing else would report it — the sweep logs a
+    /// failure nobody reads, and the GPU hours are gone by the time anybody notices.
+    #[test]
+    fn every_engine_the_guard_touches_can_actually_be_stopped() {
+        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion"] {
+            assert!(crate::commands::kaggle_kernel_for(engine).is_some(),
+                    "jobs.rs touches '{engine}', but stop_kaggle_server does not know that name");
+        }
+    }
+
     #[test]
     fn an_engine_nobody_has_used_is_never_a_candidate() {
         // Nothing touched: nothing to stop. The map starts empty, so a server somebody else started

@@ -752,6 +752,7 @@ async fn real_acestep(song: &Value, settings: &Value, job_id: &str, db: &crate::
 /// task API as ACE-Step, so it reuses the shared client.
 async fn real_heartmula(song: &Value, settings: &Value, job_id: &str, db: &crate::store::Db, cancelled: &CancelSet) -> Option<Vec<Value>> {
     let base = trim_base_url(settings.get("heartmula_api_url").and_then(|v| v.as_str()).unwrap_or(""));
+    crate::idle_guard::touch("heartmula");
     let key = settings.get("heartmula_api_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
     generate_song_api(base, key, "heartmula", song, settings, job_id, db, cancelled).await
 }
@@ -827,6 +828,7 @@ pub fn music_engine_is_paid(engine: &str) -> bool {
 /// it takes minutes per track and why the poll window here is generous.
 async fn real_riffusion(song: &Value, settings: &Value, job_id: &str, db: &crate::store::Db, cancelled: &CancelSet) -> Option<Vec<Value>> {
     let mut base = trim_base_url(settings.get("riffusion_api_url").and_then(|v| v.as_str()).unwrap_or(""));
+    crate::idle_guard::touch("riffusion");
     if base.is_empty() {
         db_log(db, job_id, "riffusion: no saved server URL — auto-discovering from the running Kaggle kernel…").await;
         match crate::commands::settings::refresh_kaggle_url(db, "riffusion").await {
@@ -1141,6 +1143,7 @@ async fn real_flux(
     cancelled: &CancelSet,
 ) -> Option<Vec<String>> {
     let mut base = settings.get("flux_api_url").and_then(|v| v.as_str()).unwrap_or("").trim().trim_end_matches('/').to_string();
+    crate::idle_guard::touch("flux");
     if base.is_empty() {
         db_log(db, job_id, "flux: api url not configured — set it in Settings (paste the Kaggle/Colab share URL or http://localhost:8002)").await;
         return None;
