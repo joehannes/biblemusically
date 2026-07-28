@@ -691,6 +691,67 @@ function PermissionsStepBody({ settings, onDone }) {
   );
 }
 
+
+// ── Step: who is reading ─────────────────────────────────────────────────────
+//
+// Asked before anything technical, and answered in one tap. Everything the guides say afterwards is
+// written four times over — the same fact, pitched differently — and this is what picks which one.
+//
+// The levels are about *prior knowledge*, deliberately not about age. A twelve-year-old who has made
+// videos before is not a beginner, and a professional composer meeting a diffusion model for the
+// first time is. Age is offered separately and only to soften wording, never to withhold anything:
+// an app that decides what somebody may attempt based on how old they say they are would be making
+// a different promise than this one.
+function AudienceStepBody({ settings, onDone }) {
+  const [level, setLevel] = useState(settings?.audience_level || "");
+  const [saving, setSaving] = useState(false);
+
+  const LEVELS = [
+    { id: "kid", label: "Show me simply",
+      hint: "Short sentences, plain words, one idea at a time. Nothing is hidden — it is just explained more slowly." },
+    { id: "beginner", label: "I'm new to this",
+      hint: "Every term explained the first time it appears, and why a step exists before how to do it." },
+    { id: "adult", label: "I've used creative apps",
+      hint: "Assumes you know what a project, a track and an export are. Explains only what is specific to this app." },
+    { id: "pro", label: "I do this professionally",
+      hint: "Dense and fast. Names the model, the sampler and the trade-off, and skips the reassurance." },
+  ];
+
+  const save = async (id) => {
+    setLevel(id);
+    setSaving(true);
+    await persist({ audience_level: id });
+    setSaving(false);
+    onDone?.();
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-muted-foreground text-sm">
+        How much should the guides explain? This changes the wording everywhere, not what you are
+        allowed to do — every feature is available at every level, and you can change this whenever
+        you like.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-2">
+        {LEVELS.map((l) => (
+          <button key={l.id} type="button" onClick={() => save(l.id)} disabled={saving}
+            className={`text-left rounded-lg border p-3 transition-colors ${
+              level === l.id ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"}`}>
+            <div className="font-medium text-sm flex items-center gap-1.5">
+              {l.label}
+              {level === l.id && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
+            </div>
+            <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{l.hint}</div>
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Nothing here is sent anywhere. It only decides which wording the app reaches for.
+      </p>
+    </div>
+  );
+}
+
 // ── The registry ─────────────────────────────────────────────────────────────
 /// The terms, read from the server so they are never a stale copy compiled into the binary.
 ///
@@ -745,6 +806,14 @@ export const GUIDE_STEPS = [
     blurb: "The terms, in the order that matters — before anything is connected.",
     isDone: (s) => !!s?.terms_accepted_at,
     Body: TermsStepBody,
+  },
+  {
+    id: "audience",
+    title: "How much should I explain?",
+    icon: Target,
+    blurb: "Pitch every explanation at the level you want — changeable any time.",
+    isDone: (s) => !!s?.audience_level,
+    Body: AudienceStepBody,
   },
   {
     id: "language",

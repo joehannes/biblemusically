@@ -447,7 +447,10 @@ export function SuggestionsToggle({ onAutoPop }) {
 
 // ── Registry + menubar button ────────────────────────────────────────────────
 const TOURS = [
-  { id: "welcome", title: "Welcome & setup", icon: Sparkles, blurb: "The first-run guide: AI key, GPU servers, YouTube, folders." },
+  // Renamed, not moved: this *is* the settings guide, and calling it "Welcome" put the most
+  // technical screen in the app — API keys, GPU servers, OAuth — in front of somebody who had not
+  // yet seen what any of it was for. The welcome now shows the app; this configures it.
+  { id: "welcome", title: "Set up & configure", icon: Sparkles, blurb: "Keys, GPU servers, YouTube, folders — everything the app needs to run." },
   { id: "tune", title: "Tune & adjust", icon: Wrench, blurb: "Revisit every setup panel, pre-filled, to adjust what's configured." },
   { id: "workflow", title: "How a project flows", icon: MapIcon, blurb: "A guided explanation of the pipeline, page by page." },
   { id: "daily", title: "Today's generation (AI)", icon: Wand2, blurb: "AI suggests today's angles from your brief — pick, speak, or steer." },
