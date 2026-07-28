@@ -63,6 +63,20 @@ pub enum Want {
     Symmetry,
     /// Two exposures of one idea blended into a single image.
     DoubleExposure,
+    /// A style LoRA and a subject LoRA at once.
+    LoraStack,
+    /// Two prompts averaged into one hybrid.
+    PromptBlend,
+    /// One prompt for the top of the frame, another for the bottom.
+    AreaSplit,
+    /// SDXL base handing over to a refiner checkpoint.
+    Refiner,
+    /// Twice the size without needing an upscale model on the server.
+    TiledUpscale,
+    /// Vertical 1080x1920 for Shorts, Reels and TikTok.
+    Short,
+    /// A face held by a character LoRA rather than an IPAdapter reference.
+    CharacterLora,
 }
 
 impl Want {
@@ -84,6 +98,13 @@ impl Want {
             "thumbnail" | "thumb" => Want::Thumbnail,
             "symmetry" | "mirror" | "stained_glass" => Want::Symmetry,
             "double_exposure" | "blend" => Want::DoubleExposure,
+            "lora_stack" | "two_loras" => Want::LoraStack,
+            "prompt_blend" | "hybrid" => Want::PromptBlend,
+            "area_split" | "split" => Want::AreaSplit,
+            "refiner" | "base_refiner" => Want::Refiner,
+            "tiled_upscale" | "upscale_nomodel" => Want::TiledUpscale,
+            "short" | "vertical" | "reel" => Want::Short,
+            "character_lora" => Want::CharacterLora,
             _ => Want::Fresh,
         }
     }
@@ -131,6 +152,14 @@ const FLUX_IMG2IMG: &str = include_str!("comfy_workflows/flux_img2img.json");
 const THUMBNAIL: &str = include_str!("comfy_workflows/thumbnail_1280x720.json");
 const SYMMETRY: &str = include_str!("comfy_workflows/symmetry_mirror.json");
 const DOUBLE_EXPOSURE: &str = include_str!("comfy_workflows/double_exposure.json");
+const LORA_STACK: &str = include_str!("comfy_workflows/lora_stack_two.json");
+const FLUX_HIRES: &str = include_str!("comfy_workflows/flux_hires.json");
+const PROMPT_BLEND: &str = include_str!("comfy_workflows/prompt_blend.json");
+const AREA_SPLIT: &str = include_str!("comfy_workflows/area_split_composition.json");
+const REFINER: &str = include_str!("comfy_workflows/sdxl_base_refiner.json");
+const TILED_UPSCALE: &str = include_str!("comfy_workflows/tiled_detail_upscale.json");
+const SHORT: &str = include_str!("comfy_workflows/short_1080x1920.json");
+const CHARACTER_LORA: &str = include_str!("comfy_workflows/character_lora_portrait.json");
 
 /// Is this checkpoint a FLUX one? Decided by name, because that is all the server tells us.
 pub fn is_flux(ckpt: &str) -> bool {
@@ -216,10 +245,10 @@ pub fn choose(want: Want, ckpt: &str, quality: Quality, strict: bool) -> Choice 
         // denoise is low. FLUX is sent to its own graph instead: a second pass at CFG 1 mostly
         // re-renders what is already there, for twice the time.
         Want::HiRes if flux => Choice {
-            template: FLUX, name: "flux_dev", steps, cfg, denoise: 1.0,
+            template: FLUX_HIRES, name: "flux_hires", steps, cfg, denoise: 0.45,
             needs_nodes: &["UNETLoader", "DualCLIPLoader", "FluxGuidance"],
-            note: Some("FLUX resolves detail in one pass, so a second one costs time without \
-                        adding much. This is the ordinary FLUX graph."),
+            note: Some("On FLUX the second pass buys size rather than detail — it reaches print \
+                        dimensions without the composition drift of one huge generation."),
         },
         Want::HiRes => Choice {
             template: HIRES, name: "hires_fix", steps,
@@ -323,6 +352,50 @@ pub fn choose(want: Want, ckpt: &str, quality: Quality, strict: bool) -> Choice 
             needs_nodes: &[],
             note: Some("Two samplings of one prompt, screen-blended. Costs two passes."),
         },
+        Want::LoraStack => Choice {
+            template: LORA_STACK, name: "lora_stack_two", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Two LoRAs chained so their strengths stay independent. Both at full \
+                        strength fight, and the second wins in a way that looks like the first \
+                        never loaded — the second defaults lower for that reason."),
+        },
+        Want::PromptBlend => Choice {
+            template: PROMPT_BLEND, name: "prompt_blend", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("The two prompts are interpolated, not concatenated — a hybrid rather than \
+                        a picture containing both things."),
+        },
+        Want::AreaSplit => Choice {
+            template: AREA_SPLIT, name: "area_split_composition", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Top half from the first prompt, bottom from the second. Spatial rather \
+                        than blended: both appear, each where it was put."),
+        },
+        Want::Refiner => Choice {
+            template: REFINER, name: "sdxl_base_refiner", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Needs a refiner checkpoint in Settings. Without one this fails at load — \
+                        the plain graph is the right choice instead."),
+        },
+        Want::TiledUpscale => Choice {
+            template: TILED_UPSCALE, name: "tiled_detail_upscale",
+            steps: if few { 6 } else { 20 }, cfg, denoise: 0.35,
+            needs_nodes: &[],
+            note: Some("Twice the size with no upscale model required — softer than an ESRGAN \
+                        pass, and it works on a bare ComfyUI install."),
+        },
+        Want::Short => Choice {
+            template: SHORT, name: "short_1080x1920", steps, cfg, denoise: 0.30,
+            needs_nodes: &[],
+            note: Some("Vertical 1080x1920, scaled to cover and centre-cropped rather than \
+                        squashed."),
+        },
+        Want::CharacterLora => Choice {
+            template: CHARACTER_LORA, name: "character_lora_portrait", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("A character LoRA holds a likeness across poses more reliably than an \
+                        IPAdapter reference, which transfers from one photograph and drifts."),
+        },
         Want::Fresh if flux && strict => Choice {
             template: FLUX_STRICT, name: "flux_strict", steps: steps * 2, cfg: 5.0, denoise: 1.0,
             needs_nodes: &["UNETLoader", "DualCLIPLoader", "DynamicThresholdingFull"],
@@ -390,7 +463,7 @@ mod tests {
         for t in ["__WIDTH__", "__HEIGHT__", "__BATCH__", "__SEED__", "__STEPS__"] {
             s = s.replace(t, "8");
         }
-        for t in ["__CFG__", "__IPWEIGHT__", "__DENOISE__", "__LORA_STRENGTH__"] {
+        for t in ["__CFG__", "__IPWEIGHT__", "__DENOISE__", "__LORA_STRENGTH__", "__LORA2_STRENGTH__"] {
             s = s.replace(t, "1.0");
         }
         for (t, v) in [("__CKPT__", "m.safetensors"), ("__PROMPT__", "a lamp"),
@@ -398,7 +471,8 @@ mod tests {
                        ("__SCHEDULER__", "normal"), ("__REF_IMAGE__", "ref.png"),
                        ("__INPUT_IMAGE__", "in.png"), ("__UPSCALER__", "up.pth"),
                        ("__LORA__", "style.safetensors"),
-                       ("__CONTROLNET__", "canny-sdxl.safetensors")] {
+                       ("__CONTROLNET__", "canny-sdxl.safetensors"), ("__LORA2__", "b.safetensors"),
+                       ("__CKPT2__", "refiner.safetensors"), ("__PROMPT2__", "a window")] {
             s = s.replace(t, v);
         }
         serde_json::from_str(&s).unwrap_or_else(|e| panic!("template is not valid JSON: {e}\n{s}"))
@@ -409,6 +483,8 @@ mod tests {
         for want in [Want::Fresh, Want::SameCharacter, Want::Refine, Want::Repair, Want::HiRes, Want::StyleLora,
                      Want::Illustration, Want::TwoStage, Want::Variations, Want::Compose, Want::StyleTransfer,
                      Want::Outpaint, Want::Thumbnail, Want::Symmetry, Want::DoubleExposure,
+                     Want::LoraStack, Want::PromptBlend, Want::AreaSplit, Want::Refiner,
+                     Want::TiledUpscale, Want::Short, Want::CharacterLora,
                      Want::Print, Want::Transparent] {
             for ckpt in ["juggernautXL_v9.safetensors", "flux1-dev.safetensors",
                          "sdxl_turbo.safetensors"] {

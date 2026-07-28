@@ -1,0 +1,14 @@
+{
+  "_comment": "The two-model SDXL pipeline as it was designed: base lays the image down, refiner finishes the last fifth of the steps. KSamplerAdvanced is required rather than convenient — the base must hand over its leftover noise (return_with_leftover_noise) and the refiner must not add its own, and a plain KSampler cannot express either. Needs a refiner checkpoint; without one the base graph is the right choice instead.",
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT__"}},
+  "39": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT2__"}},
+  "5": {"class_type": "EmptyLatentImage", "inputs": {"width": __WIDTH__, "height": __HEIGHT__, "batch_size": __BATCH__}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["4", 1]}},
+  "40": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["39", 1]}},
+  "41": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["39", 1]}},
+  "13": {"class_type": "KSamplerAdvanced", "inputs": {"add_noise": "enable", "noise_seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "start_at_step": 0, "end_at_step": 8, "return_with_leftover_noise": "enable", "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "14": {"class_type": "KSamplerAdvanced", "inputs": {"add_noise": "disable", "noise_seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "start_at_step": 8, "end_at_step": 10000, "return_with_leftover_noise": "disable", "model": ["39", 0], "positive": ["40", 0], "negative": ["41", 0], "latent_image": ["13", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["14", 0], "vae": ["39", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "biblemusically", "images": ["8", 0]}}
+}

@@ -1638,6 +1638,24 @@ async fn real_comfy(
     // name fails further from its cause than an empty one.
     wf = fill_str(&wf, "__CONTROLNET__",
                   settings.get("comfyui_controlnet").and_then(|v| v.as_str()).unwrap_or(""));
+    // A second LoRA, a second checkpoint, a second prompt — for the stacking, refiner and
+    // blend/area graphs. Same contract as above: always filled, so an unused token can never reach
+    // the server as literal text.
+    wf = fill_str(&wf, "__LORA2__",
+                  settings.get("comfyui_lora2").and_then(|v| v.as_str()).unwrap_or(""));
+    wf = wf.replace("__LORA2_STRENGTH__", &format!("{:.2}",
+                  settings.get("comfyui_lora2_strength").and_then(|v| v.as_f64())
+                          .filter(|v| *v > 0.0 && *v <= 2.0).unwrap_or(0.65)));
+    wf = fill_str(&wf, "__CKPT2__",
+                  settings.get("comfyui_refiner_ckpt").and_then(|v| v.as_str()).unwrap_or(""));
+    // The second prompt falls back to the first rather than to nothing: an empty conditioning in a
+    // blend or an area graph does not degrade the picture, it erases half of it.
+    {
+        let p2 = settings.get("comfyui_prompt2").and_then(|v| v.as_str())
+                         .map(str::trim).filter(|s| !s.is_empty())
+                         .map(str::to_string).unwrap_or_else(|| full_prompt.clone());
+        wf = fill_str(&wf, "__PROMPT2__", &p2);
+    }
     wf = wf.replace("__LORA_STRENGTH__", &format!("{:.2}",
                   settings.get("comfyui_lora_strength").and_then(|v| v.as_f64())
                           .filter(|v| *v > 0.0 && *v <= 2.0).unwrap_or(0.85)));
