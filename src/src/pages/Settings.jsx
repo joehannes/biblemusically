@@ -9,7 +9,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import VoicePicker from "../components/VoicePicker";
 import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
@@ -1305,12 +1305,42 @@ const SettingsComponent = () => {
               <Label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Picture style</Label>
               <Select value={s.comfyui_want || "fresh"} onValueChange={(val) => updateS({ comfyui_want: val })}>
                 <SelectTrigger className="w-full" data-testid="settings-comfy-want"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fresh">Standard — one pass, fastest</SelectItem>
-                  <SelectItem value="hires">Extra detail — two passes, slower and sharper</SelectItem>
-                  <SelectItem value="lora">Style LoRA — a consistent look a prompt cannot describe</SelectItem>
-                  <SelectItem value="transparent">Cut out — no background, for products</SelectItem>
-                  <SelectItem value="print">Print — enlarged with detail put back</SelectItem>
+                {/* Grouped, because a flat list of twenty is a list nobody reads. The order is by
+                    what you are trying to do, not by how the graph works. */}
+                <SelectContent className="max-h-80">
+                  <SelectGroup>
+                    <SelectLabel>Everyday</SelectLabel>
+                    <SelectItem value="fresh">Standard — one pass, fastest</SelectItem>
+                    <SelectItem value="hires">Extra detail — two passes, slower and sharper</SelectItem>
+                    <SelectItem value="two_stage">Cleaner composition — split schedule, same cost</SelectItem>
+                    <SelectItem value="variations">Four takes — one job, choose between them</SelectItem>
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>A particular look</SelectLabel>
+                    <SelectItem value="illustration">Drawn, not photographic — clip skip</SelectItem>
+                    <SelectItem value="lora">Style LoRA — a look a prompt cannot describe</SelectItem>
+                    <SelectItem value="lora_stack">Two LoRAs — a style and a subject together</SelectItem>
+                    <SelectItem value="character_lora">Character LoRA portrait — holds a face across poses</SelectItem>
+                    <SelectItem value="symmetry">Symmetrical — stained glass, rose windows</SelectItem>
+                    <SelectItem value="double_exposure">Double exposure — two takes blended</SelectItem>
+                    <SelectItem value="refiner">Base + refiner — the two-model SDXL pipeline</SelectItem>
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Steered by something</SelectLabel>
+                    <SelectItem value="prompt_blend">Blend two prompts — a hybrid, not both things</SelectItem>
+                    <SelectItem value="area_split">Split the frame — one prompt top, one bottom</SelectItem>
+                    <SelectItem value="compose">Keep a layout — ControlNet from a reference</SelectItem>
+                    <SelectItem value="style_transfer">Redraw a photo in the project's style</SelectItem>
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Reshaping a picture you have</SelectLabel>
+                    <SelectItem value="outpaint">Widen — paint new canvas instead of cropping</SelectItem>
+                    <SelectItem value="thumbnail">YouTube thumbnail — 1280×720</SelectItem>
+                    <SelectItem value="short">Vertical — 1080×1920 for Shorts and Reels</SelectItem>
+                    <SelectItem value="print">Print — enlarged with detail put back</SelectItem>
+                    <SelectItem value="tiled_upscale">2× — no upscale model needed on the server</SelectItem>
+                    <SelectItem value="transparent">Cut out — no background, for products</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">

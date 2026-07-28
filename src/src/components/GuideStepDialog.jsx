@@ -51,7 +51,18 @@ export default function GuideStepDialog({ stepId, open, onClose, onDone }) {
         {settings === null ? (
           <div className="text-sm text-muted-foreground py-6 text-center">Loading…</div>
         ) : (
-          <Body settings={settings} onDone={() => { onDone?.(); onClose?.(); }} />
+          // Same `save` the wizard passes — the terms step is reachable from here too, and was
+          // equally unusable without it.
+          <Body
+            settings={settings}
+            save={async (patch) => {
+              try {
+                await api.saveSettings(patch);
+                setSettings((await api.getSettings()) || {});
+              } catch (err) { console.warn("guide step save failed", err); }
+            }}
+            onDone={() => { onDone?.(); onClose?.(); }}
+          />
         )}
       </div>
     </div>

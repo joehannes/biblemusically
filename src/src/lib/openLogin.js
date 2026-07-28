@@ -9,6 +9,8 @@
 //
 // The user can always override per click; the choice is remembered.
 
+import { openUrl } from "@tauri-apps/plugin-opener";
+
 const PREF_KEY = "studio:login-target";
 
 /** "internal" | "external" | "" (follow the provider's own recommendation). */
@@ -46,8 +48,17 @@ export function openLoginUrl(url, { navigate, label, recommended, force } = {}) 
     navigate(`/browser?url=${encodeURIComponent(url)}&label=${encodeURIComponent(label || "Sign in")}`);
     return "internal";
   }
-  // `open` on an anchor-less URL hands off to the OS default browser — the same path the rest of the
-  // app uses for pages it cannot host.
-  try { window.open(url, "_blank", "noopener"); } catch { /* ignore */ }
+  // The opener plugin, not window.open.
+  //
+  // `window.open` does nothing at all in an Android WebView — no new window, no error, no rejected
+  // promise. Every "create an account" and "get an API key" button on a phone was therefore a button
+  // that did nothing, silently, which is the failure mode hardest to report and easiest to blame on
+  // yourself. The plugin fires a real ACTION_VIEW intent and reaches the user's actual browser.
+  //
+  // window.open stays as the fallback for a plain browser build, where it is the correct call and
+  // the plugin is not available.
+  openUrl(url).catch(() => {
+    try { window.open(url, "_blank", "noopener"); } catch { /* nothing left to try */ }
+  });
   return "external";
 }

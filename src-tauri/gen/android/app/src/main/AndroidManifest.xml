@@ -3,6 +3,31 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      Speaking to the guides.
+
+      `navigator.mediaDevices.getUserMedia({ audio: true })` cannot succeed without this: Android
+      refuses the request before the user is ever asked, so the app's own "Allow microphone" button
+      reported a refusal nobody had made. Declared here and requested at the moment it is used —
+      the Permissions step in the setup guide — rather than at launch.
+
+      RECORD_AUDIO is a runtime permission on Android 6+, so this declaration is necessary and not
+      sufficient: the WebView must also grant the page's request when it arrives. See
+      MainActivity.kt, which is where that happens.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Opening a sign-in page in the user's real browser. Android 11+ hides other apps unless the
+         intents you send are declared, and a bare ACTION_VIEW for https is otherwise answered by
+         nothing at all — which looked exactly like a button that does not work. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <!--
       Installing an update the app downloaded itself.
 
       On Android an app cannot replace itself the way a desktop package manager does: the downloaded

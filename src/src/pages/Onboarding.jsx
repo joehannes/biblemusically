@@ -152,6 +152,15 @@ export default function Onboarding({ steps: requested = GUIDE_STEPS, resume = fa
             ) : (
               <cur.step.Body
                 settings={settings}
+                // Without this the terms step threw "save is not a function" on every click, and
+                // because its checkbox is controlled by settings it simply never ticked — an
+                // onboarding nobody could finish. Refreshes local settings so `checked` follows.
+                save={async (patch) => {
+                  try {
+                    await api.saveSettings(patch);
+                    setSettings((await api.getSettings()) || {});
+                  } catch (err) { console.warn("guide step save failed", err); }
+                }}
                 onDone={async () => {
                   setDoneIds((d) => new Set(d).add(cur.step.id));
                   // The goal step's plan only exists in settings, so pick it up before moving on.

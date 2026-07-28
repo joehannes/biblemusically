@@ -9,6 +9,7 @@ import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { MessageSquare, Bug, Lightbulb, Heart, HelpCircle, CircleDollarSign, Send, Share2, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Telling the author something.
@@ -150,7 +151,11 @@ export default function Feedback() {
             ["Reddit", `https://www.reddit.com/submit?title=${encodeURIComponent("Studio Lightkid")}&text=${encodeURIComponent(SHARE_TEXT)}`],
           ].map(([label, url]) => (
             <Button key={label} size="sm" variant="secondary"
-                    onClick={() => { track(`share.${label.toLowerCase()}`); window.open(url, "_blank", "noopener"); }}>
+                    onClick={() => {
+                      track(`share.${label.toLowerCase()}`);
+                      // Not window.open — it is a silent no-op inside an Android WebView.
+                      openUrl(url).catch(() => { try { window.open(url, "_blank", "noopener"); } catch { /* ignore */ } });
+                    }}>
               {label}
             </Button>
           ))}
