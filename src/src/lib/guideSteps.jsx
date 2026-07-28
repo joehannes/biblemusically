@@ -547,9 +547,14 @@ function PermissionsStepBody({ settings, onDone }) {
   // Installing updates: a phone-only row. `supported: false` on desktop, where the OS package
   // manager does this and there is nothing to ask for — so the row simply is not shown there.
   const [install, setInstall] = useState(null);
+  // Android has no folder picker available to this app — see pick_directory in settings.rs. Knowing
+  // that here is the difference between a button that quietly does something else and a sentence
+  // saying what actually happens.
+  const [caps, setCaps] = useState(null);
 
   useEffect(() => {
     api.updateInstallState().then(setInstall).catch(() => setInstall(null));
+    api.platformCapabilities().then(setCaps).catch(() => setCaps(null));
   }, []);
 
   const askInstall = async () => {
@@ -584,7 +589,10 @@ function PermissionsStepBody({ settings, onDone }) {
       if (dir) {
         setFolder(dir);
         await persist({ project_files_dir: dir });
-        toast.success("Folder chosen.");
+        toast.success(caps?.mobile ? "Using the app's own folder." : "Folder chosen.");
+      } else {
+        // A cancelled picker is not a failure, but silence here reads as one.
+        toast.message("No folder chosen — the default is still in use.");
       }
     } catch (err) { toast.error(String(err)); }
     finally { setBusy(""); }
@@ -596,7 +604,18 @@ function PermissionsStepBody({ settings, onDone }) {
       why: "Only used while you hold a guide's \"Say it\" button. Nothing is recorded otherwise.",
       action: askMic, actionLabel: "Allow microphone",
     },
-    {
+    // On a phone this is a statement, not a choice. Android's scoped storage means an app writes to
+    // its own directory or asks for a document through a picker neither rfd nor tauri-plugin-dialog
+    // implements on mobile — so `pick_directory` returns the app's own folder. Offering "Choose
+    // folder" there is a button that appears to do nothing, which is exactly what was reported.
+    caps?.mobile ? {
+      id: "folder", label: "Where your files go", state: true,
+      why: "Android keeps each app's files in its own folder and does not let one write elsewhere "
+         + "without a document picker. Nothing to choose — generated audio, images and video are "
+         + "kept there, and Data & Sync can copy them out.",
+      action: askFolder, actionLabel: "Use the app folder",
+      detail: folder,
+    } : {
       id: "folder", label: "A folder for your files", state: folder ? true : null,
       why: "Generated audio, images and video are written there. Nothing outside it is touched.",
       action: askFolder, actionLabel: folder ? "Change folder" : "Choose folder",
