@@ -1633,6 +1633,11 @@ async fn real_comfy(
     // a filename produces a node error further away from the cause.
     wf = fill_str(&wf, "__LORA__",
                   settings.get("comfyui_lora").and_then(|v| v.as_str()).unwrap_or(""));
+    // Same contract as the LoRA above: filled unconditionally so an unused placeholder can never
+    // survive into the submitted graph, and with no invented default, because a wrong ControlNet
+    // name fails further from its cause than an empty one.
+    wf = fill_str(&wf, "__CONTROLNET__",
+                  settings.get("comfyui_controlnet").and_then(|v| v.as_str()).unwrap_or(""));
     wf = wf.replace("__LORA_STRENGTH__", &format!("{:.2}",
                   settings.get("comfyui_lora_strength").and_then(|v| v.as_f64())
                           .filter(|v| *v > 0.0 && *v <= 2.0).unwrap_or(0.85)));

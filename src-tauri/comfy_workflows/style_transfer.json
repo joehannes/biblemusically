@@ -1,0 +1,13 @@
+{
+  "_comment": "A photograph or a sketch, redrawn in the project's style. Unlike img2img this rescales the source to the target size first, so a phone photo does not dictate the output dimensions, and it stops the text encoder a layer early because the point here is a drawn look rather than a faithful one. Denoise decides how much of the original survives; the registry sets it high, because a timid value here just returns the photograph.",
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT__"}},
+  "12": {"class_type": "CLIPSetLastLayer", "inputs": {"stop_at_clip_layer": -2, "clip": ["4", 1]}},
+  "10": {"class_type": "LoadImage", "inputs": {"image": "__INPUT_IMAGE__"}},
+  "20": {"class_type": "ImageScale", "inputs": {"upscale_method": "lanczos", "width": __WIDTH__, "height": __HEIGHT__, "crop": "center", "image": ["10", 0]}},
+  "18": {"class_type": "VAEEncode", "inputs": {"pixels": ["20", 0], "vae": ["4", 2]}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["12", 0]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["12", 0]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "denoise": __DENOISE__, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["18", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "biblemusically", "images": ["8", 0]}}
+}

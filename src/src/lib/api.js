@@ -451,7 +451,10 @@ export const api = {
   translateAndApplySettings: (projectId, channelIds) => invokeCommand("translate_and_apply_settings", { projectId, channelIds }),
   getChannelSettings: (channelId) => invokeCommand("get_channel_settings", { channelId }),
   updateChannelOverrides: (channelId, overrides) => invokeCommand("update_channel_overrides", { channelId, overrides }),
-  syncChannelToYouTube: (channelId) => invokeCommand("sync_channel_to_youtube", { channelId }),
+  // `dryRun: true` reads the live branding, builds the exact payload, and stops before writing —
+  // the only way to check the trailer survives without gambling a real channel on it.
+  syncChannelToYouTube: (channelId, dryRun = false) =>
+    invokeCommand("sync_channel_to_youtube", { channelId, dryRun }),
   // kind: "musical" | "visual" — culturally adapts a style descriptor for one channel's
   // language/region via the free AI. Preview-only: never writes anything itself.
   aiFlavorStyle: (channelId, kind, baseText) =>

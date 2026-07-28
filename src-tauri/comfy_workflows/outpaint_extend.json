@@ -1,0 +1,12 @@
+{
+  "_comment": "Widen a picture that is the wrong shape. ImagePadForOutpaint adds empty canvas and hands back a mask covering exactly the new area, so the sampler paints only what was added and the original pixels are untouched. This is how square art becomes a 16:9 video frame without cropping the subject out of it. Feathering blends the seam; without it the join is a visible line.",
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT__"}},
+  "10": {"class_type": "LoadImage", "inputs": {"image": "__INPUT_IMAGE__"}},
+  "21": {"class_type": "ImagePadForOutpaint", "inputs": {"image": ["10", 0], "left": 256, "top": 0, "right": 256, "bottom": 0, "feathering": 40}},
+  "19": {"class_type": "VAEEncodeForInpaint", "inputs": {"pixels": ["21", 0], "vae": ["4", 2], "mask": ["21", 1], "grow_mask_by": 8}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["4", 1]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "denoise": 1.0, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["19", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "biblemusically", "images": ["8", 0]}}
+}

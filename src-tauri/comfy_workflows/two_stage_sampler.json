@@ -1,0 +1,11 @@
+{
+  "_comment": "Structure first, detail second, in one graph. KSamplerAdvanced splits the schedule: the first pass runs the early steps and hands over its leftover noise, the second finishes them. Unlike hires_fix nothing is enlarged between the passes, so this costs almost nothing extra and buys cleaner large shapes — the fix for compositions that come out muddled rather than soft.",
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT__"}},
+  "5": {"class_type": "EmptyLatentImage", "inputs": {"width": __WIDTH__, "height": __HEIGHT__, "batch_size": __BATCH__}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["4", 1]}},
+  "13": {"class_type": "KSamplerAdvanced", "inputs": {"add_noise": "enable", "noise_seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "start_at_step": 0, "end_at_step": 8, "return_with_leftover_noise": "enable", "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "14": {"class_type": "KSamplerAdvanced", "inputs": {"add_noise": "disable", "noise_seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "start_at_step": 8, "end_at_step": 10000, "return_with_leftover_noise": "disable", "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["13", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["14", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "biblemusically", "images": ["8", 0]}}
+}

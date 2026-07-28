@@ -463,7 +463,17 @@ pub async fn update_channel_overrides(
 pub async fn sync_channel_to_youtube(
     state: State<'_, AppState>,
     channel_id: String,
+    dry_run: Option<bool>,
 ) -> Res<Value> {
+    // A dry run reads the live branding, builds exactly the payload a real sync would send, and
+    // stops before the PUT.
+    //
+    // It exists because this call is not reversible and its dangerous failure is silent: YouTube
+    // accepts a partial brandingSettings and clears the rest, so a bug here costs a channel trailer
+    // the owner chose, days before anybody links the two. Verifying the merge by performing it on a
+    // real channel means gambling the exact thing the fix is meant to protect. This way the fields
+    // that survive can be read off before anything is written.
+    let dry_run = dry_run.unwrap_or(false);
     let channel_doc = state.db.collection::<Document>("channels")
         .find_one(doc! { "id": &channel_id })
         .await
@@ -590,6 +600,23 @@ pub async fn sync_channel_to_youtube(
         "id": youtube_channel_id,
         "brandingSettings": { "channel": branding_channel }
     });
+
+    if dry_run {
+        return Ok(serde_json::json!({
+            "dry_run": true,
+            "channel_id": channel_id,
+            "youtube_channel_id": youtube_channel_id,
+            // What is about to be written, in full. The keys present here are the ones that will
+            // survive; anything the live channel has that is absent from this list is what a
+            // non-merging update would have destroyed.
+            "would_send": update_payload,
+            "preserved_keys": update_payload["brandingSettings"]["channel"].as_object()
+                .map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default(),
+            "detail": "Nothing was sent. These are the brandingSettings.channel fields the real \
+                       sync would write — check your trailer and any other field you care about \
+                       appears here before running it for real.",
+        }));
+    }
 
     let update_response = http
         .put("https://www.googleapis.com/youtube/v3/channels")

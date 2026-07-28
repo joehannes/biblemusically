@@ -1,0 +1,12 @@
+{
+  "_comment": "Bilateral symmetry, for the kind of image that wants it — stained glass, a rose window, an ornamental frame. The latent is sampled once, mirrored, and composited over its own left half, so the two sides are the same picture rather than two attempts at one. Decoded afterwards, which is what keeps the seam from showing as a hard vertical edge.",
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT__"}},
+  "5": {"class_type": "EmptyLatentImage", "inputs": {"width": __WIDTH__, "height": __HEIGHT__, "batch_size": __BATCH__}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["4", 1]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "denoise": 1.0, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "26": {"class_type": "LatentFlip", "inputs": {"flip_method": "y-axis: horizontally", "samples": ["3", 0]}},
+  "27": {"class_type": "LatentComposite", "inputs": {"samples_to": ["3", 0], "samples_from": ["26", 0], "x": 0, "y": 0, "feather": 24}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["27", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "biblemusically", "images": ["8", 0]}}
+}

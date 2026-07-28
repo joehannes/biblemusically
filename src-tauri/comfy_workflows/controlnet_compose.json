@@ -1,0 +1,13 @@
+{
+  "_comment": "Keep a composition, change everything else. The reference image steers layout through ControlNet rather than being repainted, which is the difference between this and img2img: img2img keeps the pixels, this keeps only the arrangement. The control model must match the checkpoint family — an SD1.5 ControlNet against an SDXL checkpoint is a shape error, not a weaker effect.",
+  "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "__CKPT__"}},
+  "10": {"class_type": "LoadImage", "inputs": {"image": "__INPUT_IMAGE__"}},
+  "16": {"class_type": "ControlNetLoader", "inputs": {"control_net_name": "__CONTROLNET__"}},
+  "5": {"class_type": "EmptyLatentImage", "inputs": {"width": __WIDTH__, "height": __HEIGHT__, "batch_size": __BATCH__}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["4", 1]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["4", 1]}},
+  "17": {"class_type": "ControlNetApply", "inputs": {"strength": 0.85, "conditioning": ["6", 0], "control_net": ["16", 0], "image": ["10", 0]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "__SAMPLER__", "scheduler": "__SCHEDULER__", "denoise": 1.0, "model": ["4", 0], "positive": ["17", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "biblemusically", "images": ["8", 0]}}
+}

@@ -45,6 +45,24 @@ pub enum Want {
     HiRes,
     /// A picture carrying a style LoRA, for a look a prompt alone cannot reach.
     StyleLora,
+    /// Drawn rather than photographed — the text encoder stopped a layer early.
+    Illustration,
+    /// Structure settled before detail, in one graph and at almost no extra cost.
+    TwoStage,
+    /// Four takes of one idea, to choose between.
+    Variations,
+    /// Keep a reference's composition, change everything else.
+    Compose,
+    /// A photo or sketch redrawn in the project's style.
+    StyleTransfer,
+    /// Wider canvas painted onto an existing picture, rather than cropping it.
+    Outpaint,
+    /// A 1280x720 thumbnail from art of another shape.
+    Thumbnail,
+    /// Bilateral symmetry — stained glass, a rose window, an ornamental frame.
+    Symmetry,
+    /// Two exposures of one idea blended into a single image.
+    DoubleExposure,
 }
 
 impl Want {
@@ -57,6 +75,15 @@ impl Want {
             "transparent" | "product" => Want::Transparent,
             "hires" | "hires_fix" | "detailed" => Want::HiRes,
             "lora" | "style_lora" => Want::StyleLora,
+            "illustration" | "clip_skip" | "drawn" => Want::Illustration,
+            "two_stage" | "twostage" => Want::TwoStage,
+            "variations" | "takes" => Want::Variations,
+            "compose" | "controlnet" | "layout" => Want::Compose,
+            "style_transfer" | "redraw" => Want::StyleTransfer,
+            "outpaint" | "extend" | "widen" => Want::Outpaint,
+            "thumbnail" | "thumb" => Want::Thumbnail,
+            "symmetry" | "mirror" | "stained_glass" => Want::Symmetry,
+            "double_exposure" | "blend" => Want::DoubleExposure,
             _ => Want::Fresh,
         }
     }
@@ -93,6 +120,17 @@ const INPAINT: &str = include_str!("comfy_workflows/inpaint.json");
 const TRANSPARENT: &str = include_str!("comfy_workflows/transparent.json");
 const HIRES: &str = include_str!("comfy_workflows/hires_fix.json");
 const LORA: &str = include_str!("comfy_workflows/lora_style_sdxl.json");
+const ILLUSTRATION: &str = include_str!("comfy_workflows/clip_skip_stylised.json");
+const TWO_STAGE: &str = include_str!("comfy_workflows/two_stage_sampler.json");
+const VARIATIONS: &str = include_str!("comfy_workflows/batch_variations.json");
+const COMPOSE: &str = include_str!("comfy_workflows/controlnet_compose.json");
+const STYLE_TRANSFER: &str = include_str!("comfy_workflows/style_transfer.json");
+const OUTPAINT: &str = include_str!("comfy_workflows/outpaint_extend.json");
+const FLUX_LORA: &str = include_str!("comfy_workflows/flux_lora.json");
+const FLUX_IMG2IMG: &str = include_str!("comfy_workflows/flux_img2img.json");
+const THUMBNAIL: &str = include_str!("comfy_workflows/thumbnail_1280x720.json");
+const SYMMETRY: &str = include_str!("comfy_workflows/symmetry_mirror.json");
+const DOUBLE_EXPOSURE: &str = include_str!("comfy_workflows/double_exposure.json");
 
 /// Is this checkpoint a FLUX one? Decided by name, because that is all the server tells us.
 pub fn is_flux(ckpt: &str) -> bool {
@@ -135,6 +173,14 @@ pub fn choose(want: Want, ckpt: &str, quality: Quality, strict: bool) -> Choice 
         Want::SameCharacter => Choice {
             template: CHARACTER, name: "character_ipadapter_sdxl", steps, cfg, denoise: 1.0,
             needs_nodes: &["IPAdapterUnifiedLoader", "IPAdapterAdvanced"],
+            note: None,
+        },
+        // Refining on FLUX used to submit the SDXL graph — CheckpointLoaderSimple against a FLUX
+        // UNet, which fails with a node error that reads like a broken server. FLUX has its own
+        // encode path now, so the picture being refined actually survives.
+        Want::Refine if flux => Choice {
+            template: FLUX_IMG2IMG, name: "flux_img2img", steps, cfg, denoise: 0.55,
+            needs_nodes: &["UNETLoader", "DualCLIPLoader", "VAELoader"],
             note: None,
         },
         Want::Refine => Choice {
@@ -189,16 +235,93 @@ pub fn choose(want: Want, ckpt: &str, quality: Quality, strict: bool) -> Choice 
         // SDXL only — FLUX LoRAs load through a different node and a mismatched pair fails with a
         // shape error that reads like a broken server.
         Want::StyleLora if flux => Choice {
-            template: FLUX, name: "flux_dev", steps, cfg, denoise: 1.0,
-            needs_nodes: &["UNETLoader", "DualCLIPLoader", "FluxGuidance"],
-            note: Some("This LoRA graph is SDXL-only; a FLUX checkpoint is generated without it. \
-                        Choose an SDXL model to use the LoRA."),
+            // LoraLoaderModelOnly, because FLUX's text encoders come from DualCLIPLoader rather than
+            // a checkpoint — there is no CLIP output for a LoRA to patch, and passing one is a type
+            // error. Until this existed, a style LoRA on FLUX was silently ignored.
+            template: FLUX_LORA, name: "flux_lora", steps, cfg, denoise: 1.0,
+            needs_nodes: &["UNETLoader", "DualCLIPLoader", "LoraLoaderModelOnly"],
+            note: Some("FLUX LoRAs patch the model only — the text encoders are loaded separately, \
+                        so a LoRA's CLIP half is not applied on FLUX."),
         },
         Want::StyleLora => Choice {
             template: LORA, name: "lora_style_sdxl", steps, cfg, denoise: 1.0,
             needs_nodes: &[],
             note: Some("Carrying the style LoRA named in Settings. An empty or misnamed LoRA is a \
                         node error, not a silent fallback — ComfyUI has no default to reach for."),
+        },
+        // CLIPSetLastLayer is an SD-family idea. FLUX has no equivalent text-encoder layer to stop
+        // at, so these all send a FLUX checkpoint to its own graph with a note rather than failing.
+        Want::Illustration if flux => Choice {
+            template: FLUX, name: "flux_dev", steps, cfg, denoise: 1.0,
+            needs_nodes: &["UNETLoader", "DualCLIPLoader", "FluxGuidance"],
+            note: Some("Clip skip is an SD-family control and FLUX has no equivalent, so this is the \
+                        ordinary FLUX graph. Choose an SDXL illustration model for a drawn look."),
+        },
+        Want::Illustration => Choice {
+            template: ILLUSTRATION, name: "clip_skip_stylised", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Text encoder stopped one layer early — what illustration and anime \
+                        checkpoints were fine-tuned expecting."),
+        },
+        Want::TwoStage if flux => Choice {
+            template: FLUX, name: "flux_dev", steps, cfg, denoise: 1.0,
+            needs_nodes: &["UNETLoader", "DualCLIPLoader", "FluxGuidance"],
+            note: Some("Splitting the schedule needs a CFG the two halves can differ on, which FLUX \
+                        does not have at guidance 1. This is the ordinary FLUX graph."),
+        },
+        Want::TwoStage => Choice {
+            template: TWO_STAGE, name: "two_stage_sampler", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Structure settled in the early steps, detail after. Costs almost nothing \
+                        over one pass and fixes muddled composition rather than softness."),
+        },
+        Want::Variations => Choice {
+            // Four of them, so a draft is the right default: these exist to be chosen between, and
+            // reviewing four finals spends the GPU on three pictures nobody keeps.
+            template: VARIATIONS, name: "batch_variations",
+            steps: if few { 6 } else { 12 }, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Four takes of one composition in a single job — cheaper than four jobs, \
+                        because the model is loaded once."),
+        },
+        Want::Compose => Choice {
+            template: COMPOSE, name: "controlnet_compose", steps, cfg, denoise: 1.0,
+            needs_nodes: &["ControlNetLoader", "ControlNetApply"],
+            note: Some("The reference steers layout only — unlike a refine, none of its pixels \
+                        survive. The ControlNet named in Settings must match the checkpoint family; \
+                        an SD1.5 control against SDXL is a shape error, not a weaker effect."),
+        },
+        Want::StyleTransfer => Choice {
+            template: STYLE_TRANSFER, name: "style_transfer", steps, cfg,
+            // High on purpose: a timid value here hands back the photograph it was given.
+            denoise: 0.78,
+            needs_nodes: &[],
+            note: Some("The source is rescaled to the target size first, so a phone photo does not \
+                        dictate the output dimensions."),
+        },
+        Want::Outpaint => Choice {
+            template: OUTPAINT, name: "outpaint_extend", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Canvas added left and right and painted in — the original pixels are \
+                        untouched. This is how square art becomes a 16:9 frame without cropping."),
+        },
+        Want::Thumbnail => Choice {
+            template: THUMBNAIL, name: "thumbnail_1280x720", steps, cfg,
+            // Low: the art is already right, this is a reframe rather than a reinterpretation.
+            denoise: 0.30,
+            needs_nodes: &[],
+            note: Some("Scaled to cover 1280x720 and centre-cropped rather than squashed."),
+        },
+        Want::Symmetry => Choice {
+            template: SYMMETRY, name: "symmetry_mirror", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Mirrored in the latent and composited before decoding, so the seam blends \
+                        rather than showing as a hard vertical edge."),
+        },
+        Want::DoubleExposure => Choice {
+            template: DOUBLE_EXPOSURE, name: "double_exposure", steps, cfg, denoise: 1.0,
+            needs_nodes: &[],
+            note: Some("Two samplings of one prompt, screen-blended. Costs two passes."),
         },
         Want::Fresh if flux && strict => Choice {
             template: FLUX_STRICT, name: "flux_strict", steps: steps * 2, cfg: 5.0, denoise: 1.0,
@@ -274,7 +397,8 @@ mod tests {
                        ("__NEGATIVE__", "nothing"), ("__SAMPLER__", "euler"),
                        ("__SCHEDULER__", "normal"), ("__REF_IMAGE__", "ref.png"),
                        ("__INPUT_IMAGE__", "in.png"), ("__UPSCALER__", "up.pth"),
-                       ("__LORA__", "style.safetensors")] {
+                       ("__LORA__", "style.safetensors"),
+                       ("__CONTROLNET__", "canny-sdxl.safetensors")] {
             s = s.replace(t, v);
         }
         serde_json::from_str(&s).unwrap_or_else(|e| panic!("template is not valid JSON: {e}\n{s}"))
@@ -283,6 +407,8 @@ mod tests {
     fn every_choice() -> Vec<Choice> {
         let mut out = Vec::new();
         for want in [Want::Fresh, Want::SameCharacter, Want::Refine, Want::Repair, Want::HiRes, Want::StyleLora,
+                     Want::Illustration, Want::TwoStage, Want::Variations, Want::Compose, Want::StyleTransfer,
+                     Want::Outpaint, Want::Thumbnail, Want::Symmetry, Want::DoubleExposure,
                      Want::Print, Want::Transparent] {
             for ckpt in ["juggernautXL_v9.safetensors", "flux1-dev.safetensors",
                          "sdxl_turbo.safetensors"] {
