@@ -10,6 +10,7 @@ import {
   Loader2, ArrowUpCircle, MapPin, Eye, Lock, Unlock,
 } from "lucide-react";
 import { toast } from "sonner";
+import { downloadAndInstallUpdate } from "../lib/updateInstall";
 import { SubscribePrompt } from "../components/Paywall";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,12 +135,11 @@ export default function Account() {
               <span className="text-xs text-muted-foreground">you have {update.current}</span>
             </div>
             <div className="flex gap-1.5">
+              {/* Same helper as the shell banner: on a phone this downloads *and* hands the file to
+                  Android's installer, which is the half that used to be missing. */}
               {update.kind === "update" && (
                 <Button size="sm" disabled={busy === "dl"}
-                        onClick={() => act("dl", () => api.downloadUpdate(), (r) => {
-                          toast.success(`Downloaded to ${r.path}`, { duration: 12000 });
-                          toast.message(r.next, { duration: 14000 });
-                        })}>
+                        onClick={() => act("dl", () => downloadAndInstallUpdate())}>
                   {busy === "dl" ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
                   Update
                 </Button>

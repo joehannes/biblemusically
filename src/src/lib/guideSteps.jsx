@@ -544,6 +544,25 @@ function PermissionsStepBody({ settings, onDone }) {
   const [mic, setMic] = useState(null);          // null unknown · true granted · false refused
   const [folder, setFolder] = useState(settings?.project_files_dir || "");
   const [busy, setBusy] = useState("");
+  // Installing updates: a phone-only row. `supported: false` on desktop, where the OS package
+  // manager does this and there is nothing to ask for — so the row simply is not shown there.
+  const [install, setInstall] = useState(null);
+
+  useEffect(() => {
+    api.updateInstallState().then(setInstall).catch(() => setInstall(null));
+  }, []);
+
+  const askInstall = async () => {
+    setBusy("install");
+    try {
+      await api.requestInstallPermission();
+      // Android hands back no result for that screen — it just opens. So the honest thing is to
+      // re-ask rather than to assume the trip through Settings ended in a yes.
+      toast.message("Turn on \"Allow from this source\", then come back here.", { duration: 9000 });
+      setTimeout(() => { api.updateInstallState().then(setInstall).catch(() => {}); }, 1200);
+    } catch (err) { toast.error(String(err)); }
+    finally { setBusy(""); }
+  };
 
   const askMic = async () => {
     setBusy("mic");
@@ -583,13 +602,23 @@ function PermissionsStepBody({ settings, onDone }) {
       action: askFolder, actionLabel: folder ? "Change folder" : "Choose folder",
       detail: folder,
     },
+    // Only where it means anything. On desktop an update is handed to the package manager, which
+    // needs no permission from the app, so offering a switch would be inventing a decision.
+    ...(install?.supported ? [{
+      id: "install", label: "Installing updates", state: install.allowed ? true : null,
+      why: "When a new version is released, the app can download it and hand it to Android's "
+         + "installer instead of leaving a file you have to find yourself. Android still shows its "
+         + "own confirmation every time, and it still refuses anything not signed by us — this only "
+         + "allows the app to ask.",
+      action: askInstall, actionLabel: "Allow installing",
+    }] : []),
   ];
 
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground text-sm">
-        Two things the app may need from your system. Both are optional, and both are asked for here
-        rather than surprising you later.
+        What the app may need from your system. All of it is optional, and all of it is asked for
+        here rather than surprising you later.
       </p>
       {rows.map((r) => (
         <div key={r.id} className="rounded-lg border border-border p-2.5 flex items-start gap-2">
@@ -697,7 +726,7 @@ export const GUIDE_STEPS = [
     id: "permissions",
     title: "Permissions",
     icon: ShieldCheck,
-    blurb: "Microphone and a folder for your files — both optional.",
+    blurb: "Microphone, a folder for your files, and — on a phone — installing updates. All optional.",
     isDone: (s) => s?.permissions_reviewed === true,
     Body: PermissionsStepBody,
   },

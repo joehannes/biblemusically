@@ -47,6 +47,12 @@ source scripts/android-env.sh
 echo "Icons: syncing src-tauri/icons/android → gen/android"
 cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
 
+# A reference point for "did this build actually produce anything", below. `-newer <file>` is POSIX
+# and works everywhere; `-newermt '-30 minutes'` is a GNU findutils extension, and `find` here may be
+# bfs, which accepts only ISO timestamps — it would have failed after the ten minutes that matter.
+MARKER="$(mktemp)"
+trap 'rm -f "$MARKER"' EXIT
+
 if [ "$ALL_ABIS" = "1" ]; then
   echo "Building $VERSION for all ABIs"
   npx tauri android build --apk
@@ -56,9 +62,14 @@ else
 fi
 
 # Newest APK gradle produced, rather than a hardcoded path: the filename depends on whether the build
-# was per-ABI or universal, and guessing wrong fails after the ten minutes that matter.
-BUILT="$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -newermt '-30 minutes' \
-         -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -1 || true)"
+# was per-ABI or universal, and guessing wrong fails after the ten minutes that matter. Restricted to
+# files newer than the marker so a stale APK from a previous run can never be shipped as this one.
+#
+# `xargs -r` matters more than it looks: without it, xargs runs `ls -t` even when find matched
+# nothing, `ls -t` with no arguments lists the working directory, and BUILT becomes whatever file
+# sorts first in the repo root — which would then be copied out as an APK.
+BUILT="$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -newer "$MARKER" \
+         -print0 2>/dev/null | xargs -0 -r ls -t 2>/dev/null | head -1 || true)"
 if [ -z "$BUILT" ]; then
   echo "No APK was produced — the build above did not fail, but nothing landed in outputs/apk." >&2
   exit 1

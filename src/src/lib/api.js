@@ -265,6 +265,12 @@ export const api = {
   checkUpdate: () => invokeCommand("check_update"),
   dismissUpgrade: (major) => invokeCommand("dismiss_upgrade", { major }),
   downloadUpdate: () => invokeCommand("download_update"),
+  // Android only in practice: whether this platform can install its own updates, whether the user
+  // has allowed it, and handing the downloaded file to the system installer. Desktop answers
+  // { supported: false } and updates through its package manager instead.
+  updateInstallState: () => invokeCommand("update_install_state"),
+  requestInstallPermission: () => invokeCommand("request_install_permission"),
+  installDownloadedUpdate: (path) => invokeCommand("install_downloaded_update", { path }),
   // ============ Signing in from a phone ============
   platformCapabilities: () => invokeCommand("platform_capabilities"),
   exportChannelTokens: (passphrase) => invokeCommand("export_channel_tokens", { passphrase }),

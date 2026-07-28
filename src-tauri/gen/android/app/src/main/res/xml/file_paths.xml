@@ -1,5 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Which directories this app is willing to hand out a content:// URI for.
+
+  A FileProvider is the only way to give another app — here, the system package installer — access to
+  a file this app owns. Passing a plain file:// path instead throws FileUriExposedException on
+  Android 7 and later, which is why a downloaded update could not simply be "opened".
+
+  The entry that matters for updates is `external-files-path`: Tauri's `download_dir()` on Android
+  resolves to getExternalFilesDir(DIRECTORY_DOWNLOADS), which is *app-specific external storage* and
+  is not covered by `external-path` (that one maps to the shared external root). A path list missing
+  it fails with IllegalArgumentException at the moment of installing rather than at build time — so
+  the omission would have looked like working code right up until somebody pressed Update.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- getExternalFilesDir(...) — where a downloaded update lands. -->
+  <external-files-path name="app_external_files" path="." />
+  <!-- getFilesDir() — app-private internal storage. -->
+  <files-path name="app_files" path="." />
+  <!-- getExternalCacheDir(). -->
+  <external-cache-path name="app_external_cache" path="." />
+  <!-- Both from the original list, kept so existing sharing keeps working. -->
   <external-path name="my_images" path="." />
   <cache-path name="my_cache_images" path="." />
 </paths>

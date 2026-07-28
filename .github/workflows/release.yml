@@ -267,8 +267,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
+          # -r, because without it xargs runs `ls -t` even on no matches, `ls -t` with no arguments
+          # lists the working directory, and APK becomes an arbitrary repo file rather than empty.
           APK="$(find src-tauri/gen/android -name '*.apk' -print0 \
-                 | xargs -0 ls -t 2>/dev/null | head -1)"
+                 | xargs -0 -r ls -t 2>/dev/null | head -1)"
           if [ -z "$APK" ]; then echo "No APK was produced." >&2; exit 1; fi
           mkdir -p out
           cp "$APK" "out/lightkid_studio_${VERSION}.apk"

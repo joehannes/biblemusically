@@ -2,6 +2,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Installing an update the app downloaded itself.
+
+      On Android an app cannot replace itself the way a desktop package manager does: the downloaded
+      APK has to be handed to the system installer, and handing it over is what this permission
+      allows. Without it the Update button can fetch the new version and then do nothing with it,
+      which is where this app stood — a download that landed in a folder the user cannot easily reach
+      and an installer that was never invoked.
+
+      What it is not: permission to install anything silently. It only allows *asking*. The system
+      still shows its own "do you want to install this?" screen, the user still has to grant this app
+      "install unknown apps" in Settings once (Android 8+ makes that per-app rather than global), and
+      the update still has to be signed with the same key as the copy already installed. See
+      InstallPlugin.kt, which checks `canRequestPackageInstalls()` before it offers to do anything,
+      and the Permissions step in the setup guide, where it is explained before it is ever needed.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 

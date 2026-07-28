@@ -31,6 +31,8 @@ pub mod jobs;
 pub mod models;
 #[path = "../paths.rs"]
 pub mod paths;
+#[path = "../apk_install.rs"]
+pub mod apk_install;
 #[path = "../mongo_import.rs"]
 pub mod mongo_import;
 #[path = "../project_sync.rs"]
@@ -63,6 +65,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
+        // Registers the Android class that hands a downloaded update to the system installer. A
+        // no-op on desktop, where the OS package manager already does this.
+        .plugin(apk_install::init())
         .setup(move |app| {
             use tauri::Manager;
             let handle = app.handle();
@@ -860,6 +865,9 @@ pub fn run() {
             commands::check_update,
             commands::dismiss_upgrade,
             commands::download_update,
+            apk_install::update_install_state,
+            apk_install::request_install_permission,
+            apk_install::install_downloaded_update,
             commands::author_macro,
             commands::list_authored_macros,
             commands::delete_authored_macro,

@@ -227,6 +227,11 @@ pub async fn download_update(state: State<'_, AppState>) -> Res<Value> {
             "linux" => "Open it with your package manager, or: sudo dpkg -i the file in Downloads.",
             "macos" => "Open the .dmg and drag the app over the old one. Right-click → Open the first time.",
             "windows" => "Run the installer. Windows will warn that it is unsigned — More info → Run anyway.",
+            // Android does not use this: the interface hands the file straight to the system
+            // installer (see apk_install.rs). Kept as the answer for anyone reading the raw result,
+            // because "open the downloaded file" is not something a phone user can act on — the
+            // download lands in app-specific storage they cannot browse to.
+            "android" => "Android will ask you to confirm the install.",
             _ => "Open the downloaded file to install it.",
         },
     }))

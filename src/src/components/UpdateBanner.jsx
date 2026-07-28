@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { downloadAndInstallUpdate } from "../lib/updateInstall";
 import { Button } from "./ui/button";
 import { toast } from "sonner";
 import { Download, ArrowUpCircle, Loader2, X } from "lucide-react";
@@ -62,9 +63,7 @@ export default function UpdateBanner() {
   const download = async () => {
     setBusy(true);
     try {
-      const r = await api.downloadUpdate();
-      toast.success(`Downloaded to ${r.path}`, { duration: 12000 });
-      toast.message(r.next, { duration: 14000 });
+      await downloadAndInstallUpdate();
     } catch (err) {
       toast.error(`${err}`, { duration: 10000 });
     } finally {
