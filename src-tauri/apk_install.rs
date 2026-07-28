@@ -15,6 +15,8 @@
 //! so the frontend can ask "can this platform install its own updates?" without knowing where it is
 //! running.
 
+// Only the Android wire types below derive these, so on desktop the import itself is unused.
+#[cfg(target_os = "android")]
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::plugin::{Builder, TauriPlugin};
@@ -22,11 +24,16 @@ use tauri::{AppHandle, Runtime};
 
 type Res<T> = Result<T, String>;
 
+// The wire types for the Kotlin side. Android-only, because that is the only place anything
+// constructs them — left ungated they are four structs nobody builds, and four dead_code warnings on
+// every desktop build.
+#[cfg(target_os = "android")]
 #[derive(Serialize)]
 struct PathArg {
     path: String,
 }
 
+#[cfg(target_os = "android")]
 #[derive(Deserialize, Default)]
 struct CanInstall {
     #[serde(default)]
@@ -35,12 +42,14 @@ struct CanInstall {
     needs_settings: bool,
 }
 
+#[cfg(target_os = "android")]
 #[derive(Deserialize, Default)]
 struct Opened {
     #[serde(default)]
     opened: bool,
 }
 
+#[cfg(target_os = "android")]
 #[derive(Deserialize, Default)]
 struct HandedOff {
     #[serde(default, rename = "handedOff")]
