@@ -35,6 +35,8 @@ pub mod paths;
 pub mod apk_install;
 #[path = "../ai_budget.rs"]
 pub mod ai_budget;
+#[path = "../idle_guard.rs"]
+pub mod idle_guard;
 #[path = "../mongo_import.rs"]
 pub mod mongo_import;
 #[path = "../project_sync.rs"]
@@ -446,6 +448,22 @@ pub fn run() {
                     loop {
                         tick.tick().await;
                         commands::run_scheduler_tick(&scheduler_state).await;
+                    }
+                });
+            }
+
+            // Free GPU hours are the scarcest thing this app spends. A Kaggle session holds its slot
+            // whether or not anything is generating, so a server nobody stopped costs next week's
+            // rendering. Every two minutes, end whatever has gone quiet — see idle_guard.rs for why
+            // the rule is deliberately timid about it.
+            {
+                let idle_state = state_arc.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(120));
+                    tick.tick().await;
+                    loop {
+                        tick.tick().await;
+                        idle_guard::sweep(&idle_state).await;
                     }
                 });
             }

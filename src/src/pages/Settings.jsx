@@ -182,6 +182,9 @@ const initialSettings = {
   comfyui_want: "fresh",
   comfyui_lora: "",
   comfyui_lora_strength: "",
+  // Global, not per-engine: how long a free GPU server may sit unused before the app ends its
+  // session. 0 switches it off. See src-tauri/idle_guard.rs.
+  kaggle_idle_stop_minutes: "",
   comfyui_custom_workflow: "",
   video_width: 1280,
   video_height: 720,
@@ -1356,6 +1359,20 @@ const SettingsComponent = () => {
           <Button size="sm" variant="outline" data-testid="settings-kaggle-open-comfy" onClick={()=>openKaggleNb("comfyui")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-start-comfy" onClick={()=>startKaggleServer("comfyui")}><Bot className="w-3 h-3 mr-2" />Start server</Button>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-stop-comfy" title="End the Kaggle session now so it stops using your free weekly GPU hours" onClick={()=>stopKaggleServer("comfyui")}><PowerOff className="w-3 h-3 mr-2" />Stop server</Button>
+          {/* Applies to every engine, not just this one — placed here because this is where people
+              come looking for the Stop button they forgot to press. */}
+          <div className="w-full mt-2">
+            <Field k="kaggle_idle_stop_minutes" label="Stop idle GPU servers after (minutes, 0 = never)"
+                   type="number" testid="settings-kaggle-idle-minutes"
+                   value={s.kaggle_idle_stop_minutes} onValueChange={updateS} />
+            <p className="text-xs text-muted-foreground mt-1">
+              Applies to every engine. Kaggle gives about thirty GPU hours a week and a session holds
+              its slot whether or not anything is generating, so a server nobody stopped costs next
+              week's rendering. Nothing is ever stopped while a job is queued or running. Blank uses
+              the default of 25 minutes; the cost of stopping too early is a cold start of five to ten
+              minutes next time.
+            </p>
+          </div>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-fetch-comfy" onClick={()=>fetchKaggleUrl("comfyui")}><DownloadCloud className="w-3 h-3 mr-2" />Fetch live URL</Button>
           <Button size="sm" variant="secondary" data-testid="settings-test-comfy" onClick={()=>testS("comfy")}><KeyRound className="w-3 h-3 mr-2" />Test connection</Button>
         </div>

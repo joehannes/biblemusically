@@ -741,6 +741,9 @@ pub(crate) async fn sample_music(genre: &str, settings: &Value, db: &crate::stor
 
 async fn real_acestep(song: &Value, settings: &Value, job_id: &str, db: &crate::store::Db, cancelled: &CancelSet) -> Option<Vec<Value>> {
     let base = trim_base_url(settings.get("acestep_api_url").and_then(|v| v.as_str()).unwrap_or(""));
+    // Keep the idle guard's clock honest: this engine is in use, so it must not be stopped from
+    // under the job that is about to run (see idle_guard.rs).
+    crate::idle_guard::touch("acestep");
     let key = settings.get("acestep_api_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
     generate_song_api(base, key, "acestep", song, settings, job_id, db, cancelled).await
 }
@@ -1451,6 +1454,7 @@ async fn real_comfy(
     cancelled: &CancelSet,
 ) -> Option<Vec<String>> {
     let base = settings.get("comfyui_api_url").and_then(|v| v.as_str()).unwrap_or("").trim().trim_end_matches('/').to_string();
+    crate::idle_guard::touch("comfyui");
     if base.is_empty() {
         db_log(db, job_id, "comfy: api url not configured — set it in Settings (paste the ComfyUI share URL or http://localhost:8188)").await;
         return None;
