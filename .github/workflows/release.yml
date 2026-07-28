@@ -149,18 +149,16 @@ jobs:
         shell: bash
         run: |
           if [ -d src-tauri/packaging/node_modules ]; then exit 0; fi
-          # -L dereferences symlinks. node_modules_backup/.bin/playwright is one, and Git-bash on the
-          # Windows runner cannot follow it — a plain `cp -r` aborts the step there while succeeding
-          # on Linux, which is precisely how this failed on one platform out of three.
-          if [ -d src-tauri/packaging/node_modules_backup ] \
-             && cp -rL src-tauri/packaging/node_modules_backup src-tauri/packaging/node_modules 2>/dev/null; then
-            echo "restored packaging/node_modules from the tracked backup"
-          else
-            # Any reason at all — missing backup, a symlink even -L cannot resolve — falls back to a
-            # real install rather than failing the build over a copy.
-            rm -rf src-tauri/packaging/node_modules
-            (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
-          fi
+          # `npm ci`, not a copy of the tracked backup.
+          #
+          # node_modules_backup/.bin/playwright is a symlink, and Windows refuses to *create* one
+          # without Developer Mode or admin rights — so `cp -r` failed there, and `cp -rL` fails the
+          # same way, because -L only dereferences the source. The problem is the destination.
+          #
+          # packaging/package-lock.json is committed, so an install here is as reproducible as the
+          # copy was and works identically on all three runners.
+          (cd src-tauri/packaging && npm ci --omit=dev --no-audit --no-fund) \
+            || (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
 
       - name: Build the app
         run: npx tauri build
@@ -280,18 +278,16 @@ jobs:
         shell: bash
         run: |
           if [ -d src-tauri/packaging/node_modules ]; then exit 0; fi
-          # -L dereferences symlinks. node_modules_backup/.bin/playwright is one, and Git-bash on the
-          # Windows runner cannot follow it — a plain `cp -r` aborts the step there while succeeding
-          # on Linux, which is precisely how this failed on one platform out of three.
-          if [ -d src-tauri/packaging/node_modules_backup ] \
-             && cp -rL src-tauri/packaging/node_modules_backup src-tauri/packaging/node_modules 2>/dev/null; then
-            echo "restored packaging/node_modules from the tracked backup"
-          else
-            # Any reason at all — missing backup, a symlink even -L cannot resolve — falls back to a
-            # real install rather than failing the build over a copy.
-            rm -rf src-tauri/packaging/node_modules
-            (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
-          fi
+          # `npm ci`, not a copy of the tracked backup.
+          #
+          # node_modules_backup/.bin/playwright is a symlink, and Windows refuses to *create* one
+          # without Developer Mode or admin rights — so `cp -r` failed there, and `cp -rL` fails the
+          # same way, because -L only dereferences the source. The problem is the destination.
+          #
+          # packaging/package-lock.json is committed, so an install here is as reproducible as the
+          # copy was and works identically on all three runners.
+          (cd src-tauri/packaging && npm ci --omit=dev --no-audit --no-fund) \
+            || (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
 
       # ring compiles C under rustls, and the NDK only ships API-versioned clang wrappers while cc-rs
       # looks for an unversioned name. Without these the build fails on a missing compiler that is
@@ -372,18 +368,16 @@ jobs:
         shell: bash
         run: |
           if [ -d src-tauri/packaging/node_modules ]; then exit 0; fi
-          # -L dereferences symlinks. node_modules_backup/.bin/playwright is one, and Git-bash on the
-          # Windows runner cannot follow it — a plain `cp -r` aborts the step there while succeeding
-          # on Linux, which is precisely how this failed on one platform out of three.
-          if [ -d src-tauri/packaging/node_modules_backup ] \
-             && cp -rL src-tauri/packaging/node_modules_backup src-tauri/packaging/node_modules 2>/dev/null; then
-            echo "restored packaging/node_modules from the tracked backup"
-          else
-            # Any reason at all — missing backup, a symlink even -L cannot resolve — falls back to a
-            # real install rather than failing the build over a copy.
-            rm -rf src-tauri/packaging/node_modules
-            (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
-          fi
+          # `npm ci`, not a copy of the tracked backup.
+          #
+          # node_modules_backup/.bin/playwright is a symlink, and Windows refuses to *create* one
+          # without Developer Mode or admin rights — so `cp -r` failed there, and `cp -rL` fails the
+          # same way, because -L only dereferences the source. The problem is the destination.
+          #
+          # packaging/package-lock.json is committed, so an install here is as reproducible as the
+          # copy was and works identically on all three runners.
+          (cd src-tauri/packaging && npm ci --omit=dev --no-audit --no-fund) \
+            || (cd src-tauri/packaging && npm install --omit=dev --no-audit --no-fund)
 
       - name: Build an unsigned IPA
         run: |

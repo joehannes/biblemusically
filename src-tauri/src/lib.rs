@@ -600,6 +600,7 @@ pub fn run() {
             commands::remove_kaggle_account,
             commands::rotate_kaggle_account,
             commands::pick_directory,
+            commands::list_storage_locations,
             commands::fetch_kaggle_url,
             commands::start_kaggle_server,
             commands::supersede_kaggle_session,

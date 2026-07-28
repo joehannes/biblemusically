@@ -892,6 +892,70 @@ pub async fn rotate_kaggle_account(state: State<'_, AppState>) -> Res<Value> {
     Ok(serde_json::json!({ "ok": true, "username": next_user, "rotated_from": active }))
 }
 
+/// The directories this platform will actually let the app write to, with the facts needed to
+/// choose between them.
+///
+/// Android has no folder picker for this, and the reason is worth stating because it is not
+/// laziness on Tauri's part. Android's Storage Access Framework is not a permission you can be
+/// granted — it is a document picker that hands back a `content://` URI, and a `content://` URI is
+/// not a path. `std::fs` cannot open one. So a picker that "worked" would return something every
+/// write in this app would then fail on, which is worse than not offering it.
+///
+/// What does work, and needs no permission at all, is `getExternalFilesDir(...)`: real filesystem
+/// paths under `/storage/emulated/0/Android/data/<package>/files/`, which a file manager can browse
+/// and a USB cable can reach. Tauri already resolves those (document_dir, download_dir, picture_dir,
+/// audio_dir). Offering a choice between them is a real choice — unlike the previous behaviour,
+/// which silently returned the *internal* data directory, a place the user cannot see at all.
+#[tauri::command]
+pub async fn list_storage_locations(app: tauri::AppHandle) -> Res<Value> {
+    use tauri::Manager;
+    let p = app.path();
+    let mut out: Vec<Value> = Vec::new();
+    let mut add = |id: &str, label: &str, note: &str, dir: Option<std::path::PathBuf>| {
+        if let Some(dir) = dir {
+            let _ = std::fs::create_dir_all(&dir);
+            out.push(serde_json::json!({
+                "id": id, "label": label, "note": note,
+                "path": dir.to_string_lossy(),
+                "writable": dir.exists(),
+            }));
+        }
+    };
+
+    #[cfg(desktop)]
+    {
+        add("documents", "Documents", "The usual place for work you keep.", p.document_dir().ok());
+        add("home", "Home folder", "", p.home_dir().ok().map(|h| h.join("AI Music Video Studio")));
+        add("downloads", "Downloads", "", p.download_dir().ok());
+    }
+    #[cfg(not(desktop))]
+    {
+        // All of these are getExternalFilesDir(...) — visible in a file manager under
+        // Android/data/<package>/files, and removed with the app, which is worth saying because it
+        // is the one real drawback of writing there rather than to shared storage.
+        add("documents", "App folder — Documents",
+            "Browsable in a file manager under Android/data. Removed if you uninstall the app.",
+            p.document_dir().ok());
+        add("music", "App folder — Music",
+            "Same place, sorted for audio. Some players index it.", p.audio_dir().ok());
+        add("pictures", "App folder — Pictures",
+            "Same place, sorted for images.", p.picture_dir().ok());
+        add("downloads", "App folder — Downloads",
+            "Same place; where an update downloads to.", p.download_dir().ok());
+    }
+
+    Ok(serde_json::json!({
+        "locations": out,
+        "can_browse": cfg!(desktop),
+        // Said plainly so the interface does not have to guess how to explain it.
+        "note": if cfg!(desktop) { "" } else {
+            "Android does not let an app browse for a folder — its picker returns a document handle \
+             rather than a path, which nothing here could write to. These are the real folders this \
+             app can use, and a file manager can reach all of them."
+        },
+    }))
+}
+
 /// Native folder picker (used by onboarding to choose where project files/exports live).
 /// Returns the chosen absolute path, or null if the user cancelled.
 #[tauri::command]
@@ -905,22 +969,17 @@ pub async fn pick_directory(
         if let Some(t) = title.filter(|s| !s.is_empty()) { dlg = dlg.set_title(t); }
         Ok(dlg.pick_folder().await.map(|f| f.path().to_string_lossy().to_string()))
     }
-    // Android has no folder picker available to this app, and it is worth being precise about why:
-    // `rfd` has no Android backend at all, and `tauri-plugin-dialog`'s `pick_folder` is
-    // `#[cfg(desktop)]` — the plugin genuinely does not implement it on mobile. A real Storage
-    // Access Framework picker would need Kotlin in `gen/android` plus a Tauri mobile plugin binding,
-    // which cannot be written blind against a device nobody here has.
-    //
-    // So rather than returning `None` and making every caller invent a fallback, this returns the
-    // one directory a mobile build should be writing to anyway. Android's scoped storage means the
-    // app's own directory is the only place it can write without asking, and SAF exists for
-    // *user-visible documents* — which is not what a project folder is.
+    // On mobile this is not a picker and does not pretend to be one — see list_storage_locations for
+    // why Android cannot offer one that produces a usable path. It returns the *external* documents
+    // directory rather than the app-internal one it used to: same lack of choice, but somewhere the
+    // user can actually open with a file manager, which the internal directory never was.
     #[cfg(not(desktop))]
     {
         use tauri::Manager;
         let _ = title;
-        Ok(app.path().app_data_dir().ok().map(|p| {
-            let folder = p.join("projects");
+        let dir = app.path().document_dir().ok()
+            .or_else(|| app.path().app_data_dir().ok().map(|p| p.join("projects")));
+        Ok(dir.map(|folder| {
             let _ = std::fs::create_dir_all(&folder);
             folder.to_string_lossy().to_string()
         }))

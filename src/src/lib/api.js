@@ -104,6 +104,7 @@ export const api = {
   activateKaggleAccount: (username) => invokeCommand("activate_kaggle_account", { username }),
   removeKaggleAccount: (username) => invokeCommand("remove_kaggle_account", { username }),
   rotateKaggleAccount: () => invokeCommand("rotate_kaggle_account"),
+  listStorageLocations: () => invokeCommand("list_storage_locations"),
   pickDirectory: (title) => invokeCommand("pick_directory", { title }),
   fetchKaggleUrl: (engine) => invokeCommand("fetch_kaggle_url", { engine }),
   startKaggleServer: (engine) => invokeCommand("start_kaggle_server", { engine }),

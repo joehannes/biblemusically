@@ -551,11 +551,24 @@ function PermissionsStepBody({ settings, onDone }) {
   // that here is the difference between a button that quietly does something else and a sentence
   // saying what actually happens.
   const [caps, setCaps] = useState(null);
+  // The real folders this platform will let the app write to. On Android these are
+  // getExternalFilesDir(...) paths — browsable in a file manager, no permission required — which is
+  // a genuine choice, unlike the picker Android cannot offer. See list_storage_locations.
+  const [storage, setStorage] = useState(null);
+  const [showFolders, setShowFolders] = useState(false);
 
   useEffect(() => {
     api.updateInstallState().then(setInstall).catch(() => setInstall(null));
     api.platformCapabilities().then(setCaps).catch(() => setCaps(null));
+    api.listStorageLocations().then(setStorage).catch(() => setStorage(null));
   }, []);
+
+  const chooseLocation = async (loc) => {
+    setFolder(loc.path);
+    await persist({ project_files_dir: loc.path });
+    setShowFolders(false);
+    toast.success(`Files will go to ${loc.label}.`);
+  };
 
   const askInstall = async () => {
     setBusy("install");
@@ -613,7 +626,7 @@ function PermissionsStepBody({ settings, onDone }) {
       why: "Android keeps each app's files in its own folder and does not let one write elsewhere "
          + "without a document picker. Nothing to choose — generated audio, images and video are "
          + "kept there, and Data & Sync can copy them out.",
-      action: askFolder, actionLabel: "Use the app folder",
+      action: () => setShowFolders((v) => !v), actionLabel: showFolders ? "Hide" : "Choose folder",
       detail: folder,
     } : {
       id: "folder", label: "A folder for your files", state: folder ? true : null,
@@ -623,6 +636,7 @@ function PermissionsStepBody({ settings, onDone }) {
     },
     // Only where it means anything. On desktop an update is handed to the package manager, which
     // needs no permission from the app, so offering a switch would be inventing a decision.
+    ...(storage?.can_browse === false && (storage?.locations || []).length > 1 ? [] : []),
     ...(install?.supported ? [{
       id: "install", label: "Installing updates", state: install.allowed ? true : null,
       why: "When a new version is released, the app can download it and hand it to Android's "
@@ -655,6 +669,23 @@ function PermissionsStepBody({ settings, onDone }) {
           </Button>
         </div>
       ))}
+      {showFolders && (storage?.locations || []).length > 0 && (
+        <div className="rounded-lg border border-border p-2.5 space-y-1.5">
+          {storage.note && <p className="text-[11px] text-muted-foreground">{storage.note}</p>}
+          {storage.locations.map((loc) => (
+            <button key={loc.id} type="button" onClick={() => chooseLocation(loc)}
+              className={`w-full text-left rounded-md border p-2 transition-colors ${
+                folder === loc.path ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"}`}>
+              <div className="text-xs font-medium flex items-center gap-1.5">
+                {loc.label}
+                {folder === loc.path && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+              </div>
+              {loc.note && <div className="text-[10px] text-muted-foreground mt-0.5">{loc.note}</div>}
+              <div className="text-[10px] text-mono text-muted-foreground/70 mt-0.5 truncate">{loc.path}</div>
+            </button>
+          ))}
+        </div>
+      )}
       <Button onClick={async () => { await persist({ permissions_reviewed: true }); onDone?.(); }}>Continue</Button>
     </div>
   );
