@@ -123,6 +123,50 @@ pub async fn list_ai_providers() -> Res<Value> {
     ]}))
 }
 
+/// What the free tiers have left today, and what a run would cost.
+///
+/// Exists so the answer arrives *before* the spending. "This run needs 14 requests and you have 9"
+/// is something a user can act on; the same fact discovered at request 9 is half a song and a
+/// wasted evening. The counts are real — every call through `provider_chat` is recorded — rather
+/// than the job-count proxy `quota_report` used to offer, which was unrelated to AI usage in both
+/// directions.
+#[tauri::command]
+pub async fn ai_budget_report(state: State<'_, AppState>) -> Res<Value> {
+    let settings = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" })
+        .with_options(proj0())
+        .await.map_err(e)?
+        .map(bson_to_value)
+        .unwrap_or_default();
+    let usage = crate::ai_budget::usage_today();
+
+    let providers: Vec<Value> = ["openrouter", "gemini", "anthropic", "openai"].iter().map(|p| {
+        let used = usage.get(*p).and_then(|v| v.as_u64()).unwrap_or(0);
+        serde_json::json!({
+            "id": p,
+            "configured": crate::ai_budget::configured(p, &settings),
+            "used_today": used,
+            "daily_cap": crate::ai_budget::daily_cap(p, &settings),
+            "remaining": crate::ai_budget::remaining(p, &settings),
+        })
+    }).collect();
+
+    let order = crate::ai_budget::rotation(&settings);
+    let free_left: u64 = ["openrouter", "gemini"].iter()
+        .filter(|p| crate::ai_budget::configured(p, &settings))
+        .filter_map(|p| crate::ai_budget::remaining(p, &settings))
+        .sum();
+
+    Ok(serde_json::json!({
+        "providers": providers,
+        "rotation": order,
+        "free_remaining": free_left,
+        "cost": crate::ai_budget::workflow_cost(),
+        // Enough for a whole song, or not. The number the guide actually needs.
+        "songs_left_today": free_left / 4,
+    }))
+}
+
 /// Ask a provider which models this key can actually use.
 ///
 /// Live, because a hardcoded model list goes stale the moment a provider ships something new — and a
@@ -532,32 +576,86 @@ pub async fn provider_chat(
     temperature: f32,
     json_mode: bool,
 ) -> Result<(String, String), String> {
-    let err = match provider_chat_once(settings_doc, system, user, temperature, json_mode, None).await {
-        Ok(ok) => return Ok(ok),
-        Err(err) => err,
-    };
-    if !is_overload_error(&err) { return Err(err); }
-
-    // The fallback needs an OpenRouter key, and is pointless if that model was the primary already.
-    let key = settings_doc["openrouter_api_key"].as_str().unwrap_or("").trim();
-    let provider = settings_doc["ai_provider"].as_str().unwrap_or("openrouter").trim();
-    let primary_model = settings_doc["openrouter_model"].as_str().unwrap_or("").trim();
-    if key.is_empty() || (provider != "gemini" && primary_model == FALLBACK_MODEL) {
-        return Err(err);
+    // Who can take this call, in order: the chosen provider first, then any other configured one
+    // that still has budget today, free tiers before billed ones. Providers already spent for the
+    // day are not in the list at all — asking them buys a 429 and a wait (see ai_budget.rs).
+    let order = crate::ai_budget::rotation(settings_doc);
+    let mut candidates: Vec<Option<String>> = order.iter().map(|p| Some(p.clone())).collect();
+    if candidates.is_empty() {
+        // Nothing configured, or everything spent. Fall through to the configured provider anyway so
+        // the error the user sees comes from the provider itself and says something true, rather
+        // than this module inventing one.
+        candidates.push(None);
     }
-    let from = if provider == "gemini" {
-        format!("gemini:{}", settings_doc["gemini_model"].as_str().unwrap_or("gemini-3.5-flash"))
-    } else if primary_model.is_empty() { "openrouter".to_string() } else { primary_model.to_string() };
 
-    match provider_chat_once(settings_doc, system, user, temperature, json_mode, Some(FALLBACK_MODEL)).await {
-        Ok((content, model)) => {
-            note_fallback(&from, &model, &err);
-            Ok((content, format!("{model} (fallback)")))
+    let mut first_err: Option<String> = None;
+    let mut tried: Vec<String> = Vec::new();
+
+    for (i, provider) in candidates.iter().enumerate() {
+        let attempt = provider_chat_as(settings_doc, system, user, temperature, json_mode, provider.as_deref()).await;
+        match attempt {
+            Ok((content, model)) => {
+                if i > 0 {
+                    // Say which provider actually answered — a caller that displays the model must
+                    // not claim the one the user picked when a different one did the work.
+                    note_fallback(&tried.join(" → "), &model, first_err.as_deref().unwrap_or(""));
+                    return Ok((content, format!("{model} (rotated)")));
+                }
+                return Ok((content, model));
+            }
+            Err(err) => {
+                tried.push(provider.clone().unwrap_or_else(|| "configured".into()));
+                // Only an overload or an exhausted quota is worth rotating for. A bad prompt or a
+                // missing key fails identically everywhere, and trying three providers to learn that
+                // spends three requests to receive the same sentence.
+                let rotatable = is_overload_error(&err);
+                if first_err.is_none() { first_err = Some(err.clone()); }
+                if !rotatable { return Err(err); }
+            }
         }
-        // Report both failures: knowing the fallback was tried too is what tells the user this is
-        // not just their primary provider having a bad minute.
-        Err(err2) => Err(format!("{err} — the {FALLBACK_MODEL} fallback also failed: {err2}")),
     }
+
+    let err = first_err.unwrap_or_else(|| "No AI provider is configured.".to_string());
+    // The free-tier case deserves its own sentence: "try again later" is true and useless when the
+    // limit resets at midnight UTC and the user could switch providers in ten seconds.
+    let spent: Vec<String> = ["openrouter", "gemini"].iter()
+        .filter(|p| crate::ai_budget::configured(p, settings_doc)
+                 && crate::ai_budget::remaining(p, settings_doc) == Some(0))
+        .map(|p| p.to_string())
+        .collect();
+    if !spent.is_empty() {
+        return Err(format!(
+            "{err} — today's free allowance is used up on: {}. It resets at midnight UTC; another \
+             provider's key in Settings would keep you going now.",
+            spent.join(", ")
+        ));
+    }
+    Err(err)
+}
+
+/// One attempt, against one named provider (or the configured one when `None`), counted against
+/// that provider's ledger whether it succeeds or fails.
+///
+/// Counting failures too is deliberate: a rejected request still consumed the allowance that
+/// rejected it, and a counter that only tracks successes is how an app talks itself past a quota it
+/// has already spent.
+async fn provider_chat_as(
+    settings_doc: &Value,
+    system: &str,
+    user: &str,
+    temperature: f32,
+    json_mode: bool,
+    provider: Option<&str>,
+) -> Result<(String, String), String> {
+    let mut doc = settings_doc.clone();
+    if let Some(p) = provider {
+        doc["ai_provider"] = Value::String(p.to_string());
+    }
+    let counted = provider.map(|s| s.to_string()).unwrap_or_else(|| {
+        settings_doc["ai_provider"].as_str().unwrap_or("openrouter").trim().to_string()
+    });
+    crate::ai_budget::record(&counted);
+    provider_chat_once(&doc, system, user, temperature, json_mode, None).await
 }
 
 /// One attempt at one provider. `force_openrouter_model` pins the call to OpenRouter with that

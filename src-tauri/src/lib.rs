@@ -33,6 +33,8 @@ pub mod models;
 pub mod paths;
 #[path = "../apk_install.rs"]
 pub mod apk_install;
+#[path = "../ai_budget.rs"]
+pub mod ai_budget;
 #[path = "../mongo_import.rs"]
 pub mod mongo_import;
 #[path = "../project_sync.rs"]
@@ -713,6 +715,7 @@ pub fn run() {
             commands::ai_translate_ui,
             commands::take_ai_notices,
             commands::list_ai_providers,
+            commands::ai_budget_report,
             commands::list_ai_models,
             commands::guide_proposal,
             commands::guide_templates,
