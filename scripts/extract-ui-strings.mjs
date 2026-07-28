@@ -22,7 +22,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "src/src");
 const OUT = join(SRC, "i18n/ui-strings.json");
 
-const MAX_LEN = 140;
+// 140 kept the inventory small, and made every explanatory paragraph in the app permanently
+// untranslatable: a string absent from the inventory is refused at runtime by `mayTranslate` once it
+// passes 80 characters, so anything between the two ceilings could never be translated into any
+// language, bundled ones included. That is the "descriptions stayed English" bug.
+//
+// 400 covers the app's real prose — the sentences under a setting that explain what it costs — while
+// still excluding the things this cap exists to exclude, which are runtime values, not long text.
+const MAX_LEN = Number(process.env.I18N_MAX_LEN) || 400;
 // Attributes whose value is interface chrome the user reads.
 const TEXT_ATTRS = ["placeholder", "title", "aria-label", "alt", "label"];
 // Object keys in the tour/guide/step catalogs that hold prose.
