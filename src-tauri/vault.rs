@@ -43,7 +43,7 @@ const KEY_LEN: usize = 32;
 static SESSION_KEY: Lazy<Mutex<Option<[u8; KEY_LEN]>>> = Lazy::new(|| Mutex::new(None));
 
 fn vault_dir() -> Res<PathBuf> {
-    let base = dirs::config_dir().ok_or("Could not locate the config directory")?;
+    let base = crate::paths::config_dir().ok_or("Could not locate the config directory")?;
     let dir = base.join("studio-lightkid");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)

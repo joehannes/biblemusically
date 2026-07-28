@@ -8,6 +8,7 @@ import {
 import { useRequireGuideStep } from "./GuideStepDialog";
 import ToursFab from "./Tours";
 import HealthBanner from "./HealthBanner";
+import UpdateBanner from "./UpdateBanner";
 import { api } from "../lib/api";
 import { getVersion } from "@tauri-apps/api/app";
 // Fallback only, for the very first paint before getVersion() resolves — this file lives
@@ -1464,6 +1465,10 @@ export default function Shell({ children }) {
             indicator instead of buried in the page body. */}
         {/* Engine health: only speaks up when the engines this setup actually uses are failing. */}
         <HealthBanner />
+
+        {/* A release landed. Above the page rather than on the Account page alone, which was the only
+            place that ever asked — so updates announced themselves solely to people already looking. */}
+        <UpdateBanner />
 
         <PageActionsContext.Provider value={setPageActions}>
         <ActionRegistryContext.Provider value={actionRegistry}>

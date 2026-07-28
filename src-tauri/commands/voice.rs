@@ -93,7 +93,7 @@ fn rate_from_mime(mime: &str) -> u32 {
 }
 
 fn cache_dir() -> Option<std::path::PathBuf> {
-    let dir = dirs::config_dir()?.join("studio-lightkid").join("tts-cache");
+    let dir = crate::paths::config_dir()?.join("studio-lightkid").join("tts-cache");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

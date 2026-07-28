@@ -25,7 +25,7 @@ fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
 /// The global learnings directory, created if missing: <config>/studio-lightkid/learnings.
 fn global_dir() -> Res<PathBuf> {
-    let base = dirs::config_dir().ok_or("Could not locate the config directory")?;
+    let base = crate::paths::config_dir().ok_or("Could not locate the config directory")?;
     let dir = base.join("studio-lightkid").join("learnings");
     std::fs::create_dir_all(&dir).map_err(e)?;
     Ok(dir)

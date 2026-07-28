@@ -1087,7 +1087,7 @@ impl Db {
     /// The conventional location: `<config>/studio-lightkid/data`, matching where the JSON
     /// learnings store already writes.
     pub fn default_root() -> Result<PathBuf> {
-        let base = dirs::config_dir().ok_or_else(|| Error("no config directory".into()))?;
+        let base = crate::paths::config_dir().ok_or_else(|| Error("no config directory".into()))?;
         Ok(base.join("studio-lightkid").join("data"))
     }
 

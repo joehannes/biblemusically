@@ -26,7 +26,7 @@ fn bson_to_value(d: Document) -> Value {
 }
 
 fn base_dir() -> Res<PathBuf> {
-    let base = dirs::config_dir().ok_or("Could not locate the config directory")?;
+    let base = crate::paths::config_dir().ok_or("Could not locate the config directory")?;
     let dir = base.join("studio-lightkid").join("style-samples");
     std::fs::create_dir_all(&dir).map_err(e)?;
     Ok(dir)

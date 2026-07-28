@@ -991,7 +991,7 @@ pub async fn webview_arm_download(
     filename: Option<String>,
     result_key: String,
 ) -> Result<(), String> {
-    let base = dirs::document_dir().ok_or_else(|| "Could not resolve the Documents folder".to_string())?;
+    let base = crate::paths::document_dir().ok_or_else(|| "Could not resolve the Documents folder".to_string())?;
     let safe_folder: String = folder_name
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })

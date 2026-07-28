@@ -132,7 +132,7 @@ pub async fn create_project(state: State<'_, AppState>, body: Value) -> Res<Valu
     // (see save_project_file) instead of falling back to the browser's Downloads folder.
     // The id-prefix suffix avoids collisions between same-named projects without needing a
     // "does this folder already exist" check-then-create race.
-    let project_folder = dirs::document_dir().map(|docs| {
+    let project_folder = crate::paths::document_dir().map(|docs| {
         let folder = docs.join("AI Music Video Studio").join(format!("{}-{}", slugify(&name), &id[..8]));
         if let Err(err) = std::fs::create_dir_all(&folder) {
             eprintln!("Failed to create project folder {}: {}", folder.display(), err);
@@ -201,7 +201,7 @@ pub async fn save_project_file(
         Some(f) if !f.trim().is_empty() => PathBuf::from(f),
         _ => {
             let name = project["name"].as_str().unwrap_or("project");
-            let docs = dirs::document_dir().ok_or("Could not locate the Documents folder")?;
+            let docs = crate::paths::document_dir().ok_or("Could not locate the Documents folder")?;
             let folder = docs.join("AI Music Video Studio").join(format!("{}-{}", slugify(name), &pid[..8.min(pid.len())]));
             state.db.collection::<Document>("projects")
                 .update_one(doc! { "id": &pid }, doc! { "$set": { "project_folder": folder.to_string_lossy().to_string() } })
@@ -432,7 +432,7 @@ pub async fn import_project(
 
     let source_dir_path = source_dir.map(PathBuf::from);
     // Get app data directory using standard approach
-    let app_data = if let Some(config_dir) = dirs::config_dir() {
+    let app_data = if let Some(config_dir) = crate::paths::config_dir() {
         config_dir.join("studio-lightkid").join("app")
     } else {
         return Err("Unable to locate app data directory".to_string());

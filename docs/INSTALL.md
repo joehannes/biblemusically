@@ -63,9 +63,25 @@ has moved around over the years:
 
 Turn it back off afterwards if you like; the installed app keeps working.
 
+The file is named for its version — `lightkid_studio_0.107.0.apk` — so two of them in a downloads
+folder are telling apart, and the newer one does not silently overwrite the older.
+
 **Debug or release?** Both install the same way. The release APK is the one to hand to somebody else:
 it is minified, roughly a tenth the size, and signed with the project's own release key. The debug APK
 carries 350 MB of debug symbols and is only worth having when something needs diagnosing.
+
+**An unsigned APK is a different matter, and it cannot be installed at all.** Android refuses it
+outright — unlike an unknown *source*, which is one toggle, "unsigned" is not something anyone can
+allow. If a build produces one, it is not a build anybody can use.
+
+**Building one yourself:**
+
+```bash
+npm run build:apk           # arm64 — every Android phone since about 2017
+npm run build:apk -- --all  # all four ABIs, roughly four times the size
+```
+
+It lands in `release/`, signed, correctly iconed, and named as above.
 
 **About that signature.** Android identifies an app by the key it was signed with, not by its name. An
 APK signed with a *different* key cannot update one already installed — the phone refuses, and the only

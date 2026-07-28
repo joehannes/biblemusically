@@ -211,7 +211,7 @@ pub async fn download_update(state: State<'_, AppState>) -> Res<Value> {
         .unwrap_or_else(|| format!("studio-lightkid-update-{platform}"));
 
     let bytes = r.bytes().await.map_err(e)?;
-    let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
+    let dir = crate::paths::download_dir().unwrap_or_else(std::env::temp_dir);
     std::fs::create_dir_all(&dir).map_err(e)?;
     let path = dir.join(&name);
     std::fs::write(&path, &bytes).map_err(e)?;

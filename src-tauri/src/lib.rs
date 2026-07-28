@@ -29,6 +29,8 @@ pub mod local_media;
 pub mod jobs;
 #[path = "../models.rs"]
 pub mod models;
+#[path = "../paths.rs"]
+pub mod paths;
 #[path = "../mongo_import.rs"]
 pub mod mongo_import;
 #[path = "../project_sync.rs"]
@@ -69,6 +71,24 @@ pub fn run() {
             // start any more. The old `mongod` sidecar is gone: it was a native x86_64 binary that
             // could never ship to Android, and it made the user's own data unreadable without it.
             let app_data = handle.path().app_data_dir().expect("failed to get app data dir");
+
+            // Teach `paths` where this platform lets the app write, before the store below becomes
+            // the first thing to ask. Mobile only: on desktop `dirs` already answers correctly, and
+            // answering differently would strand the data every existing install already has.
+            //
+            // Android has no home directory to hang an XDG layout off, so an un-taught `dirs` sends
+            // the store to `/.config` — unwritable, and startup treats that as fatal a few lines
+            // below. This block is the whole reason the app opens on a phone at all; see paths.rs.
+            #[cfg(mobile)]
+            {
+                let p = handle.path();
+                paths::install(
+                    p.app_config_dir().unwrap_or_else(|_| app_data.clone()),
+                    p.app_cache_dir().unwrap_or_else(|_| app_data.join("cache")),
+                    p.document_dir().unwrap_or_else(|_| app_data.join("Documents")),
+                    p.download_dir().unwrap_or_else(|_| app_data.join("Downloads")),
+                );
+            }
 
             // Browsh sidecar and midjourney-proxy autostart have been deprecated
             // in favor of a visible Playwright-driven browser workflow.
@@ -437,7 +457,15 @@ pub fn run() {
                 });
             }
 
-            // Check for FFmpeg and show a warning dialog if missing
+            // Check for FFmpeg and show a warning dialog if missing.
+            //
+            // Desktop only, and the gate is not about tidiness. A phone has no ffmpeg on PATH and no
+            // package manager to suggest one with, so `which` always fails there and the advice
+            // ("sudo apt install") is advice nobody can take. Worse, `blocking_show` parks the setup
+            // hook until someone dismisses the dialog — and on Android setup runs before the activity
+            // has a window to draw a dialog in. The app would not warn; it would hang, on every
+            // single launch, with the same blank screen as the data-directory bug above.
+            #[cfg(desktop)]
             if which::which("ffmpeg").is_err() {
                 use tauri_plugin_dialog::DialogExt;
                 let os = std::env::consts::OS;

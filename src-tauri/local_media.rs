@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 /// reproducible artefacts, and a user who clears their cache should lose nothing they cannot make
 /// again.
 pub fn media_root() -> PathBuf {
-    dirs::cache_dir()
+    crate::paths::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("studio-lightkid")
         .join("media")

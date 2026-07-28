@@ -10,8 +10,14 @@
 #
 # 1. macOS and iOS need macOS runners, and on a private repository GitHub bills macOS minutes at **10×**.
 #    A 12-minute macOS build spends 120 minutes of a 2,000-minute monthly allowance. Two platforms, a few
-#    releases a month, and the allowance is gone. If that bites, build the Apple targets locally and
-#    upload them to the same release with `gh release upload`.
+#    releases a month, and the allowance is gone. So **a tag push builds Linux, Windows and Android only**.
+#    Apple is opt-in: run the workflow by hand with `apple: true`, or build those targets locally and add
+#    them to the same release with `gh release upload <tag> <file>`.
+#
+# 1a. **The Android APK must be signed or it is not installable.** Android refuses an unsigned APK
+#    outright — that is not a toggle a user can flip. Set ANDROID_KEYSTORE_BASE64 and friends (the
+#    "Signing key" step below lists the exact commands); without them the job falls back to a debug
+#    build, which is installable but cannot update a release install.
 #
 # 2. **An unsigned iOS build cannot be installed on a stock iPhone.** Apple requires a signature; there is
 #    no "allow unknown sources" on iOS. The honest routes are TestFlight (Apple Developer Program, a
@@ -30,6 +36,10 @@ on:
       tag:
         description: "Tag to build (existing or new)"
         required: true
+      apple:
+        description: "Also build macOS and iOS (10× the minutes — see the note at the top)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -41,10 +51,31 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
+      desktop: ${{ steps.plan.outputs.desktop }}
+      apple: ${{ steps.plan.outputs.apple }}
     steps:
       - uses: actions/checkout@v4
       - id: pick
         run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      # Which platforms this run builds, decided here so the matrix below can be shorter on a tag push
+      # than on a deliberate release. The arithmetic behind it, for a private repository on the free
+      # 2,000-minute allowance: Linux bills 1×, Windows 2×, macOS 10×. One full matrix is roughly
+      # 15 + 30 + 15 + 150 + 200 ≈ 410 minutes, so about five tag pushes exhaust a month — and this
+      # project tags many times a day. Apple therefore builds when asked for, not on every tag.
+      #
+      # Nothing is lost by that: an unsigned iOS build cannot be installed on a stock device anyway
+      # (see the note at the top), and a macOS .dmg can be built locally and added to the same release
+      # with `gh release upload <tag> <file>`.
+      - id: plan
+        run: |
+          if [ "${{ github.event.inputs.apple }}" = "true" ]; then
+            echo 'desktop=[{"os":"ubuntu-22.04","name":"linux"},{"os":"windows-latest","name":"windows"},{"os":"macos-latest","name":"macos"}]' >> "$GITHUB_OUTPUT"
+            echo "apple=true" >> "$GITHUB_OUTPUT"
+          else
+            echo 'desktop=[{"os":"ubuntu-22.04","name":"linux"},{"os":"windows-latest","name":"windows"}]' >> "$GITHUB_OUTPUT"
+            echo "apple=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Create or reuse the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,13 +97,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-22.04
-            name: linux
-          - os: macos-latest
-            name: macos
-          - os: windows-latest
-            name: windows
+        include: ${{ fromJSON(needs.draft.outputs.desktop) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -99,10 +124,16 @@ jobs:
           key: ${{ matrix.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
 
       # --legacy-peer-deps because react-day-picker@8 declares a peer of date-fns ^2||^3 while this
-      # project is on date-fns 4. npm ci refuses that outright, which is why every release run since
-      # v0.88.0 failed in under two minutes without building anything. The pairing works — the calendar
-      # only uses formatting helpers that are unchanged across those majors — so the honest fix is to
-      # say so here rather than to downgrade a dependency the rest of the app uses.
+      # project is on date-fns 4. The pairing works — the calendar only uses formatting helpers that are
+      # unchanged across those majors — so the honest fix is to say so here rather than to downgrade a
+      # dependency the rest of the app uses.
+      #
+      # This flag was *not*, however, why every release from v0.88.0 to v0.106.0 failed here in under two
+      # minutes. That was package-lock.json: it had been left at a June state describing 138 packages
+      # while package.json had grown to 53 dependencies including 27 @radix-ui ones, and `npm ci` refuses
+      # a lockfile that is out of sync (EUSAGE) rather than quietly resolving it. `npm ci` is right to —
+      # but it means the lockfile has to be regenerated and committed whenever a dependency changes, or
+      # every platform fails at once, before compiling a line.
       - run: npm ci --legacy-peer-deps
       - run: npm run build
 
@@ -148,11 +179,67 @@ jobs:
           sdkmanager --install "ndk;29.0.13846066" "platforms;android-36" "build-tools;36.0.0"
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13846066" >> "$GITHUB_ENV"
 
+      # The launcher icon. `tauri android init` scaffolds gen/android from a template carrying Tauri's
+      # own logo and never consults src-tauri/icons/android again, so without this CI ships an APK
+      # wearing the default icon. Brings the adaptive icon too (mipmap-anydpi-v26 plus the background
+      # colour it references), which the template omits — and which is what Android 8+ actually uses.
+      - name: Launcher icons
+        run: cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+
+      # Signing, and why a release build without it is worthless.
+      #
+      # **An unsigned APK cannot be installed on Android at all.** Not "warns", not "needs a toggle" —
+      # refused. "Unsigned" is not something a user can allow; an unknown *source* is. So a release job
+      # that produces an unsigned APK produces an artefact nobody can use, which is what this workflow
+      # did before: the signing config in build.gradle.kts only applies when a keystore is present, and
+      # keystore.properties is gitignored because a private key does not belong in a repository.
+      #
+      # With the secrets set, CI signs with the same key as a local build — which matters beyond
+      # installing at all: Android identifies an app by its signature, so a CI build signed with a
+      # different key could not update a locally-installed one, only replace it and take its data.
+      #
+      #   gh secret set ANDROID_KEYSTORE_BASE64 < <(base64 -w0 ~/.config/studio-lightkid/android-release.keystore)
+      #   gh secret set ANDROID_KEYSTORE_PASSWORD
+      #   gh secret set ANDROID_KEY_ALIAS
+      #   gh secret set ANDROID_KEY_PASSWORD
+      #
+      # Without them the job still produces something installable rather than nothing: a *debug* build,
+      # which Android's debug keystore signs automatically. It is bigger and slower, and it cannot
+      # update a release install, but it runs on a phone — which an unsigned release APK does not.
+      - name: Signing key
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "storeFile=$RUNNER_TEMP/release.keystore"
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASSWORD"
+            } > src-tauri/gen/android/app/keystore.properties
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "Signing with the project release key."
+          else
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — building a debug APK, because an unsigned release APK cannot be installed."
+          fi
+
       # --legacy-peer-deps because react-day-picker@8 declares a peer of date-fns ^2||^3 while this
-      # project is on date-fns 4. npm ci refuses that outright, which is why every release run since
-      # v0.88.0 failed in under two minutes without building anything. The pairing works — the calendar
-      # only uses formatting helpers that are unchanged across those majors — so the honest fix is to
-      # say so here rather than to downgrade a dependency the rest of the app uses.
+      # project is on date-fns 4. The pairing works — the calendar only uses formatting helpers that are
+      # unchanged across those majors — so the honest fix is to say so here rather than to downgrade a
+      # dependency the rest of the app uses.
+      #
+      # This flag was *not*, however, why every release from v0.88.0 to v0.106.0 failed here in under two
+      # minutes. That was package-lock.json: it had been left at a June state describing 138 packages
+      # while package.json had grown to 53 dependencies including 27 @radix-ui ones, and `npm ci` refuses
+      # a lockfile that is out of sync (EUSAGE) rather than quietly resolving it. `npm ci` is right to —
+      # but it means the lockfile has to be regenerated and committed whenever a dependency changes, or
+      # every platform fails at once, before compiling a line.
       - run: npm ci --legacy-peer-deps
       - run: npm run build
 
@@ -165,20 +252,38 @@ jobs:
           export CC_aarch64_linux_android="$TOOLS/aarch64-linux-android24-clang"
           export AR_aarch64_linux_android="$TOOLS/llvm-ar"
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLS/aarch64-linux-android24-clang"
-          npx tauri android build --apk --target aarch64 || npx tauri android build --apk
+          if [ "${{ steps.signing.outputs.mode }}" = "release" ]; then
+            npx tauri android build --apk --target aarch64
+          else
+            npx tauri android build --apk --debug --target aarch64
+          fi
 
+      # Named for the app and the version, matching `npm run build:apk`. Gradle calls every APK
+      # `app-universal-release.apk`, which in a downloads folder is indistinguishable from every other
+      # release and overwrites the previous one. The update endpoint matches assets by the `.apk`
+      # extension, so the name is free to be useful.
       - name: Attach the APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Unsigned, or signed with a debug key — either way it installs after one system toggle, and
-          # docs/INSTALL.md explains that toggle.
-          find src-tauri/gen/android -name '*.apk' -print
-          find src-tauri/gen/android -name '*.apk' -exec \
-            gh release upload "${{ needs.draft.outputs.tag }}" {} --clobber \;
+          VERSION="$(node -p "require('./package.json').version")"
+          APK="$(find src-tauri/gen/android -name '*.apk' -print0 \
+                 | xargs -0 ls -t 2>/dev/null | head -1)"
+          if [ -z "$APK" ]; then echo "No APK was produced." >&2; exit 1; fi
+          mkdir -p out
+          cp "$APK" "out/lightkid_studio_${VERSION}.apk"
+
+          # Say plainly whether what we are about to publish can be installed. An unsigned APK is
+          # refused by Android outright, and finding that out on a phone is the expensive way.
+          "$ANDROID_HOME"/build-tools/36.0.0/apksigner verify "out/lightkid_studio_${VERSION}.apk" \
+            && echo "APK is signed." \
+            || echo "::error::The APK is unsigned and cannot be installed — set ANDROID_KEYSTORE_BASE64."
+
+          gh release upload "${{ needs.draft.outputs.tag }}" "out/lightkid_studio_${VERSION}.apk" --clobber
 
   ios:
     needs: draft
+    if: needs.draft.outputs.apple == 'true'
     runs-on: macos-latest
     # Allowed to fail without failing the release: an unsigned iOS build is the least reliable job here,
     # and it must not stop the four platforms that install without ceremony.
@@ -190,10 +295,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: "aarch64-apple-ios" }
       # --legacy-peer-deps because react-day-picker@8 declares a peer of date-fns ^2||^3 while this
-      # project is on date-fns 4. npm ci refuses that outright, which is why every release run since
-      # v0.88.0 failed in under two minutes without building anything. The pairing works — the calendar
-      # only uses formatting helpers that are unchanged across those majors — so the honest fix is to
-      # say so here rather than to downgrade a dependency the rest of the app uses.
+      # project is on date-fns 4. The pairing works — the calendar only uses formatting helpers that are
+      # unchanged across those majors — so the honest fix is to say so here rather than to downgrade a
+      # dependency the rest of the app uses.
+      #
+      # This flag was *not*, however, why every release from v0.88.0 to v0.106.0 failed here in under two
+      # minutes. That was package-lock.json: it had been left at a June state describing 138 packages
+      # while package.json had grown to 53 dependencies including 27 @radix-ui ones, and `npm ci` refuses
+      # a lockfile that is out of sync (EUSAGE) rather than quietly resolving it. `npm ci` is right to —
+      # but it means the lockfile has to be regenerated and committed whenever a dependency changes, or
+      # every platform fails at once, before compiling a line.
       - run: npm ci --legacy-peer-deps
       - run: npm run build
 

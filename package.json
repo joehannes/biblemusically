@@ -1,7 +1,7 @@
 {
   "name": "biblemusically",
   "private": true,
-  "version": "0.106.0",
+  "version": "0.107.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:deb": "npm run tauri -- build",
+    "build:apk": "bash ./scripts/build-apk.sh",
     "mj-capture": "node ./src-tauri/packaging/midjourney-session-capture.js",
     "i18n:extract": "node ./scripts/extract-ui-strings.mjs",
     "i18n:check": "node ./scripts/extract-ui-strings.mjs --check",

@@ -12,6 +12,10 @@ src-tauri/Cargo.lock
 node_modules
 
 dist/
+
+# Where `npm run build:apk` puts the sideloadable APK. The file is ~35 MB and rebuildable from the
+# tag it was cut from, so it belongs on a release page rather than in the history.
+release/
 # The Android project carries real customisation — the OAuth intent filter, the signing config,
 # the manifest placeholders — and `tauri android init` regenerates it from a template. Ignoring the
 # whole directory meant those edits lived on one machine only, so a CI-built APK silently lacked the
