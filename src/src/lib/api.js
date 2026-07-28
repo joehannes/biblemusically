@@ -135,6 +135,10 @@ export const api = {
   takeAiNotices: () => invokeCommand("take_ai_notices"),
   // AI providers (free + paid) and the live model list a given key can actually reach.
   listAiProviders: () => invokeCommand("list_ai_providers"),
+  // What the free tiers have left today and what a run costs, so the answer arrives before the
+  // spending rather than at the request that fails. Real counts, unlike quotaReport's job-count
+  // proxy — see src-tauri/ai_budget.rs.
+  aiBudgetReport: () => invokeCommand("ai_budget_report"),
   listAiModels: (provider) => invokeCommand("list_ai_models", { provider }),
   // Guided-flow proposals: per-step picks personalised from brief + learnings + engine caps.
   guideProposal: (payload) => invokeCommand("guide_proposal", { payload }),

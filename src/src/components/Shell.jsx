@@ -9,6 +9,7 @@ import { useRequireGuideStep } from "./GuideStepDialog";
 import ToursFab from "./Tours";
 import HealthBanner from "./HealthBanner";
 import UpdateBanner from "./UpdateBanner";
+import AiBudgetBanner from "./AiBudgetBanner";
 import { api } from "../lib/api";
 import { getVersion } from "@tauri-apps/api/app";
 // Fallback only, for the very first paint before getVersion() resolves — this file lives
@@ -1469,6 +1470,10 @@ export default function Shell({ children }) {
         {/* A release landed. Above the page rather than on the Account page alone, which was the only
             place that ever asked — so updates announced themselves solely to people already looking. */}
         <UpdateBanner />
+
+        {/* Free AI running low, said while it can still change a decision rather than at the request
+            that fails. Silent until it is about two songs' worth, and on billed keys entirely. */}
+        <AiBudgetBanner />
 
         <PageActionsContext.Provider value={setPageActions}>
         <ActionRegistryContext.Provider value={actionRegistry}>
