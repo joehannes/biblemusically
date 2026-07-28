@@ -7,9 +7,10 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 import { toast } from "sonner";
+import WelcomeTour from "./WelcomeTour";
 import {
   GraduationCap, X, ArrowRight, ArrowLeft, Sparkles, Wrench, Map as MapIcon, Lightbulb,
-  Wand2, Mic, MicOff, Loader2, CheckCircle2, RefreshCw,
+  Wand2, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Compass,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -447,6 +448,10 @@ export function SuggestionsToggle({ onAutoPop }) {
 
 // ── Registry + menubar button ────────────────────────────────────────────────
 const TOURS = [
+  // The actual welcome: it walks the real pages and says what each is for, pitched at the level the
+  // user picked. Runs automatically once, on first launch, and stays here for anyone who skipped it
+  // or wants it again at a different level.
+  { id: "tour", title: "Welcome tour", icon: Compass, blurb: "A guided look around the app, explained at your level." },
   // Renamed, not moved: this *is* the settings guide, and calling it "Welcome" put the most
   // technical screen in the app — API keys, GPU servers, OAuth — in front of somebody who had not
   // yet seen what any of it was for. The welcome now shows the app; this configures it.
@@ -522,6 +527,10 @@ export default function ToursFab() {
       {/* Feature tour: navigates the real pages and floats a coach card over a barely-there blur,
           so you actually SEE each feature as it's introduced. */}
       {active === "workflow" && <WorkflowTour onClose={close} />}
+
+      {/* The welcome tour: same idea, but it blocks interaction and narrates, because it is aimed at
+          someone who has not used the app yet and should not be able to fire a control by accident. */}
+      {active === "tour" && <WelcomeTour onClose={close} onDone={close} />}
 
       {/* Daily guide stays a focused centered dialog. */}
       {active === "daily" && (

@@ -67,6 +67,16 @@ export function voicePrefs() {
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}") }; }
   catch { return { ...defaults }; }
 }
+/**
+ * Has the user actually chosen, or are they still on the defaults?
+ *
+ * `voicePrefs()` merges defaults in, so it can never answer this — and the difference matters: a
+ * first-run guide may quietly preselect the free offline voice, but must not overwrite a Gemini
+ * voice somebody deliberately picked.
+ */
+export function voicePrefsChosen() {
+  try { return localStorage.getItem(PREF_KEY) != null; } catch { return false; }
+}
 export function setVoicePrefs(patch) {
   const next = { ...voicePrefs(), ...patch };
   try { localStorage.setItem(PREF_KEY, JSON.stringify(next)); } catch { /* ignore */ }

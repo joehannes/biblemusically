@@ -1086,6 +1086,7 @@ export default function Shell({ children }) {
                 <NavLink
                   to={to}
                   data-testid={testid}
+                  data-tour-nav={to}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-5 py-2.5 text-sm transition-colors border-l-2 ${
                       isActive
@@ -1496,6 +1497,7 @@ export default function Shell({ children }) {
             <NavLink
               key={to}
               to={to}
+              data-tour-nav={to}
               className={({ isActive }) =>
                 `flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] ${
                   isActive ? "text-primary" : "text-muted-foreground"

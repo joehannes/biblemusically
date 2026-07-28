@@ -529,9 +529,10 @@ function VoiceStepBody({ onDone }) {
     <div className="space-y-3">
       <p className="text-muted-foreground text-sm">
         The guides can talk you through each step and take spoken answers — useful when your hands are
-        busy. Pick a voice and listen to it, or turn speech off entirely.
+        busy. Your device's own voice is picked to start with: it works offline, costs nothing and
+        needs no key. Listen to it, pick a different one, or turn speech off entirely.
       </p>
-      <VoicePicker compact />
+      <VoicePicker compact preferSystem />
       <Button onClick={() => onDone?.()}>Continue</Button>
     </div>
   );
@@ -883,6 +884,22 @@ export const GUIDE_STEPS = [
     Body: FilesStepBody,
   },
 ];
+
+/**
+ * What first run is allowed to ask, and in what order.
+ *
+ * Everything else — API keys, GPU accounts, OAuth, folders — was moved out of the way. Asking a
+ * stranger for four provider keys before they have seen a single screen of the app puts the most
+ * technical minutes of the whole product in front of the person least equipped to sit through them,
+ * and the honest answer to "why do I need this?" at that moment is "you don't know yet".
+ *
+ * So first run asks only what genuinely has to come first: what the app does with what it sees, how
+ * much to explain, which language, and which voice. Then it shows the app. The rest lives in
+ * "Set up & configure" under the graduation-cap menu, and is asked for when something needs it.
+ */
+export const FIRST_RUN_STEP_IDS = ["terms", "audience", "language", "voice"];
+export const FIRST_RUN_STEPS = GUIDE_STEPS.filter((s) => FIRST_RUN_STEP_IDS.includes(s.id));
+export const SETUP_STEPS = GUIDE_STEPS.filter((s) => !FIRST_RUN_STEP_IDS.includes(s.id));
 
 export const getGuideStep = (id) => GUIDE_STEPS.find((s) => s.id === id);
 

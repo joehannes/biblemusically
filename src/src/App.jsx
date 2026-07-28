@@ -6,7 +6,8 @@ import { api } from "./lib/api";
 import { initServerLifecycle } from "./lib/serverLifecycle";
 import Shell from "./components/Shell";
 import Onboarding from "./pages/Onboarding";
-import { GUIDE_STEPS } from "./lib/guideSteps";
+import { GUIDE_STEPS, FIRST_RUN_STEPS } from "./lib/guideSteps";
+import WelcomeTour from "./components/WelcomeTour";
 import Dashboard from "./pages/Dashboard";
 import Workflow from "./pages/Workflow";
 import Lyrics from "./pages/Lyrics";
@@ -59,6 +60,9 @@ function RootGate() {
   // ticked off), which the user can dismiss for the session. Once every step is done, nothing pops.
   const [pending, setPending] = useState([]);
   const [dismissed, setDismissed] = useState(false);
+  // The welcome tour runs over the real app, so it can only start once the Shell is mounted.
+  // It reads the audience level itself — that answer is saved moments earlier, by the step above it.
+  const [tour, setTour] = useState(false);
   // Arm the GPU-quota watchdog: idles down any server this session started after 15 min of
   // inactivity, and asks them to stop on shutdown. Servers are never started here — only on demand.
   useEffect(() => { initServerLifecycle(); }, []);
@@ -79,8 +83,24 @@ function RootGate() {
   }, []);
 
   if (!ready) return null;
-  // First run: the full welcome + all steps.
-  if (!onboarded) return <Onboarding onDone={() => { setOnboarded(true); setPending([]); }} />;
+  // First run asks only the basics — terms, level, language, voice — and then SHOWS the app rather
+  // than continuing into keys and accounts. See FIRST_RUN_STEPS for why that split exists.
+  if (!onboarded) {
+    return (
+      <Onboarding
+        steps={FIRST_RUN_STEPS}
+        onDone={() => {
+          setOnboarded(true);
+          // Straight into the tour. `dismissed` stops the outstanding-setup wizard from popping on
+          // top of it — having just been told what the app does, being handed an OAuth screen in the
+          // same breath is the exact whiplash this reordering exists to remove.
+          setDismissed(true);
+          setTour(true);
+        }}
+        onSkip={() => { setOnboarded(true); setDismissed(true); }}
+      />
+    );
+  }
   // Later runs: re-pop only the still-useful steps, dismissible.
   if (pending.length > 0 && !dismissed) {
     return (
@@ -131,6 +151,7 @@ function RootGate() {
             <Route path="/data" element={<DataSync />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
+      {tour && <WelcomeTour onClose={() => setTour(false)} onDone={() => setTour(false)} />}
     </Shell>
   );
 }

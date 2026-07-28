@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Button } from "./ui/button";
 import {
-  speak, stopSpeaking, voicePrefs, setVoicePrefs, voiceInputAvailable,
+  speak, stopSpeaking, voicePrefs, setVoicePrefs, voicePrefsChosen, voiceInputAvailable,
   systemVoices, requestMicPermission, micPermissionState,
 } from "../lib/voice";
 import { Volume2, Loader2, Mic, Check } from "lucide-react";
@@ -13,7 +13,7 @@ import { toast } from "sonner";
 //
 // Every phrase is cached on disk by (text, voice) in the backend, so auditioning voices costs one
 // request each and nothing thereafter.
-export default function VoicePicker({ compact = false, onChange }) {
+export default function VoicePicker({ compact = false, preferSystem = false, onChange }) {
   const [prefs, setPrefs] = useState(() => voicePrefs());
   const [voices, setVoices] = useState([]);
   const [engines, setEngines] = useState([]);
@@ -28,9 +28,21 @@ export default function VoicePicker({ compact = false, onChange }) {
     api.listAssistantVoices()
       .then((r) => { setVoices(r?.voices || []); setEngines(r?.engines || []); })
       .catch(() => { /* the picker degrades to whatever is already chosen */ });
-    systemVoices().then(setSystem).catch(() => setSystem([]));
+    systemVoices()
+      .then((list) => {
+        setSystem(list);
+        // First run has no AI key yet, so defaulting to Gemini voices would mean every spoken line
+        // is a failed request before it falls back anyway. Where the platform ships voices of its
+        // own — Android always does — start on those: free, offline, instant, no budget spent.
+        // Only ever applied when nothing has been chosen yet.
+        if (preferSystem && list.length && !voicePrefsChosen()) {
+          update({ engine: "browser", speak: true, systemVoice: (list.find((v) => v.default) || list[0]).id });
+        }
+      })
+      .catch(() => setSystem([]));
     micPermissionState().then(setMic).catch(() => {});
     return () => stopSpeaking();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const update = (patch) => {
