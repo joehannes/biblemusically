@@ -583,28 +583,33 @@ echoed back (which the runtime then never translates, because the catalogue clai
 dropped `{0}` placeholder, and a runaway length that means the model started explaining. All fifteen
 catalogues are clean on all three.
 
-**Done in v0.106.0 — all fifteen languages at 100%, audit clean.** **Since drifted back to 89.5%
-(2133/2383), and the reason is structural rather than neglect:** every feature shipped after v0.106.0
-added English strings, and nothing makes adding one fail. `npm run i18n:check` catches a stale
-*inventory*, which is why it keeps getting refreshed, but no gate catches an inventory entry that has
-no translation — so coverage falls a little with each release while every check stays green. The
-~250 outstanding strings are hand work (the owner's standing instruction: by hand, not Gemini). The
-quality audit is clean at that coverage: nothing echoed, no placeholder dropped, no runaway length.
+**Done in v0.106.0 — all fifteen languages at 100%, audit clean.**
 
-**A hole in the extractor itself, found 2026-08-01 and still open.** `extract-ui-strings.mjs` rule 1
-allows a `{…}` expression to contain tags, so a conditional block whose branches carry no braces of
-their own is matched as one expression and its text is swallowed whole:
+**Then it drifted, and the drift is now stopped rather than merely noticed (2026-08-01).** Coverage
+had fallen to 86.6%, and nobody did anything wrong: `i18n:check` guards the *inventory*, so it stays
+green as long as the inventory is refreshed, and nothing at all guarded the *translations*. Every
+release added English strings, each individually reasonable, and coverage fell a little each time
+with every check passing.
 
-```jsx
-{connected ? (<div>Sign in as the account you want to add.</div>) : (<div>Sign in.</div>)}
-```
+- **`npm run i18n:gate`** is the missing guard: a ratchet over `src/src/i18n/coverage-floor.json`.
+  The backlog may shrink freely; growing it fails, and raising the ceiling is a deliberate edit that
+  shows up in review. Run it before a release.
+- **The extractor hole is fixed.** `extract-ui-strings.mjs` rule 1 used to let a `{…}` expression
+  contain tags, so a conditional block whose branches carry no braces of their own was matched as
+  one expression and both sentences were swallowed — present on screen, absent from the inventory,
+  untranslatable in every language, and reported by nothing. It now counts braces (`maskExpressions`)
+  instead of guessing with one regex, which handles that shape *and* the commoner opposite one, a
+  label following an expression that does hold tags (the spinner-then-label buttons: "Run full
+  pipeline", "Publish all", "Save & verify"). **+80 strings recovered, none lost.** Two shapes are
+  pinned in `tests/overlay-containment.test.mjs`.
+- **77 of the recovered strings are translated** into all fifteen languages, by hand. Coverage is
+  **2210/2461 (89.8%)**, audit clean: nothing echoed, no placeholder dropped, no runaway length.
 
-Neither sentence reaches the inventory, so neither can be translated in any language, and no check
-reports it — the string is simply absent. Narrowing the class to `\{[^{}<>]*\}` fixes that case and
-*breaks* a commoner one (text following an expression that does hold tags, e.g. the spinner-then-label
-buttons: "Run full pipeline", "Publish all", "Save & verify" — 42 real labels lost against 60 gained),
-so it needs balanced-brace parsing rather than a wider regex. Until then: **write conditional copy as
-whole JSX text nodes, never as a string literal inside an expression.**
+**What is left is content, not mechanism: 251 strings per language.** 147 of them are full
+paragraphs. Two ways to close it, and the choice is the owner's: `scripts/build-i18n-catalogs.mjs`
+(resumable, but it spends the app's own AI budget — free OpenRouter is 50 requests/day), or by hand,
+which is the standing instruction for catalogues. `node scripts/i18n-missing.mjs <code>` prints
+exactly what one language is missing.
 
 The inventory shrank from 2,313 to 2,134 as the noise came out, and what remains is what somebody
 actually reads. 54 more strings were excluded outright because they are not translatable at all:

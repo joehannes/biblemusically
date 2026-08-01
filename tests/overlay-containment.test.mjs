@@ -69,6 +69,53 @@ test("every hand-rolled full-screen overlay is portalled to <body>", () => {
   }
 });
 
+// ── The other half of the same report ────────────────────────────────────────
+// The copy added to that dialog turned out to be untranslatable, because the string extractor could
+// not see it. These pin both shapes it has to handle at once — they pull in opposite directions, and
+// every single-regex attempt got one right by getting the other wrong.
+test("the string extractor sees text in conditional JSX and after tag-bearing expressions", async () => {
+  const mod = await import("../scripts/extract-ui-strings.mjs");
+  const seen = mod.extractFrom(`
+    <div className="flex-1">
+      {connected ? (
+        <div>Sign in as the account you want to add.</div>
+      ) : (
+        <div>Sign in with your account.</div>
+      )}
+      <Button size="lg" disabled={busy} onClick={runFullPipeline}>
+        {running ? <Loader2 className="animate-spin" /> : <Play className="w-4 h-4" />}
+        Run the full pipeline
+      </Button>
+      <p>{project ? <>Angles for <b>{project.name}</b> — pick one.</> : "No project yet."}</p>
+    </div>
+  `);
+
+  // Both branches of a conditional whose branches ARE the text.
+  assert.ok(seen.includes("Sign in as the account you want to add."),
+    "text inside a conditional JSX branch must reach the inventory");
+  assert.ok(seen.includes("Sign in with your account."),
+    "the other branch must reach it too");
+  // A label that FOLLOWS an expression which itself holds tags (the spinner-then-label button).
+  assert.ok(seen.includes("Run the full pipeline"),
+    "a label after a tag-bearing expression must survive — this is how most buttons are written");
+  // A fragment (`<>`) is a tag boundary like any other.
+  assert.ok(seen.includes("Angles for"), "text inside a fragment must reach the inventory");
+
+  // And no JavaScript: masking the expressions exposes function bodies to the text scan.
+  for (const s of seen) {
+    assert.ok(!/\bexport\s+(?:default|function)|\bfunction\s*\w*\s*\(/.test(s),
+      `the inventory must not contain source code, got: ${s}`);
+  }
+});
+
+test("the untranslated backlog is ratcheted, not merely reported", () => {
+  const floor = JSON.parse(readFileSync(new URL("../src/src/i18n/coverage-floor.json", import.meta.url), "utf8"));
+  assert.equal(typeof floor.max_missing, "number");
+  const gate = readFileSync(new URL("../scripts/i18n-missing.mjs", import.meta.url), "utf8");
+  assert.match(gate, /process\.exit\(1\)/,
+    "--gate must fail the build when the backlog grows; reporting it is what let coverage drift");
+});
+
 test("the guided-step dialog can tell its caller it finished", () => {
   // The other half of the same report: the dialog opened (once visible), an account was connected,
   // and the list behind it still read "No Kaggle account connected yet" because nothing told the

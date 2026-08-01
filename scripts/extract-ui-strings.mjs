@@ -68,6 +68,12 @@ function eligible(raw) {
   if (/[{}<>]/.test(s) && !/[a-z] [a-z]/i.test(s)) return false;
   // Code that slipped through the JSX text match: statement punctuation, or a bare call/return.
   if (/;\s*$|;\s*\n|=>|\breturn\s*\(|^\w+\($/.test(s)) return false;
+  // A declaration. Masking the expressions took away the braces that used to hide a function body
+  // from the text scan, so the scan can now reach plain JavaScript and has to be told what it is.
+  // Case-sensitive on purpose: `export` is a keyword, `Export` is a button.
+  if (/\bexport\s+(?:default|function|const|class|async)\b/.test(s)) return false;
+  if (/\b(?:async\s+)?function\s*[\w$]*\s*\(/.test(s)) return false;
+  if (/\b(?:const|let|var)\s+[\w$]+\s*=\s*[[{(]?$/.test(s)) return false;
   // A template literal or an unbalanced expression fragment. `(prefix ? `$` reached the inventory
   // from a redaction helper, and a string nobody can read is a string nobody can translate.
   if (/[`$]\{|\?\s*`|`\s*\$|^\(/.test(s)) return false;
@@ -142,6 +148,10 @@ const NEVER_TRANSLATED = new Set([
   "Google OAuth (YouTube Data API v3)", "Client ID (xxxxx.apps.googleusercontent.com)",
   "@channelname", "Vol.", "Worker URL",
 
+  // Key names, printed as the keys are actually labelled on the keyboard. Translating "Ctrl" does
+  // not rename the key, it just stops the hint matching what the user is looking at.
+  "Ctrl ← →", "Ctrl ↑ ↓",
+
   // Prompts and commands shown verbatim. Translating a prompt changes what the engine receives;
   // translating a command makes it stop working.
   "cinematic lighting, --ar 16:9", "sacred, gentle dawn, restful, soft chamber reverb",
@@ -157,6 +167,56 @@ const NEVER_TRANSLATED = new Set([
   "img ·", "med ·", "Media ·", "id:", "kernel:", "format:", "API:", "Chaos", "Chaos:",
 ]);
 
+// Marks where an expression stood, so the literal around it splits into separate text nodes exactly
+// as it will at runtime. A control character, because it can never occur in source.
+const SPLIT = " ";
+
+/**
+ * Mask JSX expression containers so the text around and inside them survives, and only the
+ * expressions themselves are lost.
+ *
+ * This used to be attempted with one regex, which cannot count braces, and the two shapes below
+ * pull in opposite directions — every regex that got one right got the other wrong:
+ *
+ *   {runningAll ? <Loader2 /> : <Play />}          a container that HOLDS markup, with the label
+ *   Run full pipeline                              ("Run full pipeline") following it in the run
+ *
+ *   {connected ? (<div>Sign in as …</div>) : (<div>Sign in.</div>)}    a container whose branches
+ *                                                                     are themselves the text
+ *
+ * Letting a container swallow tags loses the second (both sentences vanish, untranslatable in every
+ * language, and no check reports it because the string is simply absent). Forbidding it loses the
+ * first — 42 real button labels, "Save & verify" and "Publish all" among them. So count the braces:
+ *
+ *   • no tags inside → it renders a value, which splits the surrounding literal. Emit one SPLIT.
+ *   • tags inside    → keep from the first `<` to the last `>` and recurse into it; the scaffolding
+ *                      around them (`cond ? `, ` : `, `&& `) is what gets dropped, not the markup.
+ *
+ * Unbalanced braces are left alone rather than guessed at.
+ */
+function maskExpressions(src) {
+  let out = "";
+  for (let i = 0; i < src.length; ) {
+    if (src[i] !== "{") { out += src[i++]; continue; }
+    let depth = 0, j = i;
+    for (; j < src.length; j++) {
+      if (src[j] === "{") depth++;
+      else if (src[j] === "}" && --depth === 0) break;
+    }
+    if (j >= src.length) { out += src[i++]; continue; }   // unbalanced — leave it as written
+    const inner = src.slice(i + 1, j);
+    if (inner.includes("<")) {
+      const first = inner.indexOf("<");
+      const last = inner.lastIndexOf(">");
+      out += SPLIT + (last > first ? maskExpressions(inner.slice(first, last + 1)) : "") + SPLIT;
+    } else {
+      out += SPLIT;
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
 const strings = new Map();  // string -> Set(source file)
 const add = (s, file) => {
   // Collapse whitespace exactly as JSX does before the browser sees it: a text block written across
@@ -169,16 +229,33 @@ const add = (s, file) => {
   strings.get(t).add(relative(ROOT, file));
 };
 
-for (const file of files) {
-  const code = readFileSync(file, "utf8");
+/**
+ * Every interface string in one file's source. Exported so the rules can be tested against a snippet
+ * rather than against the whole app, where a regression shows up only as a number moving.
+ */
+export function extractFrom(code, file = "<inline>") {
+  const before = new Set(strings.keys());
+  scan(code, file);
+  return [...strings.keys()].filter((s) => !before.has(s));
+}
+
+function scan(code, file) {
   // Strip comments so commentary prose never lands in the inventory.
   const stripped = code
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + m.slice(p.length).replace(/[^\n]/g, " "));
 
-  // 1. JSX text between tags — split on {expressions}, which break text nodes apart.
-  for (const m of stripped.matchAll(/>([^<>{}]*(?:\{[^{}]*\}[^<>{}]*)*)</g)) {
-    for (const piece of m[1].split(/\{[^{}]*\}/)) {
+  // 1. JSX text between tags, once the expressions have been masked (see maskExpressions).
+  //
+  // Both ends have to be a real tag boundary. Masking removes the braces that used to break these
+  // matches by accident, which left the scan free to read plain JavaScript as if it were markup —
+  // `>` is also the tail of `=>` and `>=`, and a run between two of those is a line of code. So the
+  // opening `>` must not be the tail of `=>` or `>>`, and the closing `<` must actually start a tag.
+  // Only those two: `/>` is a self-closing tag and `<>` is a fragment, and both are ordinary ways to
+  // end the markup that precedes a label. Excluding either loses real copy — `/` costs every button
+  // written icon-then-label, which is most of them, and `<` costs every fragment.
+  for (const m of maskExpressions(stripped).matchAll(/(?<![=>])>([^<>]*)<(?=[A-Za-z/>])/g)) {
+    for (const piece of m[1].split(SPLIT)) {
       if (piece.trim()) add(piece, file);
     }
   }
@@ -200,6 +277,13 @@ for (const file of files) {
     add((m[1] ?? m[2] ?? "").replace(/\\"/g, '"'), file);
   }
 }
+
+// Importing this module must not rewrite the inventory — the tests do exactly that to exercise
+// `extractFrom` against a snippet.
+const RUN_AS_CLI = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (!RUN_AS_CLI) { /* library use: nothing below runs */ } else {
+
+for (const file of files) scan(readFileSync(file, "utf8"), file);
 
 const sorted = [...strings.keys()].sort((a, b) => a.localeCompare(b, "en"));
 const payload = {
@@ -227,3 +311,5 @@ if (process.argv.includes("--check")) {
 
 writeFileSync(OUT, JSON.stringify(payload, null, 2) + "\n");
 console.log(`${sorted.length} strings from ${files.length} files → ${relative(ROOT, OUT)}`);
+
+}   // end RUN_AS_CLI

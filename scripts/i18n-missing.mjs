@@ -4,6 +4,15 @@
 //   node scripts/i18n-missing.mjs              # a count per language
 //   node scripts/i18n-missing.mjs de           # the missing strings for one language, as JSON
 //   node scripts/i18n-missing.mjs --audit      # what is present but wrong
+//   node scripts/i18n-missing.mjs --gate       # fail if the untranslated backlog grew
+//   node scripts/i18n-missing.mjs --gate --update   # accept the current backlog as the new ceiling
+//
+// The gate exists because of how coverage was lost. The catalogues reached 100% in v0.106.0 and were
+// at 86.6% by v0.109.0, and nobody did anything wrong: `i18n:check` guards the *inventory*, so it
+// stays green as long as the inventory is refreshed, and no check at all guarded the *translations*.
+// Every release added English strings, each one individually reasonable, and coverage fell a little
+// each time with every check passing. A ratchet is the smallest thing that stops that: the backlog
+// may shrink freely, and growing it takes a deliberate, reviewable edit to the committed ceiling.
 //
 // The audit half matters more than the count. A catalogue can be "100% covered" and still be broken
 // in three ways that a coverage number hides completely:
@@ -27,10 +36,15 @@ const KEYS = Array.isArray(inventory.strings) ? inventory.strings : Object.keys(
 
 const argv = process.argv.slice(2);
 const audit = argv.includes("--audit");
+const gate = argv.includes("--gate");
+const update = argv.includes("--update");
 const only = argv.find((a) => !a.startsWith("--"));
+const FLOOR = join(I18N, "coverage-floor.json");
 
+// Everything in here is a language catalogue except the two bookkeeping files.
+const NOT_A_LANGUAGE = new Set(["ui-strings.json", "coverage-floor.json"]);
 const codes = readdirSync(I18N)
-  .filter((f) => f.endsWith(".json") && f !== "ui-strings.json")
+  .filter((f) => f.endsWith(".json") && !NOT_A_LANGUAGE.has(f))
   .map((f) => f.replace(/\.json$/, ""))
   .filter((c) => !only || c === only);
 
@@ -59,6 +73,29 @@ for (const code of codes) {
   worstFirst.push({ code, missing, echoed, lostPlaceholder, runaway, total: KEYS.length });
 }
 worstFirst.sort((a, b) => b.missing.length - a.missing.length);
+
+if (gate) {
+  const worst = Math.max(...worstFirst.map((r) => r.missing.length));
+  const ceiling = JSON.parse(readFileSync(FLOOR, "utf8"));
+  if (update) {
+    writeFileSync(FLOOR, `${JSON.stringify({ ...ceiling, max_missing: worst, total: KEYS.length }, null, 2)}\n`);
+    console.log(`ceiling set to ${worst} untranslated of ${KEYS.length}`);
+    process.exit(0);
+  }
+  if (worst > ceiling.max_missing) {
+    const over = worstFirst.filter((r) => r.missing.length > ceiling.max_missing);
+    console.error(
+      `${worst} strings are untranslated; the committed ceiling is ${ceiling.max_missing}.\n` +
+      `Worst: ${over.map((r) => `${r.code} (${r.missing.length})`).join(", ")}\n\n` +
+      "New interface copy needs a translation in every bundled language, or the language nobody is\n" +
+      "watching quietly turns back into English. Translate it — `node scripts/i18n-missing.mjs <code>`\n" +
+      "lists what each catalogue is missing — then run this with --update to lower the ceiling.\n" +
+      "Raising the ceiling is a deliberate act; it should show up in review as one.");
+    process.exit(1);
+  }
+  console.log(`${worst} untranslated of ${KEYS.length}, ceiling ${ceiling.max_missing} — ok`);
+  process.exit(0);
+}
 
 if (only && !audit) {
   // One language's missing strings, ready to be translated and pasted back.

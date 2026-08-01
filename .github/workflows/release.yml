@@ -45,9 +45,35 @@ permissions:
   contents: write
 
 jobs:
+  # The cheap job that has to pass before anything expensive runs. There was no test job at all, which
+  # is the deeper reason translation coverage could fall from 100% to 86.6% across four releases with
+  # every check green: the checks existed, nothing ran them.
+  #
+  # One Linux runner, a couple of minutes, billed 1× — against a full matrix of roughly 410 minutes.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci --legacy-peer-deps
+      - name: Unit tests
+        run: npm run test:unit
+      # The inventory must match the source…
+      - name: Interface string inventory is current
+        run: npm run i18n:check
+      # …and the backlog of untranslated strings must not have grown. See src/src/i18n/coverage-floor.json.
+      - name: Translation backlog has not grown
+        run: npm run i18n:gate
+      # Present-but-wrong is invisible to a coverage number: an English string echoed back, a dropped
+      # {0}, a translation three times the length of its source.
+      - name: Translation quality audit
+        run: npm run i18n:audit
+
   # Made first and separately so every platform job attaches to the same release rather than racing to
   # create it — which is how you end up with five releases for one tag.
   draft:
+    needs: checks
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
