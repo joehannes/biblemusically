@@ -23,12 +23,16 @@ const badgeVariants = cva(
   }
 )
 
+// A <span>, not a <div>. Badges are already styled `inline-flex` and are written mid-sentence — and
+// a <div> inside a <p> is invalid HTML the parser silently repairs by closing the paragraph early,
+// which React 19 reports as an error and which splits the sentence around the badge. A span renders
+// identically and is what an inline element should have been in the first place.
 function Badge({
   className,
   variant,
   ...props
 }) {
-  return (<div className={cn(badgeVariants({ variant }), className)} {...props} />);
+  return (<span className={cn(badgeVariants({ variant }), className)} {...props} />);
 }
 
 export { Badge, badgeVariants }

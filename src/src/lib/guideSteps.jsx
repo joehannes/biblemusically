@@ -194,7 +194,12 @@ function AiStepBody({ settings, onDone }) {
 // ── Step: Kaggle free GPU servers ────────────────────────────────────────────
 function KaggleStepBody({ settings, onDone }) {
   const [tokenJson, setTokenJson] = useState("");
-  const [state, setState] = useState({ verifying: false, verified: !!settings?.kaggle_connected, username: settings?.kaggle_username || "", error: "" });
+  // `state.verified` means "a token was accepted in THIS sitting" — not "an account exists". The two
+  // were conflated, and this step is also how you add a SECOND account (quota is per-account): it
+  // opened already showing a green "Connected as <the old account>" against an empty token box, which
+  // reads as "nothing to do here". The account already on file is shown separately, as context.
+  const connected = settings?.kaggle_connected ? (settings?.kaggle_username || "your Kaggle account") : "";
+  const [state, setState] = useState({ verifying: false, verified: false, username: "", error: "" });
   const [musicEngine, setMusicEngine] = useState(settings?.music_engine || "heartmula");
   const [imageEngine, setImageEngine] = useState(settings?.image_engine || "comfyui");
   const [autostart, setAutostart] = useState(true);
@@ -226,7 +231,7 @@ function KaggleStepBody({ settings, onDone }) {
 
   const finish = async () => {
     await persist({ music_engine: musicEngine, image_engine: imageEngine });
-    if (autostart && state.verified) {
+    if (autostart && (state.verified || connected)) {
       autoStartKaggleServer(musicEngine);
       if (imageEngine === "comfyui" || imageEngine === "flux") autoStartKaggleServer(imageEngine);
       toast.success("Installing & starting your servers — track progress in Settings.");
@@ -240,10 +245,27 @@ function KaggleStepBody({ settings, onDone }) {
         Music and image generation run on free Kaggle GPUs. Kaggle can't be signed into from inside this app
         (Google blocks embedded logins), so sign in your normal browser, then connect with an API token.
       </p>
+      {connected && (
+        <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
+          <div>
+            <span className="uppercase tracking-widest text-[10px]">Already connected</span>{" "}
+            <b className="text-foreground normal-case tracking-normal" data-no-i18n>{connected}</b>
+          </div>
+          <p>
+            Free GPU time is granted per account, so connecting a second one gives the app somewhere to
+            go when this one's weekly quota runs out — it switches over on its own. Sign in below as the
+            account you want to add: sign out of Kaggle in your browser first, or the token page will
+            just hand you the same account's key again.
+          </p>
+        </div>
+      )}
       <ol className="space-y-3 text-sm">
         <li className="flex gap-3 items-start">
           <span className="text-primary font-mono">1</span>
           <div className="flex-1">
+            {/* One sentence, unconditional. Which account to sign in as is said in the box above,
+                where there is room to say why — and a sentence spliced around {connected} is a
+                sentence no catalogue can carry: extract-ui-strings.mjs keys on whole text nodes. */}
             <div>Sign in to Kaggle (free account; "Continue with Google" is fine there).</div>
             <Button size="sm" variant="outline" className="mt-1.5 h-7 text-xs" onClick={() => api.openKaggleLogin()}>
               <ExternalLink className="w-3 h-3 mr-1.5" />Open Kaggle sign-in

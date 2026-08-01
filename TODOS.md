@@ -583,7 +583,28 @@ echoed back (which the runtime then never translates, because the catalogue clai
 dropped `{0}` placeholder, and a runaway length that means the model started explaining. All fifteen
 catalogues are clean on all three.
 
-**Done in v0.106.0 — all fifteen languages at 100%, audit clean.**
+**Done in v0.106.0 — all fifteen languages at 100%, audit clean.** **Since drifted back to 89.5%
+(2133/2383), and the reason is structural rather than neglect:** every feature shipped after v0.106.0
+added English strings, and nothing makes adding one fail. `npm run i18n:check` catches a stale
+*inventory*, which is why it keeps getting refreshed, but no gate catches an inventory entry that has
+no translation — so coverage falls a little with each release while every check stays green. The
+~250 outstanding strings are hand work (the owner's standing instruction: by hand, not Gemini). The
+quality audit is clean at that coverage: nothing echoed, no placeholder dropped, no runaway length.
+
+**A hole in the extractor itself, found 2026-08-01 and still open.** `extract-ui-strings.mjs` rule 1
+allows a `{…}` expression to contain tags, so a conditional block whose branches carry no braces of
+their own is matched as one expression and its text is swallowed whole:
+
+```jsx
+{connected ? (<div>Sign in as the account you want to add.</div>) : (<div>Sign in.</div>)}
+```
+
+Neither sentence reaches the inventory, so neither can be translated in any language, and no check
+reports it — the string is simply absent. Narrowing the class to `\{[^{}<>]*\}` fixes that case and
+*breaks* a commoner one (text following an expression that does hold tags, e.g. the spinner-then-label
+buttons: "Run full pipeline", "Publish all", "Save & verify" — 42 real labels lost against 60 gained),
+so it needs balanced-brace parsing rather than a wider regex. Until then: **write conditional copy as
+whole JSX text nodes, never as a string literal inside an expression.**
 
 The inventory shrank from 2,313 to 2,134 as the noise came out, and what remains is what somebody
 actually reads. 54 more strings were excluded outright because they are not translatable at all:
@@ -1013,8 +1034,8 @@ All of the above were deleted on 2026-07-25 after a repo-wide reference check. T
 
 ## Missing / incomplete pieces (not bugs — features that don't exist yet)
 
-13. **Riffusion (Kaggle) is not integrated.** `scripts/kaggle_riffusion/` is a complete, documented, standalone project for free long-form song generation on a Kaggle GPU, but there is no Rust command or Settings field to point the app at a running Kaggle instance. If it's meant as a free Suno alternative, it needs: a settings field for the tunnel URL, a `real_riffusion` job-runner branch in `jobs.rs` analogous to `real_suno`, and a Settings-page connection card.
-14. **No automated tests anywhere.** No `#[test]` functions in the Rust crate; no JS test runner actually wired up (the `craco test` script is part of the dead CRA config). `test_result.md` at the repo root still contains only the unfilled testing-protocol template from an earlier scaffold, with no actual entries.
+13. ~~**Riffusion (Kaggle) is not integrated.**~~ **Done.** Everything this asked for exists: `riffusion_api_url` / `riffusion_api_key` in `models.rs`, `real_riffusion` in `jobs.rs` (with tunnel auto-discovery and cancellation), the Settings connection card with Start & connect / Open notebook / Fetch live URL / Test, and `riffusion` in the idle-guard's engine list.
+14. ~~**No automated tests anywhere.**~~ **Done.** `npm run test:unit` runs 106 tests over the pure logic (`node --test tests/*.test.mjs`), and `src-tauri/tests_logic.rs` holds the Rust side. `test_result.md` is still the unfilled scaffold template and should just be deleted.
 15. **`memory/PRD.md` is stale.** It describes 3 themes (actual: 7), describes mock fallbacks for Suno/Midjourney/FFmpeg/YouTube (actual: none remain — every job kind fails loudly instead), and predates the git-versioning/Google Drive feature and the scheduler entirely. Superseded by this doc set; consider deleting or clearly marking it historical.
 16. **No Suno/Midjourney health surfacing in the UI.** The backend already tracks cookie/profile validity and re-checks periodically, but the frontend only shows it when you manually click "Test" in Settings — see `BACKLOG.md`.
 17. **The original free-text `schedule` field on Project is now redundant with `schedule_config`.** It's still shown/edited on the Dashboard's project-creation form and displayed on each card, but the new automation reads `schedule_config` (a separate, structured field) instead. They can drift out of sync (e.g. card says "weekly Sunday 9am" in free text while `schedule_config` says daily at 6am). Worth eventually merging into one field/UI rather than carrying both.

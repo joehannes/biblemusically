@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./ui/button";
 import {
   X, ChevronLeft, ChevronRight, Columns2, Square, Sparkles, Loader2,
@@ -52,7 +53,9 @@ export default function ImageLightbox({
     document.body.appendChild(a); a.click(); a.remove();
   };
 
-  return (
+  // Into <body>: this hangs off the image grid inside a page, and a transformed ancestor would make
+  // "full screen" mean "as tall as the page" — see GuideStepDialog for the same trap.
+  return createPortal(
     <div className="fixed inset-0 z-[80] bg-background/95 backdrop-blur-sm flex flex-col" data-no-i18n>
       {/* header */}
       <div className="flex items-center justify-between gap-3 px-4 h-14 border-b border-border shrink-0">
@@ -138,6 +141,7 @@ export default function ImageLightbox({
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

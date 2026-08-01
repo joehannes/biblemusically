@@ -261,7 +261,17 @@ const SettingsComponent = () => {
   const [loginInProgress, setLoginInProgress] = useState(false);
   const [mjGenerating, setMjGenerating] = useState(false);
   const navigate = useNavigate();
-  const { dialog: kaggleGuideDialog, openStep: openKaggleGuide } = useRequireGuideStep("kaggle");
+  // Connected Kaggle accounts (GPU quota is per-account; the app rotates between them on
+  // exhaustion). Keys never leave the backend — this only ever shows usernames + which is active.
+  const [kaggleAccounts, setKaggleAccounts] = useState([]);
+  const loadKaggleAccounts = useCallback(async () => {
+    try { const r = await api.listKaggleAccounts(); setKaggleAccounts(r?.accounts || []); }
+    catch { setKaggleAccounts([]); }
+  }, []);
+  // Reload on finish: connecting an account through the dialog changes the very list rendered below
+  // it, and without this the card still claimed nothing was connected until the page was revisited.
+  const { dialog: kaggleGuideDialog, openStep: openKaggleGuide } =
+    useRequireGuideStep("kaggle", loadKaggleAccounts);
   const [mjPrompt, setMjPrompt] = useState("");
   const [mjGenerateError, setMjGenerateError] = useState(null);
   const [mjResults, setMjResults] = useState([]);
@@ -497,14 +507,7 @@ const SettingsComponent = () => {
     }
   };
 
-  // Connected Kaggle accounts (GPU quota is per-account; the app rotates between them on
-  // exhaustion). Keys never leave the backend — this only ever shows usernames + which is active.
-  const [kaggleAccounts, setKaggleAccounts] = useState([]);
-  const loadKaggleAccounts = async () => {
-    try { const r = await api.listKaggleAccounts(); setKaggleAccounts(r?.accounts || []); }
-    catch { setKaggleAccounts([]); }
-  };
-  useEffect(() => { loadKaggleAccounts(); }, []);
+  useEffect(() => { loadKaggleAccounts(); }, [loadKaggleAccounts]);
   const activateAccount = async (username) => {
     try { await api.activateKaggleAccount(username); toast.success(`Now using ${username}.`); loadKaggleAccounts(); }
     catch (e) { toast.error(String(e)); }

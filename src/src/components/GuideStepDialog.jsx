@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../lib/api";
 import { getGuideStep } from "../lib/guideSteps";
 import { Button } from "./ui/button";
@@ -32,7 +33,12 @@ export default function GuideStepDialog({ stepId, open, onClose, onDone }) {
   const Icon = step.icon;
   const Body = step.Body;
 
-  return (
+  // Rendered into <body>, not where it is written. Callers mount this inside a page, and a page is
+  // free to carry a transform (an entrance animation, a Tailwind `scale-*`, a tour highlight) —
+  // which silently turns it into the containing block for position:fixed and drops the modal off
+  // the bottom of a very tall page. A portal makes the overlay's position depend on nothing but the
+  // viewport, which is the only thing it was ever meant to depend on.
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <button className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} aria-label="Close" />
       <div className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto scroll-thin rounded-xl border border-border bg-card shadow-2xl p-6">
@@ -65,7 +71,8 @@ export default function GuideStepDialog({ stepId, open, onClose, onDone }) {
           />
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -73,8 +80,12 @@ export default function GuideStepDialog({ stepId, open, onClose, onDone }) {
  * Gate an action behind a guided step. `ensure()` resolves true when the step's prerequisite is
  * already satisfied; otherwise it opens the step's dialog and resolves false so the caller can
  * abort cleanly. Render `dialog` somewhere in the component.
+ *
+ * `onDone` fires when the step reports itself finished, which is how a page refreshes whatever the
+ * step just changed. Without it the caller keeps rendering pre-step state — the Kaggle accounts card
+ * still read "No Kaggle account connected yet" directly after connecting one through this dialog.
  */
-export function useRequireGuideStep(stepId) {
+export function useRequireGuideStep(stepId, onDone) {
   const [open, setOpen] = useState(false);
   const step = getGuideStep(stepId);
 
@@ -87,6 +98,8 @@ export function useRequireGuideStep(stepId) {
     return done;
   }, [step]);
 
-  const dialog = <GuideStepDialog stepId={stepId} open={open} onClose={() => setOpen(false)} />;
+  const dialog = (
+    <GuideStepDialog stepId={stepId} open={open} onClose={() => setOpen(false)} onDone={onDone} />
+  );
   return { ensure, dialog, openStep: () => setOpen(true) };
 }

@@ -43,10 +43,12 @@ Tokens live in a new XChaCha20-Poly1305 vault and never touch `.git/config` or a
 
 ## Still open
 
-**Let the scheduler optionally progress further than music generation** (analysis/images) behind an
-explicit opt-in. Today it deliberately stops after enqueuing music so nothing reaches
-images/video/upload without a human. The pieces all exist now — the Workflow page chains stages
-client-side — so this is a matter of deciding how much autonomy to hand over, not of missing code.
+~~**Let the scheduler optionally progress further than music generation**~~ — **shipped, and this
+entry outlived it.** A project carries `schedule_autonomy`: `lyrics` (the default, and the behaviour
+this described), `video`, or `publish`. `run_scheduler_tick` reads it per tick — so turning it *down*
+takes effect on the next run rather than after a restart, which is the direction somebody changes it
+in a hurry — and hands the rest to `workflow_run`, the same runner the Workflow page uses, rather
+than to a second sequencer. The Dashboard picks it per project, with a warning on `publish`.
 
 **Multi-user / team support.** Everything is still single-machine, single-user. The JSON-in-git
 store actually makes a shared-project workflow more plausible than the Mongo design did (two people

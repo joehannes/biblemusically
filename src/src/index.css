@@ -585,7 +585,14 @@ code, .mono { font-family: var(--font-mono); }
 .scroll-thin::-webkit-scrollbar-thumb { background: hsl(var(--muted)); border-radius: 4px; }
 .scroll-thin::-webkit-scrollbar-track { background: transparent; }
 
-.fade-in { animation: fadeIn 0.4s ease-out both; }
+/* `backwards`, not `both`, and deliberately so. A finished animation with a forwards fill keeps
+   applying its last keyframe, and "transform: none" in a keyframe computes to the identity matrix
+   rather than to none — which still makes the element a containing block for position:fixed
+   descendants. Every page wrapper carries .fade-in, so with `both` a fixed overlay rendered inside
+   a page was sized to that page (8000px tall) instead of the viewport: `items-center` then parked
+   the modal thousands of pixels below the fold and all you saw was the blurred backdrop. There is
+   nothing to hold after this animation ends — the end state IS the default — so drop the fill. */
+.fade-in { animation: fadeIn 0.4s ease-out backwards; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none;} }
 
 .pulse-ring { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.6); animation: pulseRing 1.8s ease-out infinite; }
