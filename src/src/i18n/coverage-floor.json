@@ -1,5 +1,5 @@
 {
   "_comment": "The ratchet for scripts/i18n-missing.mjs --gate. `max_missing` is the largest untranslated backlog any bundled language is allowed to carry. It may only be lowered by translating strings and re-running with --update; raising it means shipping copy that some language will render in English, and should be argued for in review rather than done quietly.",
-  "max_missing": 251,
-  "total": 2463
+  "max_missing": 0,
+  "total": 2461
 }
