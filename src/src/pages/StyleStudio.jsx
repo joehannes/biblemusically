@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Palette, Plus, Save, Trash2, Layers, Tv, Pin } from "lucide-react";
 import StyleSample from "../components/StyleSample";
 import { toast } from "sonner";
+import StylePicker from "../components/StylePicker";
 
 const STYLE_OPTIONS = [
   ["photoreal", "Photoreal"], ["comic", "Comic"], ["graphic_novel", "Graphic novel"],
@@ -33,12 +34,16 @@ function ParamsEditor({ params, onChange }) {
   const num = (k) => (e) => set({ [k]: e.target.value });
   return (
     <div className="grid grid-cols-2 gap-3">
-      <div className="space-y-1 col-span-2">
+      <div className="space-y-2 col-span-2">
         <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Base style</Label>
+        {/* The six originals stay in the dropdown so every stored setting still resolves to exactly
+            what it did before. Everything new — and every blend — lives in the picker below, which
+            is the only one of the two that can express a mix. */}
         <Select value={params.comfyui_style || "photoreal"} onValueChange={(v) => set({ comfyui_style: v })}>
           <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent>{STYLE_OPTIONS.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
         </Select>
+        <StylePicker value={params.comfyui_style} onChange={(v) => set({ comfyui_style: v })} />
       </div>
       <div className="space-y-1 col-span-2">
         <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Style nuance (prepended to prompts)</Label>

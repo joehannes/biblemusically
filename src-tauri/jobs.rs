@@ -1338,6 +1338,19 @@ async fn real_paid_image(
 
 /// Style presets: (positive prompt prefix, base negative prompt). These are the built-in
 /// "style filters"; per-channel sticky styles (a later phase) will layer on top of these.
+/// The look for a style id, preferring the composable catalogue.
+///
+/// `image_styles.rs` holds the styles that can be blended (and the named mixes); the match below is
+/// the original six, kept so every setting already stored on somebody's machine still resolves to
+/// exactly what it used to. New looks go in the catalogue, not here.
+fn comfy_look(style: &str) -> (String, String) {
+    if let Some(look) = crate::image_styles::resolve(style) {
+        return (format!("{}, ", look.prompt), look.negative);
+    }
+    let (p, n) = comfy_style_preset(style);
+    (p.to_string(), n.to_string())
+}
+
 fn comfy_style_preset(style: &str) -> (&'static str, &'static str) {
     match style {
         "comic" => ("comic book style, bold ink outlines, halftone shading, dynamic paneling, vibrant flat colors, ",
@@ -1468,7 +1481,8 @@ async fn real_comfy(
     };
 
     let style = settings.get("comfyui_style").and_then(|v| v.as_str()).unwrap_or("photoreal");
-    let (prefix, base_neg) = comfy_style_preset(style);
+    let (prefix, base_neg) = comfy_look(style);
+    let (prefix, base_neg) = (prefix.as_str(), base_neg.as_str());
     let extra_neg = settings.get("comfyui_negative").and_then(|v| v.as_str()).unwrap_or("");
     // Style-nuance prefix (often set per-channel) sits between the preset prefix and the prompt.
     let nuance = settings.get("comfyui_prompt_prefix").and_then(|v| v.as_str()).unwrap_or("").trim();

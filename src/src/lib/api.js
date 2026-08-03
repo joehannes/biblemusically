@@ -95,6 +95,9 @@ export const api = {
   testMj: () => invokeCommand("test_mj"),
   testFlux: () => invokeCommand("test_flux"),
   testComfy: () => invokeCommand("test_comfy"),
+  // ============ Image styles & mixes ============
+  imageStyleCatalogue: () => invokeCommand("image_style_catalogue"),
+  resolveImageStyle: (id) => invokeCommand("resolve_image_style", { id }),
   // ============ Video generation ============
   videoCatalogue: () => invokeCommand("video_catalogue"),
   videoAdvice: (preset, pack, plannedClips) =>

@@ -13,6 +13,8 @@ pub mod tray;
 
 #[path = "../comfy_registry.rs"]
 pub mod comfy_registry;
+#[path = "../image_styles.rs"]
+pub mod image_styles;
 #[path = "../video_models.rs"]
 pub mod video_models;
 #[path = "../video_advisor.rs"]
@@ -601,6 +603,8 @@ pub fn run() {
             commands::restore_project_assets,
             commands::list_kaggle_accounts,
             commands::kaggle_diagnostics,
+            commands::image_style_catalogue,
+            commands::resolve_image_style,
             commands::video_catalogue,
             commands::video_advice,
             commands::generate_video,

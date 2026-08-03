@@ -1144,6 +1144,27 @@ pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<Strin
     }))
 }
 
+/// Every look the picker can offer, with each mix's resolved prompt for preview.
+///
+/// Includes the prompts and negatives on purpose: somebody choosing a look should be able to read
+/// what it will actually send, and somebody debugging a disappointing picture should not have to
+/// guess which half of the prompt caused it.
+#[tauri::command]
+pub async fn image_style_catalogue() -> Res<Value> {
+    Ok(crate::image_styles::catalogue())
+}
+
+/// Resolve a style, a named mix, or an ad-hoc `a+b` blend into the prompt pair a graph gets.
+#[tauri::command]
+pub async fn resolve_image_style(id: String) -> Res<Value> {
+    match crate::image_styles::resolve(&id) {
+        Some(look) => Ok(serde_json::json!({ "ok": true, "id": id,
+                                             "prompt": look.prompt, "negative": look.negative })),
+        None => Ok(serde_json::json!({ "ok": false, "id": id,
+                                       "detail": format!("No style, mix or blend named '{id}'.") })),
+    }
+}
+
 /// Activate a stored account: write its kaggle.json and mark it active.
 #[tauri::command]
 pub async fn activate_kaggle_account(state: State<'_, AppState>, username: String) -> Res<Value> {
