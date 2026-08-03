@@ -649,16 +649,138 @@ pub async fn open_midjourney_login(app: tauri::AppHandle) -> Res<Value> {
 // Kaggle API-token page, and pull the current tunnel URL straight from the
 // kernel's latest output — instead of the user hand-copying a rotating URL.
 
-/// Maps a UI engine id → (Kaggle kernel slug, the settings key its live URL is stored in).
+// ── Whose kernel are we talking to? ──────────────────────────────────────────
+//
+// A Kaggle kernel slug is `<owner>/<name>`, and every CLI verb the app uses — pull, push, status,
+// logs — takes one. The owner used to be hardcoded to the author's account, which worked for exactly
+// one person and failed silently for everybody else, including the author on a second account:
+//
+//   • `kernels push` cannot write to somebody else's kernel, so starting a server did nothing;
+//   • `kernels status <their>/…` answers about THEIR kernel — usually "complete", from an old run —
+//     which the monitor faithfully reported as "the run ended before a server came up";
+//   • `kernels logs -f <their>/…` streams THEIR last run's persisted log, so the app displayed a
+//     successful boot ("Server is up", "Uvicorn running") for a run that had never started here.
+//
+// Free GPU quota is per-account and the app rotates between accounts, so the owner has to be
+// whichever account is active right now. The upstream account stays in the picture as the *template*:
+// a user who has never run an engine has no kernel of their own to pull, so the published one is
+// pulled, re-addressed, and pushed under their name — which creates it.
+
+/// The account the published reference notebooks live under. Only ever read from.
+const KAGGLE_UPSTREAM_OWNER: &str = "joehannes";
+
+/// Maps a UI engine id → (kernel name without owner, the settings key its live URL is stored in).
 pub(crate) fn kaggle_kernel_for(engine: &str) -> Option<(&'static str, &'static str)> {
     match engine {
-        "acestep" => Some(("joehannes/biblemusically-acestep-server", "acestep_api_url")),
-        "heartmula" => Some(("joehannes/biblemusically-heartmula-server", "heartmula_api_url")),
-        "comfyui" | "comfy" => Some(("joehannes/biblemusically-comfyui-server", "comfyui_api_url")),
-        "flux" => Some(("joehannes/biblemusically-flux-server", "flux_api_url")),
-        "riffusion" => Some(("joehannes/biblemusically-riffusion-server", "riffusion_api_url")),
+        "acestep" => Some(("biblemusically-acestep-server", "acestep_api_url")),
+        "heartmula" => Some(("biblemusically-heartmula-server", "heartmula_api_url")),
+        "comfyui" | "comfy" => Some(("biblemusically-comfyui-server", "comfyui_api_url")),
+        "flux" => Some(("biblemusically-flux-server", "flux_api_url")),
+        "riffusion" => Some(("biblemusically-riffusion-server", "riffusion_api_url")),
         _ => None,
     }
+}
+
+/// The Kaggle username the CLI will actually authenticate as.
+///
+/// Read from `~/.kaggle/kaggle.json`, because that file — not the app's settings — is what every
+/// `kaggle` subprocess uses. Taking the app's stored `kaggle_active` on faith is how the app came to
+/// address one account's kernels while the CLI was signed in as another.
+pub(crate) async fn kaggle_cli_username() -> Option<String> {
+    let home = env::var("HOME").ok()?;
+    let raw = fs::read_to_string(PathBuf::from(home).join(".kaggle/kaggle.json")).await.ok()?;
+    let parsed: Value = serde_json::from_str(&raw).ok()?;
+    let name = parsed["username"].as_str()?.trim().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
+/// The owner half of the slug: whoever the CLI is signed in as, falling back to the app's record and
+/// finally to upstream (which at least lets a read-only operation work before any account is set up).
+pub(crate) async fn kaggle_owner(db: &crate::store::Db) -> String {
+    if let Some(u) = kaggle_cli_username().await { return u; }
+    let stored = db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
+        .and_then(|d| d.get_str("kaggle_active").ok().map(|s| s.to_string()))
+        .unwrap_or_default();
+    if !stored.trim().is_empty() { return stored } else { KAGGLE_UPSTREAM_OWNER.to_string() }
+}
+
+/// `(own_slug, upstream_slug, settings_key)` for an engine.
+///
+/// `own_slug` is what gets pushed, polled and followed; `upstream_slug` is the template to pull when
+/// the user has no copy yet.
+pub(crate) async fn kaggle_slugs(db: &crate::store::Db, engine: &str) -> Option<(String, String, &'static str)> {
+    let (name, key) = kaggle_kernel_for(engine)?;
+    let owner = kaggle_owner(db).await;
+    Some((format!("{owner}/{name}"), format!("{KAGGLE_UPSTREAM_OWNER}/{name}"), key))
+}
+
+/// What a kernel pull produced, and where it came from.
+pub(crate) struct PulledKernel {
+    /// True when the user had no copy and the published upstream notebook was used as the template.
+    /// The push that follows will therefore *create* their kernel rather than update it.
+    pub from_upstream: bool,
+    pub slug: String,
+}
+
+/// Pull an engine's kernel into `dir` and re-address it to the active account.
+///
+/// Own copy first, upstream as the template. The metadata `id` is rewritten either way, because a
+/// push only succeeds against a kernel the signed-in account owns — pushing an upstream id is the
+/// silent no-op that made "Start & connect" appear to work while nothing started.
+async fn pull_kernel_for_push(
+    kaggle: &str,
+    dir: &std::path::Path,
+    own: &str,
+    upstream: &str,
+) -> Result<PulledKernel, String> {
+    let pull = |slug: String| {
+        let kaggle = kaggle.to_string();
+        let dir = dir.to_path_buf();
+        async move {
+            tokio::process::Command::new(&kaggle)
+                .args(["kernels", "pull", &slug, "-m", "-p"]).arg(&dir)
+                .output().await
+                .map_err(|err| format!("Could not run the kaggle CLI: {}", err))
+        }
+    };
+
+    let mut from_upstream = false;
+    let first = pull(own.to_string()).await?;
+    // The CLI exits 0 for a missing kernel in some versions and prints the failure instead, so the
+    // metadata file's existence is the real test of whether anything came back.
+    let got_own = first.status.success() && dir.join("kernel-metadata.json").is_file();
+    if !got_own {
+        from_upstream = true;
+        let _ = fs::remove_dir_all(dir).await;
+        let _ = fs::create_dir_all(dir).await;
+        let second = pull(upstream.to_string()).await?;
+        if !second.status.success() || !dir.join("kernel-metadata.json").is_file() {
+            let msg = format!("{}{}",
+                String::from_utf8_lossy(&second.stdout), String::from_utf8_lossy(&second.stderr));
+            return Err(format!(
+                "Could not pull the reference notebook {upstream} from Kaggle: {}", msg.trim()));
+        }
+    }
+
+    // Re-address to the active account. `id` is the only field the CLI derives the target slug from.
+    let meta_path = dir.join("kernel-metadata.json");
+    let raw = fs::read_to_string(&meta_path).await.map_err(e)?;
+    let mut meta: Value = serde_json::from_str(&raw).map_err(e)?;
+    meta["id"] = Value::String(own.to_string());
+    // A freshly created kernel needs a title, and Kaggle rejects one under five characters. Keep
+    // whatever upstream had when it is usable, else fall back to the slug's own name.
+    let title_ok = meta["title"].as_str().map(|t| t.trim().chars().count() >= 5).unwrap_or(false);
+    if !title_ok {
+        let name = own.split('/').next_back().unwrap_or("biblemusically-server");
+        meta["title"] = Value::String(name.to_string());
+    }
+    // `id_no` names a *specific existing* kernel by numeric id. Carried over from the upstream pull it
+    // would point the push straight back at the template, overriding `id` — so it must go.
+    if let Some(obj) = meta.as_object_mut() { obj.remove("id_no"); }
+    fs::write(&meta_path, serde_json::to_string_pretty(&meta).map_err(e)?).await.map_err(e)?;
+
+    Ok(PulledKernel { from_upstream, slug: own.to_string() })
 }
 
 /// Locate the `kaggle` CLI. A desktop-launched app inherits a minimal PATH that
@@ -713,19 +835,48 @@ async fn stream_logs_for_tunnel_url(kaggle: &str, slug: &str, secs: u64) -> Opti
 }
 
 #[tauri::command]
-pub async fn open_kaggle_notebook(app: tauri::AppHandle, engine: String) -> Res<Value> {
-    let (slug, _) = kaggle_kernel_for(&engine).ok_or_else(|| format!("Unknown engine '{}'.", engine))?;
-    let url = format!("https://www.kaggle.com/code/{}", slug);
+pub async fn open_kaggle_notebook(app: tauri::AppHandle, state: State<'_, AppState>, engine: String) -> Res<Value> {
+    let (own, upstream, _) = kaggle_slugs(&state.db, &engine).await
+        .ok_or_else(|| format!("Unknown engine '{}'.", engine))?;
+    let url = format!("https://www.kaggle.com/code/{}", own);
     crate::helpers::open_external(&app, &url)?;
-    Ok(serde_json::json!({ "ok": true, "url": url }))
+    Ok(serde_json::json!({ "ok": true, "url": url, "upstream_url": format!("https://www.kaggle.com/code/{}", upstream) }))
 }
 
 /// Return an engine's Kaggle notebook URL WITHOUT opening it, so the UI can load it in the
 /// in-app browser instead of launching an external browser window.
+///
+/// This is the *active account's* copy. Before the first successful start that kernel does not exist
+/// yet, so the upstream template's URL comes along too — a 404 on your own notebook is a confusing
+/// thing to hand somebody who has never started a server.
 #[tauri::command]
-pub async fn kaggle_notebook_url(engine: String) -> Res<Value> {
-    let (slug, _) = kaggle_kernel_for(&engine).ok_or_else(|| format!("Unknown engine '{}'.", engine))?;
-    Ok(serde_json::json!({ "ok": true, "url": format!("https://www.kaggle.com/code/{}", slug) }))
+pub async fn kaggle_notebook_url(state: State<'_, AppState>, engine: String) -> Res<Value> {
+    let (own, upstream, _) = kaggle_slugs(&state.db, &engine).await
+        .ok_or_else(|| format!("Unknown engine '{}'.", engine))?;
+    // Whether the user's own copy exists decides which URL is worth opening. Sending somebody to
+    // their own notebook before they have ever started a server lands them on a Kaggle 404 (or, on a
+    // slug they do not own, on Kaggle's own error page) — which is a confusing answer to "show me the
+    // log", and indistinguishable from the app being broken.
+    let kaggle = locate_kaggle();
+    let status = tokio::process::Command::new(&kaggle)
+        .args(["kernels", "status", &own]).output().await.ok()
+        .map(|o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+        .unwrap_or_default();
+    let low = status.to_lowercase();
+    let exists = !(low.contains("404") || low.contains("403") || low.contains("not found")
+                   || low.contains("forbidden"));
+
+    let own_url = format!("https://www.kaggle.com/code/{}", own);
+    let upstream_url = format!("https://www.kaggle.com/code/{}", upstream);
+    Ok(serde_json::json!({
+        "ok": true,
+        "url": if exists { own_url.clone() } else { upstream_url.clone() },
+        "own_url": own_url,
+        "upstream_url": upstream_url,
+        "exists": exists,
+        "slug": own,
+        "owner": own.split('/').next().unwrap_or(""),
+    }))
 }
 
 #[tauri::command]
@@ -821,13 +972,122 @@ pub async fn save_kaggle_token(state: State<'_, AppState>, token_json: String) -
 /// List connected Kaggle accounts (usernames + which is active). Never returns keys.
 #[tauri::command]
 pub async fn list_kaggle_accounts(state: State<'_, AppState>) -> Res<Value> {
+    let adopted = reconcile_kaggle_identity(&state.db).await;
     let doc = state.db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten();
     let active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
     let accts = stored_kaggle_accounts(&state.db).await;
     let list: Vec<Value> = accts.iter().filter_map(|a| a.get_str("username").ok().map(|u| {
         serde_json::json!({ "username": u, "active": u == active })
     })).collect();
-    Ok(serde_json::json!({ "accounts": list, "active": active }))
+    Ok(serde_json::json!({ "accounts": list, "active": active, "adopted": adopted }))
+}
+
+/// Make the app's idea of the active Kaggle account match the CLI's.
+///
+/// `~/.kaggle/kaggle.json` is the only credential every `kaggle` subprocess reads, so it — not the
+/// settings document — decides which account the app is really operating as. The two had no way to
+/// disagree until adding a second account wrote the file but left the stored list behind; after that
+/// the app addressed one account's kernels while authenticating as another, and every symptom of
+/// that (pushes that did nothing, another account's stale "complete" status, another account's old
+/// log replayed as if it were this run) looked like a Kaggle problem rather than a bookkeeping one.
+///
+/// Returns the username adopted, if anything changed.
+pub async fn reconcile_kaggle_identity(db: &crate::store::Db) -> Option<String> {
+    let cli_user = kaggle_cli_username().await?;
+    let coll = db.collection::<Document>("settings");
+    let doc = coll.find_one(doc! { "_id": "singleton" }).await.ok().flatten();
+    let active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
+
+    let mut accts = stored_kaggle_accounts(db).await;
+    let known = accts.iter().any(|a| a.get_str("username").ok() == Some(cli_user.as_str()));
+    if known && active == cli_user { return None; }
+
+    // The key is in the same file, so an account that reached the CLI without reaching the app can be
+    // adopted whole — it stays rotatable rather than becoming a one-way switch.
+    if !known {
+        let key = env::var("HOME").ok()
+            .map(|h| PathBuf::from(h).join(".kaggle/kaggle.json"))
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+            .and_then(|v| v["key"].as_str().map(|s| s.to_string()))
+            .unwrap_or_default();
+        accts.push(doc! { "username": &cli_user, "key": key });
+    }
+    let bson_accts = bson::to_bson(&accts).ok()?;
+    let _ = coll.update_one(
+        doc! { "_id": "singleton" },
+        doc! { "$set": { "kaggle_accounts": bson_accts, "kaggle_active": &cli_user,
+                         "kaggle_connected": true, "kaggle_username": &cli_user } },
+    ).with_options(crate::store::UpdateOptions::builder().upsert(true).build()).await;
+    Some(cli_user)
+}
+
+/// Everything about how this app is currently wired to Kaggle, in one answer.
+///
+/// Exists because the failure that motivated it was completely invisible from the interface: the app
+/// said "the run ended before a server came up" while pushing to an account it was not signed in as.
+/// Every fact needed to spot that — who the CLI authenticates as, which kernel is being addressed,
+/// whether that kernel exists — was knowable and shown nowhere. It is also what a bug report should
+/// carry, so the UI can offer it as one copyable block.
+#[tauri::command]
+pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<String>) -> Res<Value> {
+    let kaggle = locate_kaggle();
+    let cli_present = PathBuf::from(&kaggle).is_file() || kaggle == "kaggle";
+    let cli_user = kaggle_cli_username().await;
+
+    let doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.ok().flatten();
+    let stored_active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
+    let accounts: Vec<String> = stored_kaggle_accounts(&state.db).await.iter()
+        .filter_map(|a| a.get_str("username").ok().map(|s| s.to_string())).collect();
+
+    // The disagreement that caused the original bug, stated as a fact rather than left to be inferred.
+    let identity_mismatch = match (&cli_user, stored_active.as_str()) {
+        (Some(u), s) if !s.is_empty() && u != s => true,
+        _ => false,
+    };
+
+    let engines: Vec<String> = match engine {
+        Some(e) => vec![e],
+        None => ["acestep", "heartmula", "comfyui", "flux", "riffusion"].iter().map(|s| s.to_string()).collect(),
+    };
+    let mut per_engine = Vec::new();
+    for eng in engines {
+        let Some((own, upstream, key)) = kaggle_slugs(&state.db, &eng).await else { continue };
+        let status = tokio::process::Command::new(&kaggle)
+            .args(["kernels", "status", &own]).output().await.ok()
+            .map(|o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+            .unwrap_or_default();
+        let stored_url = doc.as_ref().and_then(|d| d.get_str(key).ok()).unwrap_or("").to_string();
+        let url_alive = if stored_url.is_empty() { None } else {
+            Some(matches!(reqwest::Client::new().get(&stored_url)
+                .timeout(std::time::Duration::from_secs(6)).send().await,
+                Ok(r) if r.status().as_u16() < 500))
+        };
+        per_engine.push(serde_json::json!({
+            "engine": eng,
+            "slug": own,
+            "upstream_slug": upstream,
+            // A kernel the account does not own answers with a 403/404 rather than a status word.
+            "kernel_exists": !(status.contains("403") || status.contains("404")
+                               || status.to_lowercase().contains("not found")),
+            "status_raw": status.trim().chars().take(300).collect::<String>(),
+            "settings_key": key,
+            "stored_url": stored_url,
+            "url_alive": url_alive,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "cli_path": kaggle,
+        "cli_present": cli_present,
+        "cli_username": cli_user,
+        "stored_active": stored_active,
+        "accounts": accounts,
+        "identity_mismatch": identity_mismatch,
+        "engines": per_engine,
+    }))
 }
 
 /// Activate a stored account: write its kaggle.json and mark it active.
@@ -987,29 +1247,26 @@ pub async fn pick_directory(
 }
 
 #[tauri::command]
-pub async fn start_kaggle_server(engine: String) -> Res<Value> {
-    let (slug, _) = match kaggle_kernel_for(&engine) {
+pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> Res<Value> {
+    let (own, upstream, _) = match kaggle_slugs(&state.db, &engine).await {
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
     let kaggle = locate_kaggle();
 
-    // Pull the kernel (code + metadata) from Kaggle so this works from the installed app,
-    // which doesn't ship the notebook sources.
+    // Pull the kernel (code + metadata) from Kaggle so this works from the installed app, which
+    // doesn't ship the notebook sources — own copy if there is one, else the published template,
+    // re-addressed so the push below lands on a kernel this account can actually write to.
     let tmp = env::temp_dir().join(format!("bm-kaggle-start-{}", engine));
     let _ = fs::remove_dir_all(&tmp).await;
     let _ = fs::create_dir_all(&tmp).await;
-    let pull = tokio::process::Command::new(&kaggle)
-        .args(["kernels", "pull", slug, "-m", "-p"]).arg(&tmp)
-        .output().await.map_err(|err| format!("Could not run the kaggle CLI: {}", err))?;
-    if !pull.status.success() {
-        let msg = format!("{}{}", String::from_utf8_lossy(&pull.stdout), String::from_utf8_lossy(&pull.stderr));
-        return Ok(serde_json::json!({
-            "ok": false, "status": "pull_failed",
-            "detail": format!("Could not pull the kernel from Kaggle: {}", msg.trim()),
+    let pulled = match pull_kernel_for_push(&kaggle, &tmp, &own, &upstream).await {
+        Ok(p) => p,
+        Err(msg) => return Ok(serde_json::json!({
+            "ok": false, "status": "pull_failed", "detail": msg,
             "next_step": "Check that ~/.kaggle/kaggle.json is valid (Kaggle → Settings → Create New API Token)."
-        }));
-    }
+        })),
+    };
 
     // A serving run needs the GPU: the notebook's batch guard only opens the tunnel
     // when a GPU is present (GPU-less batch runs are cheap source-update pushes).
@@ -1026,9 +1283,13 @@ pub async fn start_kaggle_server(engine: String) -> Res<Value> {
     let out = format!("{}{}", String::from_utf8_lossy(&push.stdout), String::from_utf8_lossy(&push.stderr));
     let low = out.to_lowercase();
     if out.contains("successfully pushed") {
+        let created = if pulled.from_upstream {
+            format!(" This is the first run on “{}”, so the notebook was copied to that account.",
+                    own.split('/').next().unwrap_or(""))
+        } else { String::new() };
         Ok(serde_json::json!({
-            "ok": true, "status": "starting",
-            "detail": format!("{} server starting on Kaggle (GPU batch run). It needs ~8-10 min to install, download models and open the tunnel.", engine),
+            "ok": true, "status": "starting", "slug": pulled.slug, "created": pulled.from_upstream,
+            "detail": format!("{} server starting on Kaggle (GPU batch run).{} It needs ~8-10 min to install, download models and open the tunnel.", engine, created),
             "next_step": "Watch the live log below. The run serves until Kaggle's ~9-12 h batch limit."
         }))
     } else if low.contains("session count") || low.contains("concurrent")
@@ -1077,8 +1338,13 @@ pub async fn start_kaggle_server(engine: String) -> Res<Value> {
 /// new kernel version ends the one session Kaggle allows per kernel, and a GPU-off run needs no
 /// GPU slot. (The Kaggle CLI/API has no "stop session" call.)
 #[tauri::command]
-pub async fn stop_kaggle_server(engine: String) -> Res<Value> {
-    let r = supersede_kaggle_session(engine.clone()).await?;
+pub async fn stop_kaggle_server(state: State<'_, AppState>, engine: String) -> Res<Value> {
+    stop_kaggle_session(&state.db, &engine).await
+}
+
+/// Stop a session on a raw store handle — shared by the command above and the idle sweep.
+pub async fn stop_kaggle_session(db: &crate::store::Db, engine: &str) -> Res<Value> {
+    let r = supersede_session(db, engine).await?;
     let ok = r["ok"].as_bool().unwrap_or(false);
     Ok(serde_json::json!({
         "ok": ok,
@@ -1096,8 +1362,14 @@ pub async fn stop_kaggle_server(engine: String) -> Res<Value> {
 /// click. The app calls this automatically before retrying a start that failed because the
 /// engine's own zombie held the last slot (see kaggleServerPipeline.js).
 #[tauri::command]
-pub async fn supersede_kaggle_session(engine: String) -> Res<Value> {
-    let (slug, _) = match kaggle_kernel_for(&engine) {
+pub async fn supersede_kaggle_session(state: State<'_, AppState>, engine: String) -> Res<Value> {
+    supersede_session(&state.db, &engine).await
+}
+
+/// The supersede itself, on a raw store handle so the idle sweep (which has no `tauri::State`) can
+/// shut a forgotten session down through exactly the same path the UI button uses.
+pub async fn supersede_session(db: &crate::store::Db, engine: &str) -> Res<Value> {
+    let (own, upstream, _) = match kaggle_slugs(db, engine).await {
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
@@ -1105,12 +1377,15 @@ pub async fn supersede_kaggle_session(engine: String) -> Res<Value> {
     let tmp = env::temp_dir().join(format!("bm-kaggle-stop-{}", engine));
     let _ = fs::remove_dir_all(&tmp).await;
     let _ = fs::create_dir_all(&tmp).await;
-    let pull = tokio::process::Command::new(&kaggle)
-        .args(["kernels", "pull", slug, "-m", "-p"]).arg(&tmp)
-        .output().await.map_err(|err| format!("Could not run the kaggle CLI: {}", err))?;
-    if !pull.status.success() {
-        let msg = format!("{}{}", String::from_utf8_lossy(&pull.stdout), String::from_utf8_lossy(&pull.stderr));
-        return Ok(serde_json::json!({ "ok": false, "detail": format!("Could not pull the kernel to supersede it: {}", msg.trim()) }));
+    let pulled = match pull_kernel_for_push(&kaggle, &tmp, &own, &upstream).await {
+        Ok(p) => p,
+        Err(msg) => return Ok(serde_json::json!({
+            "ok": false, "detail": format!("Could not pull the kernel to supersede it: {msg}") })),
+    };
+    // Nothing to supersede: the account has no kernel of its own, so it cannot be holding a session.
+    if pulled.from_upstream {
+        return Ok(serde_json::json!({ "ok": true, "detail": format!(
+            "No {engine} kernel exists on this Kaggle account yet, so no session is running.") }));
     }
     let meta_path = tmp.join("kernel-metadata.json");
     if let Ok(raw) = fs::read_to_string(&meta_path).await {
@@ -1139,9 +1414,13 @@ pub async fn supersede_kaggle_session(engine: String) -> Res<Value> {
 /// (Cloudflare tunnels rotate every run — see jobs.rs's `generate_song_api`) instead of failing
 /// outright and making the user manually re-run "Fetch live URL" in Settings.
 pub async fn refresh_kaggle_url(db: &crate::store::Db, engine: &str) -> Option<String> {
-    let (slug, settings_key) = kaggle_kernel_for(engine)?;
+    let (slug, _upstream, settings_key) = kaggle_slugs(db, engine).await?;
+    let slug = slug.as_str();
     let kaggle = locate_kaggle();
 
+    // Only this account's own kernel is consulted. Falling back to the upstream template here would
+    // hand back somebody else's tunnel URL — which is either dead or, worse, live and belonging to a
+    // machine this user does not control.
     let tmp = env::temp_dir().join(format!("bm-kaggle-{}", engine));
     let _ = fs::create_dir_all(&tmp).await;
     let _ = tokio::process::Command::new(&kaggle)
@@ -1169,10 +1448,11 @@ pub async fn refresh_kaggle_url(db: &crate::store::Db, engine: &str) -> Option<S
 
 #[tauri::command]
 pub async fn fetch_kaggle_url(state: State<'_, AppState>, engine: String) -> Res<Value> {
-    let (slug, settings_key) = match kaggle_kernel_for(&engine) {
+    let (own, _upstream, settings_key) = match kaggle_slugs(&state.db, &engine).await {
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
+    let slug = own.as_str();
     let kaggle = locate_kaggle();
 
     // 1) Kernel status — so we can give an actionable message when there's no URL.
@@ -1683,6 +1963,49 @@ pub async fn mj_auto_login(state: State<'_, AppState>, login_account: String, lo
         }
         Err(err) => {
             return Ok(serde_json::json!({ "ok": false, "error": "request_failed", "detail": format!("{:#}", err) }));
+        }
+    }
+}
+
+#[cfg(test)]
+mod kaggle_slug_tests {
+    use super::*;
+
+    /// The regression that made every engine unusable for anybody but the notebook's author.
+    ///
+    /// `kaggle_kernel_for` used to return a full `owner/name` slug with the owner compiled in. Every
+    /// caller then pushed to, polled, and streamed logs from that one account's kernels regardless of
+    /// who was signed in — so a second account could not start a server, and the failure presented as
+    /// Kaggle misbehaving (a stale "complete" status, another run's log) rather than as the app
+    /// addressing the wrong kernel. Keeping the owner out of this table is what prevents it coming
+    /// back; the owner belongs to `kaggle_owner`, which reads the credentials actually in use.
+    #[test]
+    fn kernel_names_never_carry_an_owner() {
+        for engine in ["acestep", "heartmula", "comfyui", "comfy", "flux", "riffusion"] {
+            let (name, key) = kaggle_kernel_for(engine)
+                .unwrap_or_else(|| panic!("'{engine}' should be a known engine"));
+            assert!(!name.contains('/'),
+                    "'{engine}' maps to '{name}', which bakes in an owner — the owner must come from \
+                     the signed-in account, not from this table");
+            assert!(key.ends_with("_api_url"), "'{engine}' stores its URL under '{key}'");
+        }
+    }
+
+    #[test]
+    fn an_unknown_engine_has_no_kernel() {
+        assert!(kaggle_kernel_for("suno").is_none());
+        assert!(kaggle_kernel_for("").is_none());
+    }
+
+    /// Every engine the idle guard and the pipeline name must be addressable, and each must own a
+    /// distinct settings key — two engines sharing one would overwrite each other's live URL.
+    #[test]
+    fn every_engine_has_its_own_settings_key() {
+        let mut keys = Vec::new();
+        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion"] {
+            let (_, key) = kaggle_kernel_for(engine).unwrap();
+            assert!(!keys.contains(&key), "'{key}' is used by more than one engine");
+            keys.push(key);
         }
     }
 }

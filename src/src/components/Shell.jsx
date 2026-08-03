@@ -7,6 +7,7 @@ import {
 } from "../lib/uiTranslate";
 import { useRequireGuideStep } from "./GuideStepDialog";
 import ToursFab from "./Tours";
+import AccountFab from "./AccountFab";
 import HealthBanner from "./HealthBanner";
 import UpdateBanner from "./UpdateBanner";
 import AiBudgetBanner from "./AiBudgetBanner";
@@ -1256,6 +1257,10 @@ export default function Shell({ children }) {
             <ToursFab />
             <LanguageFab />
               <ThemeFab theme={theme} setTheme={setTheme} />
+            {/* Sign in / sign out. Fixed here on every page because being signed out is what stops
+                most of the app from working, and the remedy should not be somewhere you have to
+                already know about. */}
+            <AccountFab />
 
             {/* Page-wide controls the active page published via usePageActions() — its final
                 Generate/Render/Publish button and the like, so it's reachable without scrolling

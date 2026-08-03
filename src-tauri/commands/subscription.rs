@@ -230,13 +230,50 @@ pub struct SignInRequest {
 /// Sign in (creating the account and starting the trial on first sight).
 #[tauri::command]
 pub async fn subs_sign_in(state: State<'_, AppState>, payload: SignInRequest) -> Res<Value> {
-    let settings = settings_of(&state).await;
+    redeem_id_token(&state, &payload.id_token,
+                    payload.username.as_deref(), payload.referral.as_deref()).await
+}
+
+/// Sign in with Google in one call: open the consent screen, take the ID token it returns, and hand
+/// that to the account server.
+///
+/// The whole point is that it is one call. Split across "get a token" and "send the token" it was
+/// possible — and was in fact the case — for the second half to exist while the first did not, which
+/// presents to the user as a sign-in button that does nothing.
+#[tauri::command]
+pub async fn subs_sign_in_google(
+    state: State<'_, AppState>,
+    oauth_client_id: Option<String>,
+    username: Option<String>,
+) -> Res<Value> {
+    let who = crate::commands::oauth::google_id_token(&state.db, oauth_client_id.as_deref()).await?;
+    let id_token = who["id_token"].as_str().unwrap_or("");
+    let mut out = redeem_id_token(&state, id_token, username.as_deref(), None).await?;
+    out["email"] = who["email"].clone();
+    out["name"] = who["name"].clone();
+    Ok(out)
+}
+
+/// Give the account server a Google ID token and store the entitlement it returns.
+///
+/// Also called after a YouTube connect, which produces the very same kind of token — so connecting a
+/// channel signs you in rather than leaving you connected to YouTube but locked out of the app.
+pub async fn redeem_id_token(
+    state: &AppState,
+    id_token: &str,
+    username: Option<&str>,
+    referral: Option<&str>,
+) -> Res<Value> {
+    if id_token.trim().is_empty() {
+        return Err("The Google sign-in returned no ID token.".into());
+    }
+    let settings = settings_of(state).await;
     let base = base_of(&settings);
     let body = json!({
-        "id_token": payload.id_token,
-        "username": payload.username.unwrap_or_default(),
-        "referral": payload.referral.unwrap_or_default(),
-        "device_id": device_id(&state).await,
+        "id_token": id_token,
+        "username": username.unwrap_or_default(),
+        "referral": referral.unwrap_or_default(),
+        "device_id": device_id(state).await,
     });
     let r = http()?.post(format!("{base}/v1/auth/google")).json(&body).send().await.map_err(e)?;
     let status = r.status();
@@ -250,9 +287,19 @@ pub async fn subs_sign_in(state: State<'_, AppState>, payload: SignInRequest) ->
     // Verify what we were just handed. A server that has been replaced cannot grant anything.
     let verified = verify_entitlement(&token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS)
         .ok_or("The account server returned an entitlement this app cannot verify.")?;
-    store_entitlement(&state, &token).await;
-    apply_cache_key(&state).await;
+    store_entitlement(state, &token).await;
+    apply_cache_key(state).await;
     Ok(json!({ "ok": true, "state": verified }))
+}
+
+/// Sign in from a token another flow already obtained, but only if nobody is signed in.
+///
+/// Best-effort on purpose: this rides along with connecting YouTube, and a failure to reach the
+/// account server must not turn a successful channel connection into an error. It returns whether it
+/// did anything so the caller can say so.
+pub async fn sign_in_alongside(state: &AppState, id_token: &str) -> bool {
+    if id_token.trim().is_empty() || current(state).await.is_some() { return false; }
+    redeem_id_token(state, id_token, None, None).await.is_ok()
 }
 
 /// Re-check the entitlement. Costs the server no write, so this can run on every launch.

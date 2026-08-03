@@ -95,7 +95,7 @@ pub async fn sweep(state: &crate::state::AppState) {
     }
 
     for engine in stale(minutes, Instant::now()) {
-        match crate::commands::stop_kaggle_server(engine.clone()).await {
+        match crate::commands::settings::stop_kaggle_session(&state.db, &engine).await {
             Ok(r) if r["ok"].as_bool().unwrap_or(false) => {
                 println!("idle: stopped the {engine} server after {minutes} idle minutes — its GPU slot is released.");
                 forget(&engine);

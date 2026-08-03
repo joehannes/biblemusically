@@ -370,6 +370,13 @@ pub async fn import_from_google_account(
         return Err("OAuth flow did not produce an access token".into());
     }
 
+    // The same consent screen also answered "who are you", so use that answer: connecting YouTube
+    // signs the person into the app too, instead of connecting a channel and then locking them out
+    // of the app that is supposed to publish to it. Only when nobody is signed in already, and never
+    // at the cost of the connection itself.
+    let signed_in_now = crate::commands::subscription::sign_in_alongside(
+        &state, tokens["id_token"].as_str().unwrap_or("")).await;
+
     // Call YouTube Data API v3 to list all channels managed by the authenticated user
     let http = reqwest::Client::new();
     let mut all_channels: Vec<Value> = Vec::new();
@@ -502,6 +509,7 @@ pub async fn import_from_google_account(
         "created_count": created_count,
         "existing_count": existing_count,
         "tokens_available": !refresh.is_empty(),
+        "signed_in": signed_in_now,
     }))
 }
 

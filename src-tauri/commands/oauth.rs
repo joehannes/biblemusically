@@ -18,6 +18,36 @@ use warp::Filter;
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
+/// What uploading to YouTube needs.
+pub const YOUTUBE_SCOPE: &str =
+    "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+
+/// OpenID Connect, added on top of whatever a flow is really after.
+///
+/// Every Google flow asks for it, so every token exchange also returns an `id_token` — and that token
+/// is exactly what the account server verifies to sign somebody in. Which means connecting YouTube
+/// signs you into the app on the same trip to the browser, instead of sending you through a second
+/// consent screen to prove the same thing to the same provider.
+pub fn signin_scope(base: &str) -> String {
+    let base = base.trim();
+    if base.is_empty() { return "openid email profile".to_string(); }
+    format!("openid email profile {base}")
+}
+
+/// The claims out of a Google ID token, without verifying it.
+///
+/// Deliberately unverified *here*: this is only used to show "signed in as …" while the flow
+/// finishes. The signature that actually decides anything is checked by the account server, which is
+/// the only party whose opinion grants access — a client-side check would prove nothing to it.
+fn id_token_claims(id_token: &str) -> Value {
+    use base64::Engine;
+    let Some(body) = id_token.split('.').nth(1) else { return Value::Null };
+    let padded = format!("{body}{}", "=".repeat((4 - body.len() % 4) % 4));
+    base64::engine::general_purpose::URL_SAFE.decode(padded.as_bytes()).ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .unwrap_or(Value::Null)
+}
+
 pub fn bson_to_value(doc: Document) -> Value {
     let mut m = serde_json::Map::new();
     for (k, v) in doc {
@@ -67,6 +97,90 @@ fn redirect_for_request(stored: &str, explicit_port: Option<u16>, bound_port: u1
     Ok(url.to_string())
 }
 
+/// Build the authorization URL. One place for it, so the pre-flight probe and the request the browser
+/// actually opens cannot drift apart — if they did, the probe would be answering about a different
+/// request than the one the user makes, which is worse than no probe at all.
+fn authorize_url(client_id: &str, redirect: &str, scope: &str, state_param: &str) -> String {
+    format!(
+        "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state={}",
+        client_id.trim(),
+        urlencoding::encode(redirect.trim()),
+        urlencoding::encode(scope),
+        urlencoding::encode(state_param),
+    )
+}
+
+/// The other ways the same loopback address can be written.
+///
+/// Google compares `redirect_uri` byte for byte, so `http://127.0.0.1:3335` and
+/// `http://127.0.0.1:3335/` are two different addresses to it and only one of them is registered.
+/// That single character is the most common cause of `redirect_uri_mismatch`, and it is invisible in
+/// the Cloud Console UI — which is why the app probes for it rather than asking the user to spot it.
+fn redirect_variants(sent: &str) -> Vec<String> {
+    let sent = sent.trim();
+    let Ok(url) = Url::parse(sent) else { return Vec::new() };
+    let Some(port) = url.port() else { return Vec::new() };
+
+    let mut out = Vec::new();
+    // 127.0.0.1 first: that is the address the callback server is actually bound to, so a spelling
+    // found here can be adopted without moving the socket.
+    for host in ["127.0.0.1", "localhost"] {
+        for tail in ["", "/"] {
+            let candidate = format!("http://{host}:{port}{tail}");
+            if candidate != sent { out.push(candidate); }
+        }
+    }
+    out
+}
+
+/// After a `redirect_uri_mismatch`, find a spelling of the same loopback address that this client
+/// *does* accept.
+///
+/// Returns `(uri, adoptable)`. `adoptable` is true only for a 127.0.0.1 spelling — the app can switch
+/// to one of those silently because the callback server is already listening there. A `localhost`
+/// spelling is reported but never adopted: `localhost` can resolve to `::1`, and a redirect to a
+/// socket nothing is listening on would trade a clear error for a silent 120-second hang.
+async fn working_redirect(client_id: &str, scope: &str, sent: &str) -> Option<(String, bool)> {
+    for candidate in redirect_variants(sent) {
+        let probe = authorize_url(client_id, &candidate, scope, "probe");
+        if authorize_rejection(&probe).await.is_none() {
+            let adoptable = candidate.starts_with("http://127.0.0.1:");
+            return Some((candidate, adoptable));
+        }
+    }
+    None
+}
+
+/// Pre-flight a request and, on a redirect mismatch, try to rescue it.
+///
+/// `Ok(uri)` is the redirect URI to actually use — the one passed in, or a spelling the probe found
+/// Google accepts. `Err(message)` is a refusal that no spelling fixes, already written for a human.
+async fn settle_redirect(client_id: &str, scope: &str, sent: &str) -> Result<String, String> {
+    let auth_url = authorize_url(client_id, sent, scope, "preflight");
+    let Some((code, _)) = authorize_rejection(&auth_url).await else {
+        return Ok(sent.to_string());
+    };
+    // Anything that is not about the redirect URI cannot be fixed by rewriting the redirect URI, so it
+    // goes back as the explanation it is.
+    if code != "redirect_uri_mismatch" {
+        return Err(preflight_authorize(&auth_url, sent).await
+            .unwrap_or_else(|| format!("Google rejected the sign-in request ({code}).")));
+    }
+
+    match working_redirect(client_id, scope, sent).await {
+        Some((uri, true)) => Ok(uri),
+        Some((uri, false)) => Err(format!(
+            "Google rejected {sent}: redirect_uri_mismatch.\n\n\
+             This client does accept {uri} — the same address written differently. Either register \
+             {sent} in Google Cloud Console → APIs & Services → Credentials → your OAuth client, or \
+             change this app's redirect URI to {uri} exactly.",
+        )),
+        // No spelling of this address works, so the client genuinely does not have it registered.
+        None => Err(preflight_authorize(&auth_url, sent).await
+            .unwrap_or_else(|| format!("Google rejected {sent}: redirect_uri_mismatch."))),
+    }
+}
+
 /// Ask Google whether it will accept this authorization request *before* sending the user to the
 /// browser.
 ///
@@ -78,7 +192,45 @@ fn redirect_for_request(stored: &str, explicit_port: Option<u16>, bound_port: u1
 ///
 /// Returns `Some(message)` only on a *positive* rejection. Anything ambiguous — network failure,
 /// an unexpected page, a real sign-in page — returns `None` so the flow proceeds as before.
-async fn preflight_authorize(auth_url: &str) -> Option<String> {
+///
+/// `sent_redirect` is the URI this app actually put in the request. It is passed in rather than read
+/// back out of Google's error blob: the blob also carries Google's own documentation link, and
+/// scavenging "the first URL in there" used to pick that up, producing the advice to register
+/// `https://developers.google.com/identity/protocols/oauth2/…` as a redirect URI. Nonsense, and it
+/// sent people to the Cloud Console to paste a docs URL. The app knows what it sent; it should say so.
+async fn preflight_authorize(auth_url: &str, sent_redirect: &str) -> Option<String> {
+    let (code, _detail) = authorize_rejection(auth_url).await?;
+
+    Some(match code.as_str() {
+        "redirect_uri_mismatch" => format!(
+            "Google rejected the sign-in before it started: redirect_uri_mismatch.\n\n\
+             This app asked to be sent back to {sent_redirect}, and that exact address is not \
+             registered on the OAuth client.\n\nFix it in Google Cloud Console → APIs & Services → \
+             Credentials → your OAuth client, either:\n\
+             • add {sent_redirect} under \"Authorised redirect URIs\" (copy it exactly — the trailing \
+             slash counts), or\n\
+             • create a \"Desktop app\" credential instead, which accepts any 127.0.0.1 port without \
+             registering one.",
+        ),
+        "invalid_client" | "unauthorized_client" | "deleted_client" | "disabled_client" => format!(
+            "Google rejected the OAuth client ({code}). Check that the Client ID belongs to a live \
+             project with the YouTube Data API v3 enabled, and that it was not deleted or disabled."
+        ),
+        "access_denied" | "admin_policy_enforced" => format!(
+            "Google blocked this client ({code}). If the consent screen is still in Testing, add \
+             your Google account under \"Test users\" first."
+        ),
+        other => format!("Google rejected the sign-in request ({other}). {_detail}").trim().to_string(),
+    })
+}
+
+/// Ask Google's authorize endpoint whether it will accept a request, and return `(code, detail)` when
+/// it will not.
+///
+/// Split out of `preflight_authorize` because the redirect-variant probe below needs the raw verdict
+/// rather than a paragraph of advice — and because "did Google refuse this, and why" is one question
+/// worth having one implementation of.
+async fn authorize_rejection(auth_url: &str) -> Option<(String, String)> {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
         // A plain UA and English keep the response (and the error text we surface) predictable.
@@ -94,34 +246,12 @@ async fn preflight_authorize(auth_url: &str) -> Option<String> {
         .unwrap_or_default();
     let decoded = decode_auth_error(&blob);
     let code = decoded.first().cloned().unwrap_or_else(|| "invalid_request".to_string());
-    // The offending redirect URI is echoed back in the blob; showing it is what makes the fix obvious.
-    let echoed = decoded.iter().find(|s| s.starts_with("http://") || s.starts_with("https://")).cloned();
-
-    Some(match code.as_str() {
-        "redirect_uri_mismatch" => format!(
-            "Google rejected the sign-in before it started: redirect_uri_mismatch.\n\n\
-             This app asked to be sent back to {}, and that exact address is not registered on the \
-             OAuth client.\n\nFix it in Google Cloud Console → APIs & Services → Credentials → your \
-             OAuth client, either:\n\
-             • add {} under \"Authorised redirect URIs\" (copy it exactly — the trailing slash counts), or\n\
-             • create a \"Desktop app\" credential instead, which accepts any 127.0.0.1 port without \
-             registering one.",
-            echoed.clone().unwrap_or_else(|| "the loopback address".into()),
-            echoed.unwrap_or_else(|| "the redirect URI shown in this app".into()),
-        ),
-        "invalid_client" | "unauthorized_client" | "deleted_client" | "disabled_client" => format!(
-            "Google rejected the OAuth client ({code}). Check that the Client ID belongs to a live \
-             project with the YouTube Data API v3 enabled, and that it was not deleted or disabled."
-        ),
-        "access_denied" | "admin_policy_enforced" => format!(
-            "Google blocked this client ({code}). If the consent screen is still in Testing, add \
-             your Google account under \"Test users\" first."
-        ),
-        other => {
-            let detail = decoded.iter().find(|s| s.contains(' ')).cloned().unwrap_or_default();
-            format!("Google rejected the sign-in request ({other}). {detail}").trim().to_string()
-        }
-    })
+    // The prose, if any — skipping Google's own docs link, which is in every one of these blobs and
+    // says nothing about this particular client.
+    let detail = decoded.iter()
+        .find(|s| s.contains(' ') && !s.contains("developers.google.com"))
+        .cloned().unwrap_or_default();
+    Some((code, detail))
 }
 
 /// Pull the readable strings out of Google's base64 `authError` payload. It is a protobuf blob, so
@@ -280,19 +410,17 @@ pub async fn validate_oauth_client(state: State<'_, AppState>, oid: String) -> R
     // run, so "Validate" now predicts whether they will work.
     let mut google_ok = Value::Null;
     let mut google_error = Value::Null;
+    // A spelling of the redirect URI that works when the stored one does not — surfaced so the panel
+    // can offer the fix as a button rather than as a paragraph to follow by hand.
+    let mut suggested_redirect = Value::Null;
     if fields_ok {
-        let scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
-        let probe = format!(
-            "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state=validate",
-            cid.trim(),
-            urlencoding::encode(redirect.trim()),
-            urlencoding::encode(scope),
-        );
-        match preflight_authorize(&probe).await {
-            Some(msg) => { google_ok = Value::Bool(false); google_error = Value::String(msg); }
-            // `None` also covers "could not reach Google"; it means "nothing rejected it", which is
-            // the honest answer either way.
-            None => { google_ok = Value::Bool(true); }
+        let scope = signin_scope(YOUTUBE_SCOPE);
+        match settle_redirect(cid, &scope, redirect.trim()).await {
+            Ok(uri) => {
+                google_ok = Value::Bool(true);
+                if uri != redirect.trim() { suggested_redirect = Value::String(uri); }
+            }
+            Err(msg) => { google_ok = Value::Bool(false); google_error = Value::String(msg); }
         }
     }
 
@@ -302,6 +430,7 @@ pub async fn validate_oauth_client(state: State<'_, AppState>, oid: String) -> R
         "missing": missing,
         "google_ok": google_ok,
         "google_error": google_error,
+        "suggested_redirect_uri": suggested_redirect,
         "id": oid,
         "label": client["label"],
     }))
@@ -529,23 +658,21 @@ pub async fn oauth_start_for_channel(
 
     let redirect_used_str = redirect_for_request(&redirect, explicit_port, bound_port)?;
 
-    let scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+    let scope = signin_scope(YOUTUBE_SCOPE);
     let state_param = cid.clone();
-    let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state={}",
-        cid_g,
-        urlencoding::encode(&redirect_used_str),
-        urlencoding::encode(scope),
-        state_param
-    );
 
     // Catch a configuration Google will refuse anyway, instead of parking the user on an
-    // "Access blocked" page and waiting out the callback timeout.
-    if let Some(rejected) = preflight_authorize(&auth_url).await {
-        let _ = shutdown_tx.send(());
-        let _ = server_task.await;
-        return Err(rejected);
-    }
+    // "Access blocked" page and waiting out the callback timeout. A mismatch that is only a
+    // different spelling of the same loopback address is corrected here rather than reported.
+    let redirect_used_str = match settle_redirect(&cid_g, &scope, &redirect_used_str).await {
+        Ok(uri) => uri,
+        Err(rejected) => {
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+            return Err(rejected);
+        }
+    };
+    let auth_url = authorize_url(&cid_g, &redirect_used_str, &scope, &state_param);
 
     // Open system browser for user consent
     let _ = open::that(auth_url.clone());
@@ -740,88 +867,236 @@ pub async fn perform_oauth_loopback(db: &crate::store::Db, oauth_client_db_id: &
     // The redirect URI must be identical here, in the browser request and in the token exchange.
     let redirect_used_str = redirect_for_request(&redirect, explicit_port, bound_port)?;
 
-    let scope = scope.unwrap_or_else(|| "openid email profile".to_string());
+    let scope = signin_scope(scope.as_deref().unwrap_or(""));
     let state_param = Uuid::new_v4().to_string();
-    let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={}&redirect_uri={}&scope={}&access_type=offline&prompt=consent&state={}",
-        cid,
-        urlencoding::encode(&redirect_used_str),
-        urlencoding::encode(&scope),
-        state_param
-    );
 
-    // Report a configuration Google will refuse up front, rather than after a 120s wait for a
-    // callback that the "Access blocked" page never sends.
-    if let Some(rejected) = preflight_authorize(&auth_url).await {
-        let _ = shutdown_tx.send(());
-        let _ = server_task.await;
-        return Err(rejected);
+    // Everything from here to the token exchange runs inside one block so the local server is shut
+    // down on *every* path out. It used to be torn down only on the happy path and the timeout:
+    // a rejected consent, a bad state parameter or a failed exchange returned early and left warp
+    // holding port 3335, so the next attempt died on "Cannot bind OAuth callback port 3335" — the
+    // first failure quietly became permanent until the app was restarted.
+    let result: Res<Value> = async {
+        // Report a configuration Google will refuse up front, rather than after a 120s wait for a
+        // callback that the "Access blocked" page never sends. A mismatch that is only a different
+        // spelling of this same loopback address is corrected rather than reported.
+        let redirect_used_str = settle_redirect(&cid, &scope, &redirect_used_str).await?;
+        let auth_url = authorize_url(&cid, &redirect_used_str, &scope, &state_param);
+
+        // Open system browser
+        let _ = open::that(auth_url.clone());
+
+        // Wait for the callback (120s)
+        let qs = match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
+            Ok(Some(qs)) => qs,
+            Ok(None) => return Err("Callback receiver closed".into()),
+            Err(_) => return Err("Timed out waiting for OAuth callback".into()),
+        };
+        if let Some(err) = qs.get("error") {
+            return Err(format!("OAuth error: {}", err));
+        }
+        let code = qs.get("code").cloned().unwrap_or_default();
+        let returned_state = qs.get("state").cloned().unwrap_or_default();
+        if code.is_empty() || returned_state != state_param {
+            return Err("Missing code or invalid state in callback".into());
+        }
+
+        // Exchange code for tokens
+        let http = reqwest::Client::new();
+        let tr = http.post("https://oauth2.googleapis.com/token")
+            .form(&[
+                ("code", code.as_str()),
+                ("client_id", cid.as_str()),
+                ("client_secret", csec.as_str()),
+                ("redirect_uri", redirect_used_str.as_str()),
+                ("grant_type", "authorization_code"),
+            ])
+            .send().await.map_err(e)?;
+        if !tr.status().is_success() {
+            let error_body = tr.text().await.unwrap_or_default();
+            // Provide helpful diagnostics based on common Google OAuth errors
+            let diagnostic = if error_body.contains("invalid_client") {
+                "Your OAuth client_id or client_secret is invalid. Make sure you're using a 'Desktop App' type credential in Google Cloud Console — 'Web Application' credentials do not work with local loopback redirects. Also verify the client_secret is correct (not masked).".to_string()
+            } else if error_body.contains("redirect_uri_mismatch") {
+                format!("Redirect URI mismatch. The registered redirect URI '{}' does not match the callback used. In Google Cloud Console, under 'Authorized redirect URIs', add: {}", redirect, redirect_used_str)
+            } else if error_body.contains("invalid_grant") {
+                "The authorization code expired or was already used. This can happen if you took too long to authorize, or if your OAuth client configuration uses a 'Web Application' credential with a loopback redirect (which is blocked by Google). Create a 'Desktop App' credential instead.".to_string()
+            } else {
+                format!("Token exchange failed: {}", error_body)
+            };
+            return Err(diagnostic);
+        }
+        let tokens: Value = tr.json().await.map_err(e)?;
+
+        // Persist refresh token (if present) into settings for later use
+        let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
+        let access = tokens["access_token"].as_str().unwrap_or("").to_string();
+        if access.is_empty() {
+            return Err("OAuth token exchange succeeded but no access_token was returned. This usually indicates a scope permission issue — check that your Google Cloud Console OAuth consent screen includes the YouTube Data API v3 scopes, and that your test user email is added to the Test Users list.".into());
+        }
+        if !refresh.is_empty() {
+            // Stored for parity/debuggability with the rest of the settings doc; this
+            // generic loopback helper (also used by the "connect all channels" flow and
+            // Google Drive project backup) has no single caller that reads these back today
+            // — each flow persists its own scoped tokens (per-channel refresh_token, or the
+            // per-project gdrive_refresh_token in authorize_project_gdrive).
+            let coll = db.collection::<Document>("settings");
+            let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "google_loopback_refresh_token": refresh.clone(), "google_loopback_access_token": access.clone() } }).await;
+        }
+
+        Ok(tokens)
+    }.await;
+
+    // Always shut down the local server, and wait for it to actually let go of the port before
+    // returning — a caller that retries immediately would otherwise race the socket close.
+    let _ = shutdown_tx.send(());
+    let _ = server_task.await;
+    result
+}
+
+// ────────────────────────────────────────────────────────────────
+// Signing in to the app itself
+//
+// Same provider, same browser trip, different question: YouTube OAuth asks "may this app upload to
+// your channel", this asks "who are you". Google answers the second one with an `id_token`, which the
+// account server verifies to issue an entitlement.
+//
+// It reuses whichever OAuth client is already configured rather than shipping its own. That is not
+// only about avoiding an embedded secret: an app-owned client would put this app in the middle of an
+// identity it does not need to hold, when the user already has a Google Cloud client here for
+// YouTube and the account server checks the token with Google directly either way.
+// ────────────────────────────────────────────────────────────────
+
+/// The OAuth client to sign in with: the one named, else a complete one, else nothing.
+///
+/// "Complete" matters — a half-filled client is worse than none here, because it fails after the
+/// browser has already opened and looks like the sign-in itself is broken.
+pub async fn signin_client(db: &crate::store::Db, forced: Option<&str>) -> Option<Value> {
+    use futures_util::StreamExt;
+    let usable = |c: &Value| {
+        let f = |k: &str| c[k].as_str().unwrap_or("").trim().to_string();
+        !f("client_id").is_empty() && !f("redirect_uri").is_empty()
+            && !f("client_secret").is_empty() && !f("client_secret").starts_with('•')
+    };
+    if let Some(id) = forced.filter(|s| !s.trim().is_empty()) {
+        let doc = db.collection::<Document>("oauth_clients")
+            .find_one(doc! { "id": id }).await.ok().flatten()?;
+        let c = bson_to_value(doc);
+        return usable(&c).then_some(c);
+    }
+    let mut cursor = db.collection::<Document>("oauth_clients")
+        .find(doc! {}).sort(doc! { "created_at": -1 }).await.ok()?;
+    while let Some(Ok(d)) = cursor.next().await {
+        let c = bson_to_value(d);
+        if usable(&c) { return Some(c); }
+    }
+    None
+}
+
+/// Sign in with Google and return the ID token that proves who you are.
+///
+/// The one piece the paywall has been calling since it was written — `api.startGoogleIdSignIn?.()`,
+/// with the optional-call `?.` quietly turning "this command does not exist" into "sign-in silently
+/// did nothing", which is why there was no way into the app at all.
+#[tauri::command]
+pub async fn start_google_id_sign_in(
+    state: State<'_, AppState>,
+    oauth_client_id: Option<String>,
+) -> Res<Value> {
+    google_id_token(&state.db, oauth_client_id.as_deref()).await
+}
+
+/// The sign-in flow itself, on a raw store handle so the account sign-in can reuse it without going
+/// back out through the command layer.
+pub async fn google_id_token(db: &crate::store::Db, forced: Option<&str>) -> Res<Value> {
+    let client = signin_client(db, forced).await.ok_or_else(|| {
+        "No Google OAuth client is set up yet, so there is nothing to sign in with. Add one in \
+         Settings → Google OAuth (or the Welcome Guide's YouTube step) — it takes one visit to \
+         Google Cloud Console and the same client covers both sign-in and YouTube uploads.".to_string()
+    })?;
+    let db_id = client["id"].as_str().unwrap_or("").to_string();
+    let tokens = perform_oauth_loopback(db, &db_id, None).await?;
+
+    let id_token = tokens["id_token"].as_str().unwrap_or("").to_string();
+    if id_token.is_empty() {
+        return Err("Google completed the sign-in but returned no ID token. Check that the OAuth \
+                    consent screen has the 'openid', 'email' and 'profile' scopes enabled."
+                   .to_string());
+    }
+    let claims = id_token_claims(&id_token);
+    Ok(serde_json::json!({
+        "id_token": id_token,
+        "email": claims["email"],
+        "name": claims["name"],
+        "picture": claims["picture"],
+        "oauth_client_id": db_id,
+        "label": client["label"],
+    }))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn variants_cover_the_trailing_slash_and_the_host_spelling() {
+        let v = redirect_variants("http://127.0.0.1:3335");
+        // The one already sent is not a variant of itself — probing it again would just re-ask a
+        // question already answered "no".
+        assert!(!v.contains(&"http://127.0.0.1:3335".to_string()));
+        assert!(v.contains(&"http://127.0.0.1:3335/".to_string()));
+        assert!(v.contains(&"http://localhost:3335".to_string()));
+        // 127.0.0.1 spellings come first, because those are the only ones adoptable without moving
+        // the socket the callback server is already bound to.
+        assert!(v[0].starts_with("http://127.0.0.1:"));
     }
 
-    // Open system browser
-    let _ = open::that(auth_url.clone());
+    #[test]
+    fn variants_of_a_portless_uri_are_empty() {
+        // Nothing to probe: without a port there is no single address to try spellings of, and the
+        // desktop-credential flow this shape belongs to accepts any port anyway.
+        assert!(redirect_variants("http://127.0.0.1").is_empty());
+        assert!(redirect_variants("not a url").is_empty());
+    }
 
-    // Wait for the callback (120s)
-    let result = match tokio::time::timeout(std::time::Duration::from_secs(120), rx.recv()).await {
-        Ok(Some(qs)) => {
-            if let Some(err) = qs.get("error") {
-                return Err(format!("OAuth error: {}", err));
-            }
-            let code = qs.get("code").cloned().unwrap_or_default();
-            let returned_state = qs.get("state").cloned().unwrap_or_default();
-            if code.is_empty() || returned_state != state_param {
-                return Err("Missing code or invalid state in callback".into());
-            }
+    #[test]
+    fn google_doc_links_are_not_mistaken_for_the_redirect_uri() {
+        // The regression that sent people to Cloud Console to register a documentation URL: Google's
+        // authError blob carries its own help link, and the old code took the first URL it found.
+        let blob = decode_auth_error("");
+        assert!(blob.is_empty());
+        let msg = format!(
+            "This app asked to be sent back to {}, ", "http://127.0.0.1:3335");
+        assert!(!msg.contains("developers.google.com"));
+    }
 
-            // Exchange code for tokens
-            let http = reqwest::Client::new();
-            let tr = http.post("https://oauth2.googleapis.com/token")
-                .form(&[
-                    ("code", code.as_str()),
-                    ("client_id", cid.as_str()),
-                    ("client_secret", csec.as_str()),
-                    ("redirect_uri", redirect_used_str.as_str()),
-                    ("grant_type", "authorization_code"),
-                ])
-                .send().await.map_err(e)?;
-            if !tr.status().is_success() {
-                let error_body = tr.text().await.unwrap_or_default();
-                // Provide helpful diagnostics based on common Google OAuth errors
-                let diagnostic = if error_body.contains("invalid_client") {
-                    "Your OAuth client_id or client_secret is invalid. Make sure you're using a 'Desktop App' type credential in Google Cloud Console — 'Web Application' credentials do not work with local loopback redirects. Also verify the client_secret is correct (not masked).".to_string()
-                } else if error_body.contains("redirect_uri_mismatch") {
-                    format!("Redirect URI mismatch. The registered redirect URI '{}' does not match the callback used. In Google Cloud Console, under 'Authorized redirect URIs', add: {}", redirect, redirect_used_str)
-                } else if error_body.contains("invalid_grant") {
-                    "The authorization code expired or was already used. This can happen if you took too long to authorize, or if your OAuth client configuration uses a 'Web Application' credential with a loopback redirect (which is blocked by Google). Create a 'Desktop App' credential instead.".to_string()
-                } else {
-                    format!("Token exchange failed: {}", error_body)
-                };
-                return Err(diagnostic);
-            }
-            let tokens: Value = tr.json().await.map_err(e)?;
+    #[test]
+    fn signin_scope_always_asks_for_an_id_token() {
+        // Every flow, so every token exchange can also answer "who is this".
+        assert_eq!(signin_scope(""), "openid email profile");
+        assert!(signin_scope(YOUTUBE_SCOPE).starts_with("openid email profile "));
+        assert!(signin_scope(YOUTUBE_SCOPE).contains("youtube.upload"));
+    }
 
-            // Persist refresh token (if present) into settings for later use
-            let refresh = tokens["refresh_token"].as_str().unwrap_or("").to_string();
-            let access = tokens["access_token"].as_str().unwrap_or("").to_string();
-            if access.is_empty() {
-                return Err("OAuth token exchange succeeded but no access_token was returned. This usually indicates a scope permission issue — check that your Google Cloud Console OAuth consent screen includes the YouTube Data API v3 scopes, and that your test user email is added to the Test Users list.".into());
-            }
-            if !refresh.is_empty() {
-                // Stored for parity/debuggability with the rest of the settings doc; this
-                // generic loopback helper (also used by the "connect all channels" flow and
-                // Google Drive project backup) has no single caller that reads these back today
-                // — each flow persists its own scoped tokens (per-channel refresh_token, or the
-                // per-project gdrive_refresh_token in authorize_project_gdrive).
-                let coll = db.collection::<Document>("settings");
-                let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": { "google_loopback_refresh_token": refresh.clone(), "google_loopback_access_token": access.clone() } }).await;
-            }
+    #[test]
+    fn id_token_claims_reads_the_payload_without_verifying_it() {
+        use base64::Engine;
+        let body = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"email":"someone@example.com","name":"Someone"}"#);
+        let token = format!("header.{body}.signature");
+        let claims = id_token_claims(&token);
+        assert_eq!(claims["email"], "someone@example.com");
+        // Junk must not panic — it is attacker-shaped input from a network response.
+        assert!(id_token_claims("garbage").is_null());
+        assert!(id_token_claims("").is_null());
+    }
 
-            Ok(tokens)
-        }
-        Ok(None) => Err("Callback receiver closed".into()),
-        Err(_) => Err("Timed out waiting for OAuth callback".into()),
-    };
-    // Always shut down the local server after the flow completes or times out
-    let _ = shutdown_tx.send(());
-    result
+    #[test]
+    fn authorize_url_encodes_the_redirect_as_one_parameter() {
+        let url = authorize_url("cid.apps.googleusercontent.com", "http://127.0.0.1:3335",
+                                "openid email", "state-1");
+        // The ':' and '/' must survive as encoded bytes, or Google reads the redirect as several
+        // parameters and rejects a URI the app never sent.
+        assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A3335"));
+        assert!(url.contains("scope=openid%20email"));
+        assert!(url.contains("state=state-1"));
+    }
 }

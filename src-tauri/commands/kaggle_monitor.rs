@@ -24,7 +24,7 @@ use serde_json::Value;
 use tauri::State;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use super::settings::{kaggle_kernel_for, locate_kaggle};
+use super::settings::{kaggle_slugs, locate_kaggle};
 use crate::state::AppState;
 
 type Res<T> = Result<T, String>;
@@ -136,6 +136,17 @@ fn detect_error(line: &str) -> Option<(String, Option<String>)> {
             Some("gpu_denied".into()),
         ));
     }
+    // The notebook exhausted every tunnel route (cloudflared/QUIC → cloudflared/HTTP2 →
+    // localhost.run) and gave up. Without this the cell simply ends, the kernel finishes cleanly, and
+    // the only thing the app could say was the uselessly generic "the run ended before a server came
+    // up" — for a run whose model loaded fine and whose server was listening the whole time.
+    if l.contains("no working public tunnel") {
+        return Some((
+            "The engine started and its server was listening, but no public tunnel could be opened \
+             after three attempts — so nothing outside Kaggle could reach it.".into(),
+            Some("tunnel_dead".into()),
+        ));
+    }
     if let Some(idx) = l.find("Error: ") {
         // A concrete exception line (e.g. "RuntimeError: ...."), not a pip warning.
         let rest = &l[idx..];
@@ -170,6 +181,14 @@ fn classify(line: &str) -> Option<(&'static str, &'static str, bool)> {
     // Kept out of the ring as well, so ~20 lines of pre-check table don't evict the real milestones.
     if l.contains("Requesting new quick Tunnel") {
         return Some(("tunneling", "milestone", true));
+    }
+    // One tunnel route gave up and the notebook is moving to the next (QUIC → HTTP/2 →
+    // localhost.run). Kept in the ring: three attempts take a couple of minutes, and without these
+    // lines that stretch looks like a stall rather than a retry that is working as designed.
+    if l.contains("never answered within") || l.contains("no URL within")
+        || l.contains("exited before printing a URL") || l.contains("attempt ")
+    {
+        return Some(("tunneling", "info", true));
     }
     if l.contains("[tunnel]") || l.contains("Cloudflare Tunnel") {
         return Some(("tunneling", "info", false));
@@ -222,14 +241,22 @@ async fn probe_alive(url: &str) -> bool {
 /// `kernels status` poll, writing everything into the shared `progress`.
 async fn run_monitor(
     engine: String,
-    slug: &'static str,
+    slug: String,
     settings_key: &'static str,
     kaggle: String,
     progress: Arc<Mutex<KaggleProgress>>,
     stop: Arc<AtomicBool>,
     db: crate::store::Db,
 ) {
-    progress.lock().unwrap().push("info", format!("Watching {} boot on Kaggle…", engine));
+    let slug = slug.as_str();
+    progress.lock().unwrap().push("info", format!("Watching {} ({}) boot on Kaggle…", engine, slug));
+
+    // `kaggle kernels logs -f` dumps the whole persisted log before it starts following, so every
+    // reconnect replays everything already seen. Left unchecked that re-pushed old milestones into
+    // the ring in a fresh order — which is what made the log read as a *successful* boot interleaved
+    // out of sequence ("Server is up" before "installed — environment OK") for a run that had not
+    // started. Counting consumed lines and skipping the replayed prefix keeps the log a log.
+    let mut consumed: usize = 0;
 
     let mut status_iv = tokio::time::interval(Duration::from_secs(12));
     let mut probe_iv = tokio::time::interval(Duration::from_secs(PROBE_EVERY_SECS));
@@ -275,6 +302,8 @@ async fn run_monitor(
         };
         let stdout = child.stdout.take();
         let mut lines = stdout.map(|s| BufReader::new(s).lines());
+        // Position within THIS attachment's stream, against the replayed prefix counted above.
+        let mut seen_this_attach: usize = 0;
 
         // Inner read loop for this stream attachment. Exits are all explicit: `break 'outer` on a
         // terminal outcome, or `continue 'outer` (after a short pause) when the follow stream just
@@ -313,9 +342,13 @@ async fn run_monitor(
                             // check for every run that got as far as starting the tunnel.
                             if matches!(ks, "error" | "complete" | "cancelled") && !p.url_live && trustworthy {
                                 if p.error.is_none() {
+                                    // Name the kernel. When the app was addressing an account it was
+                                    // not signed in as, this sentence was the only thing the user
+                                    // ever saw — and it described a run on somebody else's kernel
+                                    // without ever saying whose.
                                     p.error = Some(match ks {
-                                        "error" => "The run ERRORED before a server came up — see the log below.".to_string(),
-                                        _ => format!("The run ended ({}) before a server came up.", ks),
+                                        "error" => format!("The run on {slug} ERRORED before a server came up — see the log below."),
+                                        _ => format!("The run on {slug} ended ({ks}) before a server came up."),
                                     });
                                 }
                                 p.phase = "error".into();
@@ -379,6 +412,11 @@ async fn run_monitor(
                 maybe_line = async { match &mut lines { Some(l) => l.next_line().await, None => Ok(None) } } => {
                     match maybe_line {
                         Ok(Some(line)) => {
+                            // Skip the replayed prefix this attachment has already shown us.
+                            seen_this_attach += 1;
+                            if seen_this_attach <= consumed { continue; }
+                            consumed = seen_this_attach;
+
                             let line = line.trim_end().to_string();
                             if line.is_empty() { continue; }
 
@@ -492,7 +530,7 @@ pub async fn kaggle_start_monitor(
     state: State<'_, AppState>,
     monitors: State<'_, KaggleMonitors>,
 ) -> Res<Value> {
-    let (slug, settings_key) = match kaggle_kernel_for(&engine) {
+    let (slug, _upstream, settings_key) = match kaggle_slugs(&state.db, &engine).await {
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
@@ -521,8 +559,9 @@ pub async fn kaggle_start_monitor(
     let kaggle = locate_kaggle();
     let db = state.db.clone();
     let engine_moved = engine.clone();
+    let slug_moved = slug.clone();
     tauri::async_runtime::spawn(async move {
-        run_monitor(engine_moved, slug, settings_key, kaggle, progress, stop, db).await;
+        run_monitor(engine_moved, slug_moved, settings_key, kaggle, progress, stop, db).await;
     });
 
     Ok(serde_json::json!({ "ok": true, "detail": "monitor started" }))

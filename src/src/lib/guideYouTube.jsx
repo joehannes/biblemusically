@@ -55,6 +55,18 @@ export default function YouTubeStepBody({ onDone }) {
     finally { setBusy(""); }
   }, []);
 
+  /** Save the spelling Google actually accepts onto the selected client, then re-check. */
+  const adoptRedirect = async (uri) => {
+    setBusy("fix");
+    try {
+      await api.updateOauthClient(selected, { redirect_uri: uri });
+      toast.success(`Redirect URI set to ${uri}.`);
+      await loadClients();
+      await verify(selected);
+    } catch (e) { toast.error(String(e)); }
+    finally { setBusy(""); }
+  };
+
   const saveClient = async () => {
     if (!form.client_id.trim() || !form.client_secret.trim()) {
       return toast.error("Client ID and Client secret are both required.");
@@ -191,7 +203,25 @@ export default function YouTubeStepBody({ onDone }) {
             <div className="whitespace-pre-wrap" data-no-i18n>{check.google_error}</div>
           </div>
         )}
-        {check?.google_ok === true && (
+        {/* Google took a different spelling of the same loopback address than the one stored. One
+            character, invisible in both consoles, and the whole sign-in fails on it — so it is offered
+            as a button rather than as a sentence explaining where to look. */}
+        {check?.suggested_redirect_uri && (
+          <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-2.5 text-[11px] leading-relaxed">
+            <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+            <div className="space-y-1.5">
+              <div>
+                Google accepts this client at <span className="font-mono" data-no-i18n>{check.suggested_redirect_uri}</span> —
+                the same address written differently to the one saved here.
+              </div>
+              <Button size="sm" variant="outline" className="h-6 text-[11px]" disabled={busy === "fix"}
+                onClick={() => adoptRedirect(check.suggested_redirect_uri)}>
+                {busy === "fix" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Use that address"}
+              </Button>
+            </div>
+          </div>
+        )}
+        {check?.google_ok === true && !check?.suggested_redirect_uri && (
           <div className="flex items-center gap-1.5 text-[11px] text-emerald-500">
             <ShieldCheck className="w-3.5 h-3.5" />Google accepted this client and redirect URI.
           </div>

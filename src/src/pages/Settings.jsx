@@ -11,6 +11,7 @@ import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
+import KaggleDiagnostics from "../components/KaggleDiagnostics";
 import VoicePicker from "../components/VoicePicker";
 import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
@@ -459,13 +460,27 @@ const SettingsComponent = () => {
   const openKaggleNb = async (engine) => {
     try {
       const r = await api.kaggleNotebookUrl(engine);
-      if (r?.url) {
-        navigate(`/browser?url=${encodeURIComponent(r.url)}&label=${encodeURIComponent(engine + " notebook")}`);
+      // Before the first successful start there is no notebook on this account, so `url` is the
+      // published template. Saying which one is being opened avoids the reasonable conclusion, on
+      // seeing an unfamiliar account name in the address bar, that the app is talking to the wrong
+      // place — it is, deliberately, and only until the first run creates your own copy.
+      if (r?.exists === false) {
+        toast.message(
+          `You have no ${engine} notebook on Kaggle yet — opening the published original. ` +
+          `"Start & connect" copies it to your account (${r.owner || "your account"}) on the first run.`,
+          { duration: 10000 },
+        );
+      }
+      const target = typeof r?.url === "string" ? r.url.trim() : "";
+      if (/^https?:\/\//i.test(target)) {
+        navigate(`/browser?url=${encodeURIComponent(target)}&label=${encodeURIComponent(engine + " notebook")}`);
         return;
       }
       await api.openKaggleNotebook(engine);
     } catch (e) {
-      toast.error(String(e));
+      // Prefixed, because a bare runtime message ("The string did not match the expected pattern.")
+      // names neither what failed nor what to do about it.
+      toast.error(`Could not open the ${engine} notebook: ${e?.message || e}`, { duration: 12000 });
     }
   };
 
@@ -854,6 +869,9 @@ const SettingsComponent = () => {
             ))}
           </div>
         )}
+        <div className="mt-4 pt-4 border-t border-border/60">
+          <KaggleDiagnostics />
+        </div>
       </Card>
 
       <Card className="p-6 mb-5">

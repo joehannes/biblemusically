@@ -596,6 +596,7 @@ pub fn run() {
             commands::list_project_assets,
             commands::restore_project_assets,
             commands::list_kaggle_accounts,
+            commands::kaggle_diagnostics,
             commands::activate_kaggle_account,
             commands::remove_kaggle_account,
             commands::rotate_kaggle_account,
@@ -704,6 +705,7 @@ pub fn run() {
             commands::oauth_start_loopback,
             commands::oauth_callback,
             commands::validate_oauth_client,
+            commands::start_google_id_sign_in,
             // Jobs commands
             commands::list_jobs,
             commands::get_job,
@@ -855,6 +857,7 @@ pub fn run() {
             commands::deeplink_setup_steps,
             // Accounts, trial, subscription — the gate is here, not in the interface
             commands::subs_sign_in,
+            commands::subs_sign_in_google,
             commands::subs_refresh,
             commands::subs_status,
             commands::subs_sign_out,

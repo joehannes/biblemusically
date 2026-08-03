@@ -101,6 +101,8 @@ export const api = {
   openKaggleLogin: () => invokeCommand("open_kaggle_login"),
   saveKaggleToken: (tokenJson) => invokeCommand("save_kaggle_token", { tokenJson }),
   listKaggleAccounts: () => invokeCommand("list_kaggle_accounts"),
+  // Which account the CLI signs in as, which kernel each engine addresses, and whether it exists.
+  kaggleDiagnostics: (engine) => invokeCommand("kaggle_diagnostics", { engine: engine || null }),
   activateKaggleAccount: (username) => invokeCommand("activate_kaggle_account", { username }),
   removeKaggleAccount: (username) => invokeCommand("remove_kaggle_account", { username }),
   rotateKaggleAccount: () => invokeCommand("rotate_kaggle_account"),
@@ -231,6 +233,15 @@ export const api = {
   projectHistory: (projectId, limit) => invokeCommand("project_history", { projectId, limit: limit || null }),
   rewindProject: (projectId, commit) => invokeCommand("rewind_project", { projectId, commit }),
   // ============ Account, trial, subscription ============
+  // Sign in with Google in one call — opens the consent screen and redeems the ID token it returns.
+  // Prefer this over startGoogleIdSignIn + subsSignIn: two halves is how the sign-in came to be
+  // half-implemented in the first place.
+  subsSignInGoogle: (oauthClientId, username) =>
+    invokeCommand("subs_sign_in_google", { oauthClientId: oauthClientId || null, username: username || null }),
+  // Just the Google half — the ID token, without touching the account server. For flows that need to
+  // know who somebody is before deciding anything.
+  startGoogleIdSignIn: (oauthClientId) =>
+    invokeCommand("start_google_id_sign_in", { oauthClientId: oauthClientId || null }),
   subsSignIn: (payload) => invokeCommand("subs_sign_in", { payload }),
   subsRefresh: () => invokeCommand("subs_refresh"),
   subsStatus: () => invokeCommand("subs_status"),

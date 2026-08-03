@@ -71,20 +71,18 @@ export function SubscribePrompt({ ent, compact = false }) {
     setBusy("in");
     try {
       // The Google sign-in the app already performs for YouTube; the id token proves who they are, and no
-      // password is ever created or stored.
-      const r = await api.startGoogleIdSignIn?.().catch(() => null);
-      if (!r?.id_token) {
-        toast.message("Sign in with Google from the Welcome Guide — it uses the same sign-in as YouTube.");
-        return;
-      }
-      await api.subsSignIn({ id_token: r.id_token });
+      // password is ever created or stored. One call, because this used to be two — a `?.` optional call
+      // to a command that did not exist, so the button's only effect was a toast telling people to sign
+      // in somewhere that could not sign them in either.
+      const r = await api.subsSignInGoogle();
       await refreshEntitlement();
-      toast.success("Signed in — your free week starts now.");
+      toast.success(r?.email ? `Signed in as ${r.email} — your free week starts now.`
+                             : "Signed in — your free week starts now.");
     } catch (err) {
       // The session limit is a refusal with a way out, so it reads differently from a failure.
       const msg = String(err);
       if (msg.includes("limit")) toast.warning(msg, { duration: 14000 });
-      else toast.error(msg, { duration: 10000 });
+      else toast.error(msg, { duration: 14000 });
     } finally { setBusy(""); }
   };
 
