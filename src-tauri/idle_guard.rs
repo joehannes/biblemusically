@@ -124,7 +124,7 @@ mod tests {
     /// failure nobody reads, and the GPU hours are gone by the time anybody notices.
     #[test]
     fn every_engine_the_guard_touches_can_actually_be_stopped() {
-        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion"] {
+        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"] {
             assert!(crate::commands::kaggle_kernel_for(engine).is_some(),
                     "jobs.rs touches '{engine}', but stop_kaggle_server does not know that name");
         }

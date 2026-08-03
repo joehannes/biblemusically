@@ -13,6 +13,8 @@ pub mod tray;
 
 #[path = "../comfy_registry.rs"]
 pub mod comfy_registry;
+#[path = "../video_models.rs"]
+pub mod video_models;
 #[path = "../deep_link.rs"]
 pub mod deep_link;
 #[path = "../git_api.rs"]

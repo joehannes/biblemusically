@@ -677,6 +677,11 @@ pub(crate) fn kaggle_kernel_for(engine: &str) -> Option<(&'static str, &'static 
         "comfyui" | "comfy" => Some(("biblemusically-comfyui-server", "comfyui_api_url")),
         "flux" => Some(("biblemusically-flux-server", "flux_api_url")),
         "riffusion" => Some(("biblemusically-riffusion-server", "riffusion_api_url")),
+        // Video runs as its own ComfyUI server rather than inside the image one. Kaggle allows two
+        // concurrent GPU sessions, so a separate kernel means stills and clips render at the same
+        // time on separate quota — and a video model plus SDXL/FLUX would not fit one 16 GB card
+        // anyway (see video_models.rs for the per-model figures).
+        "video" => Some(("biblemusically-video-server", "video_api_url")),
         _ => None,
     }
 }
@@ -1049,7 +1054,7 @@ pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<Strin
 
     let engines: Vec<String> = match engine {
         Some(e) => vec![e],
-        None => ["acestep", "heartmula", "comfyui", "flux", "riffusion"].iter().map(|s| s.to_string()).collect(),
+        None => ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"].iter().map(|s| s.to_string()).collect(),
     };
     let mut per_engine = Vec::new();
     for eng in engines {
@@ -1981,7 +1986,7 @@ mod kaggle_slug_tests {
     /// back; the owner belongs to `kaggle_owner`, which reads the credentials actually in use.
     #[test]
     fn kernel_names_never_carry_an_owner() {
-        for engine in ["acestep", "heartmula", "comfyui", "comfy", "flux", "riffusion"] {
+        for engine in ["acestep", "heartmula", "comfyui", "comfy", "flux", "riffusion", "video"] {
             let (name, key) = kaggle_kernel_for(engine)
                 .unwrap_or_else(|| panic!("'{engine}' should be a known engine"));
             assert!(!name.contains('/'),
@@ -2002,7 +2007,7 @@ mod kaggle_slug_tests {
     #[test]
     fn every_engine_has_its_own_settings_key() {
         let mut keys = Vec::new();
-        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion"] {
+        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"] {
             let (_, key) = kaggle_kernel_for(engine).unwrap();
             assert!(!keys.contains(&key), "'{key}' is used by more than one engine");
             keys.push(key);
