@@ -720,6 +720,28 @@ pub(crate) async fn kaggle_slugs(db: &crate::store::Db, engine: &str) -> Option<
     Some((format!("{owner}/{name}"), format!("{KAGGLE_UPSTREAM_OWNER}/{name}"), key))
 }
 
+/// The engine id a kernel name belongs to — `johannes/biblemusically-video-server` → `video`.
+fn engine_of_slug(slug: &str) -> &str {
+    slug.rsplit('/').next().unwrap_or(slug)
+        .trim_start_matches("biblemusically-").trim_end_matches("-server")
+}
+
+/// The notebook shipped inside the app for an engine.
+///
+/// Compiled in rather than read from disk: an installed app has no `scripts/` directory, and a
+/// notebook that only exists on Kaggle makes the whole feature depend on one account staying alive.
+fn bundled_notebook(engine: &str) -> Option<&'static str> {
+    Some(match engine {
+        "acestep" => include_str!("../kaggle_notebooks/acestep.ipynb"),
+        "heartmula" => include_str!("../kaggle_notebooks/heartmula.ipynb"),
+        "comfyui" | "comfy" => include_str!("../kaggle_notebooks/comfyui.ipynb"),
+        "flux" => include_str!("../kaggle_notebooks/flux.ipynb"),
+        "riffusion" => include_str!("../kaggle_notebooks/riffusion.ipynb"),
+        "video" => include_str!("../kaggle_notebooks/video.ipynb"),
+        _ => return None,
+    })
+}
+
 /// What a kernel pull produced, and where it came from.
 pub(crate) struct PulledKernel {
     /// True when the user had no copy and the published upstream notebook was used as the template.
@@ -761,10 +783,37 @@ async fn pull_kernel_for_push(
         let _ = fs::create_dir_all(dir).await;
         let second = pull(upstream.to_string()).await?;
         if !second.status.success() || !dir.join("kernel-metadata.json").is_file() {
-            let msg = format!("{}{}",
-                String::from_utf8_lossy(&second.stdout), String::from_utf8_lossy(&second.stderr));
-            return Err(format!(
-                "Could not pull the reference notebook {upstream} from Kaggle: {}", msg.trim()));
+            // Neither this account nor upstream has it. That is the normal state for an engine whose
+            // notebook has never been published — the video server on a fresh install — so fall back
+            // to the copy bundled with the app. This is also what makes the app independent of the
+            // author's Kaggle account remaining alive: the notebooks ship inside the binary, and
+            // Kaggle is only ever a place to run them.
+            let bundled = bundled_notebook(engine_of_slug(own));
+            let Some(source) = bundled else {
+                let msg = format!("{}{}",
+                    String::from_utf8_lossy(&second.stdout), String::from_utf8_lossy(&second.stderr));
+                return Err(format!(
+                    "Could not pull the reference notebook {upstream} from Kaggle, and no bundled \
+                     copy is available: {}", msg.trim()));
+            };
+            fs::write(dir.join("setup_and_serve.ipynb"), &source).await.map_err(e)?;
+            let name = own.split('/').next_back().unwrap_or("biblemusically-server");
+            let meta = serde_json::json!({
+                "id": own,
+                "title": name,
+                "code_file": "setup_and_serve.ipynb",
+                "language": "python",
+                "kernel_type": "notebook",
+                "is_private": true,
+                "enable_gpu": true,
+                "enable_internet": true,
+                "dataset_sources": [],
+                "competition_sources": [],
+                "kernel_sources": [],
+            });
+            fs::write(dir.join("kernel-metadata.json"),
+                      serde_json::to_string_pretty(&meta).map_err(e)?).await.map_err(e)?;
+            return Ok(PulledKernel { from_upstream: true, slug: own.to_string() });
         }
     }
 
@@ -1993,6 +2042,22 @@ mod kaggle_slug_tests {
                     "'{engine}' maps to '{name}', which bakes in an owner — the owner must come from \
                      the signed-in account, not from this table");
             assert!(key.ends_with("_api_url"), "'{engine}' stores its URL under '{key}'");
+        }
+    }
+
+    /// Every engine must ship a notebook, or it can never start on an account that has not run it
+    /// before — which is every account on a fresh install. This is the check that keeps the app from
+    /// depending on one person's Kaggle profile continuing to exist.
+    #[test]
+    fn every_engine_ships_a_notebook() {
+        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"] {
+            let (name, _) = kaggle_kernel_for(engine).unwrap();
+            let slug = format!("someone/{name}");
+            let derived = engine_of_slug(&slug);
+            let nb = bundled_notebook(derived).unwrap_or_else(||
+                panic!("'{engine}' maps to kernel '{name}' -> engine '{derived}', which has no \
+                        bundled notebook, so a fresh account can never start it"));
+            assert!(nb.contains("\"cells\""), "'{derived}' notebook is not a notebook");
         }
     }
 

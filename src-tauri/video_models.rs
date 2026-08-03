@@ -45,6 +45,65 @@
 
 use serde::Serialize;
 
+// ── Hardware tiers ──────────────────────────────────────────────────────────
+//
+// Kaggle sells no GPU upgrade — its free tier is the only tier it has. So "better hardware" here
+// means somewhere else: Colab Pro, Lightning.ai, RunPod, a rented A100, or a card under the desk.
+// The app does not care which; it cares about two numbers (VRAM, and whether the architecture can
+// compute in bf16/fp8) because those are what decide whether a model runs at all.
+//
+// Tiers are ordered, and a model declares the lowest one it is usable on. That ordering is the whole
+// mechanism: it lets the catalogue offer the 14B models to somebody who can run them without ever
+// offering them to somebody who cannot, and it lets the advisor explain the difference instead of
+// letting a run fail at load time with an out-of-memory traceback.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub enum Tier {
+    /// Kaggle free: one T4, 16 GB, Turing. No bf16, no fp8 arithmetic.
+    FreeT4,
+    /// Kaggle free, both cards. Two T4s are 32 GB of *separate* memory: ComfyUI runs one model on one
+    /// card, so this raises almost nothing for a single clip. It buys parallelism — two engines, or
+    /// two clips at once — not a bigger model. Stated plainly because "32 GB" invites the opposite
+    /// conclusion.
+    DualT4,
+    /// 24 GB Ada-or-newer (L4, 4090, A10G). fp8 is native here, so the fp8 14B checkpoints are both
+    /// small enough and fast — this is the first tier where the big models are pleasant.
+    Pro24,
+    /// 40 GB+ (A100, H100). bf16 native, everything fits unquantised.
+    Big40,
+}
+
+impl Tier {
+    pub fn id(&self) -> &'static str {
+        match self { Tier::FreeT4 => "free_t4", Tier::DualT4 => "dual_t4",
+                     Tier::Pro24 => "pro_24gb", Tier::Big40 => "big_40gb" }
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            Tier::FreeT4 => "Kaggle free — one T4, 16 GB",
+            Tier::DualT4 => "Kaggle free — two T4s, 16 GB each",
+            Tier::Pro24 => "24 GB Ada or newer (L4 / 4090 / A10G)",
+            Tier::Big40 => "40 GB+ (A100 / H100)",
+        }
+    }
+    /// Usable VRAM for one model. Dual T4 is deliberately 16, not 32 — see the enum comment.
+    pub fn vram_gb(&self) -> f32 {
+        match self { Tier::FreeT4 | Tier::DualT4 => 16.0, Tier::Pro24 => 24.0, Tier::Big40 => 40.0 }
+    }
+    /// Can this architecture actually compute in bf16/fp8, or would those weights be upcast on load?
+    pub fn native_low_precision(&self) -> bool { matches!(self, Tier::Pro24 | Tier::Big40) }
+    pub fn parse(s: &str) -> Tier {
+        match s.trim() {
+            "dual_t4" => Tier::DualT4,
+            "pro_24gb" => Tier::Pro24,
+            "big_40gb" => Tier::Big40,
+            _ => Tier::FreeT4,
+        }
+    }
+}
+
+pub const TIERS: &[Tier] = &[Tier::FreeT4, Tier::DualT4, Tier::Pro24, Tier::Big40];
+
 /// What a clip is being made for. The catalogue is indexed by this rather than by model name,
 /// because the useful question is "what am I making", not "which checkpoint exists".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -88,7 +147,9 @@ pub struct VideoModel {
     pub weights: &'static [Weight],
     /// Peak VRAM in gigabytes, measured at the preset resolutions below. The T4 has 16.
     pub vram_gb: f32,
-    /// Rough minutes for one clip on a T4. Ranges are wide because resolution dominates.
+    /// The lowest tier this is usable on. Below it the model is not merely slow — it will not load.
+    pub min_tier: Tier,
+    /// Rough minutes for one clip at `min_tier`. Ranges are wide because resolution dominates.
     pub minutes_per_clip: (u32, u32),
     /// The honest sentence about what this model is and is not good at.
     pub character: &'static str,
@@ -162,6 +223,7 @@ pub const MODELS: &[VideoModel] = &[
                      file: "t5xxl_fp8_e4m3fn_scaled.safetensors", dir: "text_encoders", approx_gb: 4.9 },
         ],
         vram_gb: 9.0,
+        min_tier: Tier::FreeT4,
         minutes_per_clip: (2, 5),
         character: "Fastest by a wide margin — distilled to about eight steps. Motion is simple and it \
                     follows a prompt loosely, which is why it earns its place on volume rather than on \
@@ -181,6 +243,7 @@ pub const MODELS: &[VideoModel] = &[
             UMT5_FP8, WAN21_VAE,
         ],
         vram_gb: 12.0,
+        min_tier: Tier::FreeT4,
         minutes_per_clip: (8, 16),
         character: "Clearly better motion and prompt adherence than LTX at this size, at several times \
                     the cost per clip. The one to spend quota on when the shot carries meaning.",
@@ -198,6 +261,7 @@ pub const MODELS: &[VideoModel] = &[
                      file: "split_files/vae/wan2.2_vae.safetensors", dir: "vae", approx_gb: 1.4 },
         ],
         vram_gb: 13.0,
+        min_tier: Tier::FreeT4,
         minutes_per_clip: (18, 35),
         character: "The best image-to-video here, and the slowest thing in the catalogue on a T4. \
                     Budget it for a few hero shots, not for a whole video.",
@@ -214,11 +278,81 @@ pub const MODELS: &[VideoModel] = &[
                      dir: "checkpoints", approx_gb: 4.0 },
         ],
         vram_gb: 6.0,
+        min_tier: Tier::FreeT4,
         minutes_per_clip: (1, 3),
         character: "Cheapest and most stylised — it reads as animation, not as footage. Loops cleanly, \
                     which none of the others do, so it is the right answer for a repeating texture and \
                     the wrong one for anything meant to look filmed.",
         licence: "CreativeML Open RAIL-M (SD 1.5) + Apache-2.0 (motion module)",
+    },
+
+    // ── Beyond the free tier ────────────────────────────────────────────────
+    //
+    // These are the models the community actually means when it talks about open video generation.
+    // None of them belong on a T4: the fp8 checkpoints that make them tractable need an architecture
+    // that computes in fp8, and on Turing those weights are dequantised to fp16 on load — so the file
+    // is small, the working set is not, and the run dies partway through the first sampler step.
+    // They are listed anyway, gated by tier, because "what would I get if I rented a 4090 for an
+    // evening" is a question worth being able to answer inside the app.
+    VideoModel {
+        id: "wan21_t2v_14b",
+        label: "Wan 2.1 T2V 14B (fp8)",
+        drive: Drive::TextToVideo,
+        weights: &[
+            Weight { repo: "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+                     file: "split_files/diffusion_models/wan2.1_t2v_14B_fp8_scaled.safetensors",
+                     dir: "diffusion_models", approx_gb: 14.3 },
+            UMT5_FP8, WAN21_VAE,
+        ],
+        vram_gb: 20.0,
+        min_tier: Tier::Pro24,
+        minutes_per_clip: (4, 9),
+        character: "The step up people notice: coherent motion over the whole clip rather than only \
+                    near the start, and it holds a prompt with several things happening in it. Ten \
+                    times the parameters of the 1.3B for maybe twice the wall-clock, once the hardware \
+                    can run fp8 natively.",
+        licence: "Apache-2.0",
+    },
+    VideoModel {
+        id: "ltx13b",
+        label: "LTX-Video 13B (distilled, fp8)",
+        drive: Drive::TextToVideo,
+        weights: &[
+            Weight { repo: "Lightricks/LTX-Video", file: "ltxv-13b-0.9.8-distilled-fp8.safetensors",
+                     dir: "checkpoints", approx_gb: 15.7 },
+            Weight { repo: "comfyanonymous/flux_text_encoders",
+                     file: "t5xxl_fp8_e4m3fn_scaled.safetensors", dir: "text_encoders", approx_gb: 4.9 },
+        ],
+        vram_gb: 21.0,
+        min_tier: Tier::Pro24,
+        minutes_per_clip: (2, 5),
+        character: "Still distilled, so still fast, but with the prompt adherence the 2B lacks. The \
+                    best throughput-per-quality on 24 GB, and the one to pick when volume still matters \
+                    but the clips have to be usable unedited.",
+        licence: "LTX-Video Open Weights (permissive, commercial use allowed under 10M revenue)",
+    },
+    VideoModel {
+        id: "wan22_i2v_14b",
+        label: "Wan 2.2 I2V A14B (fp8)",
+        drive: Drive::ImageToVideo,
+        weights: &[
+            Weight { repo: "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+                     file: "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+                     dir: "diffusion_models", approx_gb: 14.3 },
+            Weight { repo: "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+                     file: "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+                     dir: "diffusion_models", approx_gb: 14.3 },
+            UMT5_FP8,
+            Weight { repo: "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+                     file: "split_files/vae/wan2.2_vae.safetensors", dir: "vae", approx_gb: 1.4 },
+        ],
+        vram_gb: 34.0,
+        min_tier: Tier::Big40,
+        minutes_per_clip: (5, 12),
+        character: "Two experts, high-noise then low-noise, which is why it wants 40 GB rather than 24. \
+                    The best image-to-video available openly — it keeps a face and a composition across \
+                    the whole clip where the 5B drifts.",
+        licence: "Apache-2.0",
     },
 ];
 
@@ -265,6 +399,29 @@ pub const PRESETS: &[VideoPreset] = &[
         width: 512, height: 512, frames: 16, fps: 8, steps: 20, cfg: 7.5,
         use_for: "A seamless repeating background behind text. Not meant to read as footage.",
     },
+
+    // Presets for hardware above the free tier. Same purposes, bigger models — so switching tier
+    // changes what a purpose costs and how good it is, not what the app can be asked for.
+    VideoPreset {
+        id: "hero_wide_hq", label: "Hero shot · wide 16:9 (14B)", model: "wan21_t2v_14b", purpose: Purpose::HeroShot,
+        width: 1280, height: 720, frames: 81, fps: 16, steps: 25, cfg: 5.0,
+        use_for: "720p with motion that holds for the whole clip. Needs 24 GB.",
+    },
+    VideoPreset {
+        id: "hero_vertical_hq", label: "Hero shot · vertical 9:16 (14B)", model: "wan21_t2v_14b", purpose: Purpose::HeroShot,
+        width: 720, height: 1280, frames: 81, fps: 16, steps: 25, cfg: 5.0,
+        use_for: "A vertical opening shot at full short-form resolution. Needs 24 GB.",
+    },
+    VideoPreset {
+        id: "broll_wide_hq", label: "B-roll · wide 16:9 (13B)", model: "ltx13b", purpose: Purpose::Broll,
+        width: 1216, height: 704, frames: 121, fps: 24, steps: 8, cfg: 1.0,
+        use_for: "Volume B-roll that no longer needs cutting around its mistakes. Needs 24 GB.",
+    },
+    VideoPreset {
+        id: "animate_wide_hq", label: "Animate a still · wide (14B)", model: "wan22_i2v_14b", purpose: Purpose::AnimateStill,
+        width: 1280, height: 720, frames: 81, fps: 16, steps: 20, cfg: 3.5,
+        use_for: "Keeps a face and a composition across the whole clip. Needs 40 GB.",
+    },
 ];
 
 // ── Packages ────────────────────────────────────────────────────────────────
@@ -295,7 +452,50 @@ pub const PACKS: &[PresetPack] = &[
         presets: &["broll_wide", "broll_vertical", "loop_texture"],
         typical_minutes: 12,
     },
+    PresetPack {
+        id: "studio_24gb",
+        label: "Studio (24 GB card)",
+        description: "What the same jobs look like once fp8 runs natively: 720p hero shots and B-roll \
+                      good enough to use uncut. Will not load on a free Kaggle T4.",
+        presets: &["hero_wide_hq", "hero_vertical_hq", "broll_wide_hq"],
+        typical_minutes: 45,
+    },
 ];
+
+// ── Tier filtering ──────────────────────────────────────────────────────────
+
+impl VideoModel {
+    pub fn runs_on(&self, tier: Tier) -> bool { tier >= self.min_tier }
+}
+
+/// The models this hardware can actually load.
+pub fn models_for_tier(tier: Tier) -> Vec<&'static VideoModel> {
+    MODELS.iter().filter(|m| m.runs_on(tier)).collect()
+}
+
+/// The presets this hardware can actually run.
+pub fn presets_for_tier(tier: Tier) -> Vec<&'static VideoPreset> {
+    PRESETS.iter().filter(|p| model_of(p).map(|m| m.runs_on(tier)).unwrap_or(false)).collect()
+}
+
+/// A pack is offered only when every preset in it runs — a pack that half-works is worse than one
+/// that is visibly out of reach, because the half that fails does so mid-render.
+pub fn packs_for_tier(tier: Tier) -> Vec<&'static PresetPack> {
+    PACKS.iter().filter(|pk| pk.presets.iter().all(|pid|
+        preset(pid).and_then(model_of).map(|m| m.runs_on(tier)).unwrap_or(false))).collect()
+}
+
+/// The best preset for a purpose that this hardware can run — "best" being the largest model that
+/// fits, since within a purpose the bigger model is the better one.
+pub fn best_for(purpose: Purpose, tier: Tier) -> Option<&'static VideoPreset> {
+    PRESETS.iter()
+        .filter(|p| p.purpose == purpose)
+        .filter(|p| model_of(p).map(|m| m.runs_on(tier)).unwrap_or(false))
+        .max_by(|a, b| {
+            let (ma, mb) = (model_of(a).unwrap(), model_of(b).unwrap());
+            ma.min_tier.cmp(&mb.min_tier).then(ma.vram_gb.total_cmp(&mb.vram_gb))
+        })
+}
 
 // ── Lookups ─────────────────────────────────────────────────────────────────
 
@@ -339,18 +539,78 @@ pub fn presets_for(purpose: Purpose) -> Vec<&'static VideoPreset> {
 mod tests {
     use super::*;
 
-    /// The T4 has 16 GB and no bf16. Both halves of that are load-bearing.
+    /// Every model must fit the tier it claims, with headroom for ComfyUI itself.
     #[test]
-    fn every_model_fits_a_free_kaggle_t4() {
+    fn every_model_fits_the_tier_it_claims() {
         for m in MODELS {
-            assert!(m.vram_gb <= 14.0,
-                    "{} claims {} GB — a T4 has 16 and ComfyUI needs headroom", m.id, m.vram_gb);
+            let budget = m.min_tier.vram_gb() - 2.0;
+            assert!(m.vram_gb <= budget,
+                    "{} needs {} GB but claims to run on {} ({} GB, less headroom)",
+                    m.id, m.vram_gb, m.min_tier.id(), m.min_tier.vram_gb());
+        }
+    }
+
+    /// Turing cannot compute in bf16, so a bf16 file is upcast on load and costs exactly the memory
+    /// the smaller format was chosen to save. Free-tier models must not reference one.
+    #[test]
+    fn free_tier_models_never_reference_bf16() {
+        for m in MODELS.iter().filter(|m| m.min_tier <= Tier::DualT4) {
             for w in m.weights {
                 assert!(!w.file.contains("bf16"),
-                        "{} references {}: Turing cannot compute in bf16, so this is upcast on load \
-                         and costs the memory the format was chosen to save", m.id, w.file);
+                        "{} references {} on a Turing tier", m.id, w.file);
             }
         }
+    }
+
+    /// The free tier must keep working on its own. If every model needed better hardware, the app
+    /// would be offering a feature nobody on the free tier could use.
+    #[test]
+    fn the_free_tier_can_serve_every_purpose() {
+        for purpose in [Purpose::Broll, Purpose::HeroShot, Purpose::AnimateStill, Purpose::Loop] {
+            assert!(best_for(purpose, Tier::FreeT4).is_some(),
+                    "{purpose:?} has nothing runnable on a free T4");
+        }
+    }
+
+    /// Two T4s are 32 GB of separate memory, not one 32 GB card — ComfyUI runs a model on one of
+    /// them. Treating the pair as a bigger card is the mistake this asserts against.
+    #[test]
+    fn a_second_t4_does_not_unlock_bigger_models() {
+        assert_eq!(models_for_tier(Tier::FreeT4).len(), models_for_tier(Tier::DualT4).len(),
+                   "a second T4 must not change which models load");
+        assert_eq!(Tier::DualT4.vram_gb(), Tier::FreeT4.vram_gb());
+    }
+
+    /// Better hardware may only ever add options.
+    #[test]
+    fn tiers_are_strictly_cumulative() {
+        for w in TIERS.windows(2) {
+            let (lo, hi) = (models_for_tier(w[0]), models_for_tier(w[1]));
+            for m in &lo {
+                assert!(hi.iter().any(|h| h.id == m.id),
+                        "{} runs on {} but not on the larger {}", m.id, w[0].id(), w[1].id());
+            }
+        }
+    }
+
+    /// Within one purpose, a better tier must not pick a *smaller* model.
+    #[test]
+    fn better_hardware_never_downgrades_the_choice() {
+        for purpose in [Purpose::Broll, Purpose::HeroShot, Purpose::AnimateStill] {
+            let free = best_for(purpose, Tier::FreeT4).and_then(model_of).unwrap();
+            let big = best_for(purpose, Tier::Big40).and_then(model_of).unwrap();
+            assert!(big.min_tier >= free.min_tier,
+                    "{purpose:?}: 40 GB picks {} over {}", big.id, free.id);
+        }
+    }
+
+    #[test]
+    fn tier_ids_round_trip() {
+        for t in TIERS { assert_eq!(Tier::parse(t.id()), *t); }
+        // Anything unrecognised has to fail safe to the smallest tier: offering a model the hardware
+        // cannot load is a worse error than offering too few.
+        assert_eq!(Tier::parse("nonsense"), Tier::FreeT4);
+        assert_eq!(Tier::parse(""), Tier::FreeT4);
     }
 
     /// Latent video models encode in groups of 8 frames plus a keyframe. An off-grid count is either
@@ -403,13 +663,25 @@ mod tests {
         }
     }
 
-    /// A pack's download has to fit a session with time left to render in it.
+    /// A pack's download has to fit a session with time left to render in it. The free tier is the
+    /// tight one: a Kaggle session that spends forty minutes downloading has spent its quota on
+    /// nothing.
     #[test]
     fn a_pack_downloads_in_a_sensible_amount_of_time() {
         for pk in PACKS {
             let gb = pack_download_gb(pk.id);
             assert!(gb > 0.0, "{} downloads nothing", pk.id);
-            assert!(gb < 25.0, "{} pulls {gb} GB before anything renders", pk.id);
+            let free_tier_pack = packs_for_tier(Tier::FreeT4).iter().any(|p| p.id == pk.id);
+            let cap = if free_tier_pack { 25.0 } else { 60.0 };
+            assert!(gb < cap, "{} pulls {gb} GB before anything renders (cap {cap})", pk.id);
+        }
+    }
+
+    /// Every tier must have at least one pack it can run end to end.
+    #[test]
+    fn every_tier_has_a_usable_pack() {
+        for t in TIERS {
+            assert!(!packs_for_tier(*t).is_empty(), "{} has no runnable pack", t.id());
         }
     }
 

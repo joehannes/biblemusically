@@ -41,7 +41,8 @@
     ],
     "resources": [
       "packaging",
-      "packaging/node_modules"
+      "packaging/node_modules",
+      "kaggle_notebooks"
     ],
     "icon": [
       "icons/32x32.png",

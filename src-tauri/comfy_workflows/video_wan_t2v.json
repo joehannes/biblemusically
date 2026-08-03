@@ -1,0 +1,13 @@
+{
+  "_comment": "Wan 2.1 text-to-video. Node set and defaults taken from ComfyUI's own text_to_video_wan example: UNETLoader + CLIPLoader(type=wan) + VAELoader, EmptyHunyuanLatentVideo for the latent (Wan reuses that node — its shape matches), and ModelSamplingSD3 shift 8 which the official graph sets and which visibly affects motion. Sampler is uni_pc/simple, again from the official graph — euler is noticeably worse here. Frame count must be 8n+1; video_models.rs enforces that on the preset side.",
+  "10": {"class_type": "UNETLoader", "inputs": {"unet_name": "__CKPT__", "weight_dtype": "default"}},
+  "11": {"class_type": "CLIPLoader", "inputs": {"clip_name": "__CLIP__", "type": "wan", "device": "default"}},
+  "12": {"class_type": "VAELoader", "inputs": {"vae_name": "__VAE__"}},
+  "15": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["10", 0], "shift": 8.0}},
+  "5":  {"class_type": "EmptyHunyuanLatentVideo", "inputs": {"width": __WIDTH__, "height": __HEIGHT__, "length": __FRAMES__, "batch_size": 1}},
+  "6":  {"class_type": "CLIPTextEncode", "inputs": {"text": "__PROMPT__", "clip": ["11", 0]}},
+  "7":  {"class_type": "CLIPTextEncode", "inputs": {"text": "__NEGATIVE__", "clip": ["11", 0]}},
+  "3":  {"class_type": "KSampler", "inputs": {"seed": __SEED__, "steps": __STEPS__, "cfg": __CFG__, "sampler_name": "uni_pc", "scheduler": "simple", "denoise": 1.0, "model": ["15", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "8":  {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["12", 0]}},
+  "9":  {"class_type": "SaveWEBM", "inputs": {"images": ["8", 0], "filename_prefix": "bm_video", "codec": "vp9", "fps": __FPS__, "crf": 32}}
+}

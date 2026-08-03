@@ -15,6 +15,8 @@ pub mod tray;
 pub mod comfy_registry;
 #[path = "../video_models.rs"]
 pub mod video_models;
+#[path = "../video_advisor.rs"]
+pub mod video_advisor;
 #[path = "../deep_link.rs"]
 pub mod deep_link;
 #[path = "../git_api.rs"]
