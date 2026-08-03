@@ -182,6 +182,13 @@ const NAV = [
     group: "ai-generate",
   },
   {
+    to: "/videogen",
+    label: "Video Gen",
+    icon: Film,
+    testid: "nav-videogen",
+    group: "ai-generate",
+  },
+  {
     to: "/transitions",
     label: "Transitions & FX",
     icon: Clapperboard,

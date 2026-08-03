@@ -95,6 +95,14 @@ export const api = {
   testMj: () => invokeCommand("test_mj"),
   testFlux: () => invokeCommand("test_flux"),
   testComfy: () => invokeCommand("test_comfy"),
+  // ============ Video generation ============
+  videoCatalogue: () => invokeCommand("video_catalogue"),
+  videoAdvice: (preset, pack, plannedClips) =>
+    invokeCommand("video_advice", { preset: preset || null, pack: pack || null, plannedClips: plannedClips || null }),
+  generateVideo: ({ preset, prompt, negative, seed, inputImage }) =>
+    invokeCommand("generate_video", { preset, prompt, negative: negative || null,
+                                      seed: seed || null, inputImage: inputImage || null }),
+  testVideo: () => invokeCommand("test_video"),
   openKaggleNotebook: (engine) => invokeCommand("open_kaggle_notebook", { engine }),
   openKaggleTokenPage: () => invokeCommand("open_kaggle_token_page"),
   kaggleNotebookUrl: (engine) => invokeCommand("kaggle_notebook_url", { engine }),

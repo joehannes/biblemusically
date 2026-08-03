@@ -32,6 +32,7 @@ import StyleStudio from "./pages/StyleStudio";
 import SoundStudio from "./pages/SoundStudio";
 import Transitions from "./pages/Transitions";
 import OverlayStudio from "./pages/OverlayStudio";
+import VideoGen from "./pages/VideoGen";
 import Channels from "./pages/Channels";
 import Characters from "./pages/Characters";
 import Upload from "./pages/Upload";
@@ -131,6 +132,7 @@ function RootGate() {
             <Route path="/transitions" element={<Transitions />} />
             <Route path="/overlays" element={<OverlayStudio />} />
             <Route path="/video" element={<Composer />} />
+            <Route path="/videogen" element={<VideoGen />} />
             <Route path="/publicity" element={<Publicity />} />
             <Route path="/distribution" element={<Distribution />} />
             <Route path="/novels" element={<GraphicNovels />} />
