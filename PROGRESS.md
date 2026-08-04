@@ -25,7 +25,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.2 | Transitions preset save/delete | ✅ 2026-08-04 |
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
 | 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
-| 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
+| 1.5 | Remote render | ✅ 2026-08-04 — verdict: **mid-build**, now finished. `reconcile_render_jobs` + a jobs panel |
 | 1.6 | Ten smaller orphans | ✅ 2026-08-04 — all resolved: eight wired, the channel-creation pair **removed as superseded** |
 
 ### Wishlist Part 2 — pipeline coherence
@@ -71,8 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-3. **Remote render (WISHLIST 1.5)** — 4 of 7 commands orphaned. Decide whether it is mid-build or
-   abandoned and either finish it or delete it, as was done for the channel-creation watcher.
 5. **Finish the catalogues** (TODOS §8).
 
 ### Waiting on the owner, not on effort
@@ -89,6 +87,12 @@ These are the ones a coding session should *not* decide by itself:
 
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 14)** — Remote render: the verdict is mid-build, not abandoned, so
+  it is finished rather than deleted. Submitting always worked; nothing ever asked for the answer,
+  so a job read "running" forever. `reconcile_render_jobs` reads the worker's `BM_RESULT` line out
+  of the run log — possible cheaply now that `kernels/output` returns the log — and a panel under
+  the provider picker shows the outcome. 350 Rust tests pass (3 new).
 
 - **2026-08-04 · session 1 (iter 13)** — Clip durability. `rehome_asset` copies a generated clip off
   the render server into `local_media`, which already existed for engines that return bytes — so

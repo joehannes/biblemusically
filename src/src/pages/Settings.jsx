@@ -24,6 +24,7 @@ import { markStopped } from "../lib/serverLifecycle";
 import { useRequireGuideStep } from "../components/GuideStepDialog";
 import OAuthClientsPanel from "../components/OAuthClientsPanel";
 import { toast } from "sonner";
+import RenderJobsPanel from "../components/RenderJobsPanel";
 import { engineHidden } from "../lib/engineCapabilities";
 import { AutoSaveChip } from "../lib/hooks";
 import { useStudio } from "../lib/store";
@@ -1665,6 +1666,9 @@ const SettingsComponent = () => {
           <code> python3 scripts/remote/render_worker.py job.json</code>. Kaggle needs nothing beyond the token the
           music engines already use.
         </div>
+        {/* "Did it work?" belongs next to "where does it run?" — a third place to check is a place
+            to forget. Renders itself away when nothing has been submitted. */}
+        <RenderJobsPanel />
       </Card>
 
       <Card className="p-6 mb-5">

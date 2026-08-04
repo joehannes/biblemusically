@@ -359,6 +359,9 @@ export const api = {
   submitRemoteRender: (songId, options) => invokeCommand("submit_remote_render", { songId, options: options || null }),
   listRenderJobs: (limit) => invokeCommand("list_render_jobs", { limit: limit ?? null }),
   recordRenderResult: (result) => invokeCommand("record_render_result", { result }),
+  // Asks each unfinished remote render how it went, by reading the worker's BM_RESULT
+  // line out of its run log. Without this a submitted job stays "running" forever.
+  reconcileRenderJobs: () => invokeCommand("reconcile_render_jobs"),
   writeRenderWorkflow: (projectId) => invokeCommand("write_render_workflow", { projectId }),
   listGenrePresets: () => invokeCommand("list_genre_presets"),
   saveGenrePreset: (payload) => invokeCommand("save_genre_preset", { payload }),

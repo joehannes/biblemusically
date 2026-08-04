@@ -493,17 +493,41 @@ pub async fn list_render_jobs(state: State<'_, AppState>, limit: Option<i64>) ->
 /// worker that was given a callback URL.
 #[tauri::command]
 pub async fn record_render_result(state: State<'_, AppState>, result: Value) -> Res<Value> {
+    apply_render_result(&state.db, &result).await
+}
+
+/// Extract a worker's `BM_RESULT` line from a run's log.
+///
+/// The worker prints exactly one, whether it succeeded or failed — `render_worker.py` guarantees
+/// that, and `modal_app.py` already parses it the same way for the Modal path. This is the desktop
+/// half of the same contract: a launcher that cannot post back (a Kaggle notebook has no route to
+/// this machine) still leaves its answer in the log where it can be read.
+pub fn parse_bm_result(log: &str) -> Option<Value> {
+    // Last, not first: a re-run appends, and the newest answer is the one that counts.
+    log.lines()
+        .filter_map(|l| l.trim().strip_prefix("BM_RESULT "))
+        .filter_map(|j| serde_json::from_str::<Value>(j.trim()).ok())
+        .last()
+}
+
+/// Write a result into the render job and, when it names one, into the song.
+///
+/// Split out of the command so the reconciler below can use it: the app reading a log and a worker
+/// posting back are two ways of learning the same fact, and they must record it identically.
+pub async fn apply_render_result(db: &crate::store::Db, result: &Value) -> Res<Value> {
+    let state_shim = result;
+    let _ = state_shim;
     let job_id = result["job_id"].as_str().unwrap_or("").to_string();
     let song_id = result["song_id"].as_str().unwrap_or("").to_string();
     let status = result["status"].as_str().unwrap_or("unknown").to_string();
 
     if !job_id.is_empty() {
-        let _ = state.db.collection::<Document>("render_jobs").update_one(
+        let _ = db.collection::<Document>("render_jobs").update_one(
             doc! { "id": &job_id },
             doc! { "$set": {
                 "status": &status,
                 "finished_at": crate::models::now_iso(),
-                "result": bson::to_bson(&result).unwrap_or(bson::Bson::Null),
+                "result": bson::to_bson(result).unwrap_or(bson::Bson::Null),
             } },
         ).await;
     }
@@ -511,7 +535,7 @@ pub async fn record_render_result(state: State<'_, AppState>, result: Value) -> 
     // A finished upload is the song's publish state — write it where the rest of the app looks.
     if !song_id.is_empty() {
         if let Some(vid) = result["video_id"].as_str().filter(|v| !v.is_empty()) {
-            let _ = state.db.collection::<Document>("songs").update_one(
+            let _ = db.collection::<Document>("songs").update_one(
                 doc! { "id": &song_id },
                 doc! { "$set": {
                     "youtube_video_id": vid,
@@ -520,13 +544,65 @@ pub async fn record_render_result(state: State<'_, AppState>, result: Value) -> 
                 } },
             ).await;
         } else if status == "rendered" {
-            let _ = state.db.collection::<Document>("songs").update_one(
+            let _ = db.collection::<Document>("songs").update_one(
                 doc! { "id": &song_id },
                 doc! { "$set": { "status": "video_ready" } },
             ).await;
         }
     }
     Ok(json!({ "ok": true }))
+}
+
+/// Ask each unfinished remote render how it went.
+///
+/// This is the half of remote rendering that was missing. Submitting worked — Settings picks a
+/// provider, Composer hands off a song — and then nothing ever asked for the answer, so a job stayed
+/// "running" forever however it had actually ended. The worker was doing its part the whole time:
+/// `render_worker.py` prints one `BM_RESULT` line, and for Modal `modal_app.py` reads it back. A
+/// Kaggle notebook has no route to this machine, so its answer sits in the run's log until something
+/// looks — and `kernels/output` returns that log in its response body, which is what makes this
+/// cheap enough to do on a timer.
+///
+/// Only Kaggle for now, and honest about it: a GitHub Actions run leaves its result in an artifact
+/// rather than a log line, and a self-hosted HTTP worker was given a callback URL and is expected to
+/// use it. Both are reported as untouched rather than silently counted.
+#[tauri::command]
+pub async fn reconcile_render_jobs(state: State<'_, AppState>) -> Res<Value> {
+    use futures_util::StreamExt;
+    let mut cursor = state.db.collection::<Document>("render_jobs")
+        .find(doc! { "status": "running" }).await.map_err(e)?;
+    let mut open = Vec::new();
+    while let Some(Ok(d)) = cursor.next().await { open.push(bson_to_value(d)); }
+
+    let mut updated = 0usize;
+    let mut still_running = 0usize;
+    let mut unsupported = 0usize;
+    for job in &open {
+        if job["provider"].as_str() != Some("kaggle") { unsupported += 1; continue; }
+        let Some(kernel) = job["launch"]["kernel"].as_str().filter(|k| !k.is_empty()) else {
+            unsupported += 1; continue;
+        };
+        let Ok(out) = crate::kaggle_api::kernel_output(kernel).await else { still_running += 1; continue };
+        match parse_bm_result(&out.log) {
+            Some(mut result) => {
+                // The worker knows its own job and song ids, but a log that got truncated might not
+                // carry them — fall back to the row we already have rather than dropping the result.
+                if result["job_id"].as_str().unwrap_or("").is_empty() {
+                    result["job_id"] = job["id"].clone();
+                }
+                if result["song_id"].as_str().unwrap_or("").is_empty() {
+                    result["song_id"] = job["song_id"].clone();
+                }
+                let _ = apply_render_result(&state.db, &result).await;
+                updated += 1;
+            }
+            None => still_running += 1,
+        }
+    }
+    Ok(json!({
+        "checked": open.len(), "updated": updated,
+        "still_running": still_running, "unsupported": unsupported,
+    }))
 }
 
 #[cfg(test)]
@@ -536,6 +612,32 @@ mod tests {
 
     fn hf() -> RemoteRepo {
         RemoteRepo { provider: "huggingface".into(), repo: "me/proj".into(), branch: "main".into() }
+    }
+
+    #[test]
+    fn the_workers_answer_is_read_out_of_a_noisy_log() {
+        let log = "installing ffmpeg\ndownloading assets\n                   BM_RESULT {\"job_id\":\"abc\",\"status\":\"uploaded\",\"video_id\":\"XYZ\"}\ndone";
+        let r = parse_bm_result(log).unwrap();
+        assert_eq!(r["status"], "uploaded");
+        assert_eq!(r["video_id"], "XYZ");
+    }
+
+    /// A re-run appends to the same log, and the newest answer is the one that counts — the same
+    /// rule the tunnel-URL scan follows, for the same reason.
+    #[test]
+    fn the_last_result_wins_when_a_job_was_retried() {
+        let log = "BM_RESULT {\"job_id\":\"a\",\"status\":\"failed\"}\nretrying\n                   BM_RESULT {\"job_id\":\"a\",\"status\":\"uploaded\"}";
+        assert_eq!(parse_bm_result(log).unwrap()["status"], "uploaded");
+    }
+
+    /// A run still working has printed nothing yet, and that must read as "not finished" rather than
+    /// as a failure — otherwise every poll before the end would mark the job dead.
+    #[test]
+    fn a_log_without_a_result_is_not_a_result() {
+        assert!(parse_bm_result("installing...\nstill going").is_none());
+        assert!(parse_bm_result("").is_none());
+        // A half-written line during flush is not JSON, and must not panic or half-apply.
+        assert!(parse_bm_result("BM_RESULT {\"job_id\":").is_none());
     }
 
     #[test]

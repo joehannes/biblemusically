@@ -926,6 +926,7 @@ pub fn run() {
             commands::submit_remote_render,
             commands::list_render_jobs,
             commands::record_render_result,
+            commands::reconcile_render_jobs,
             commands::write_render_workflow,
             commands::suggest_transitions,
             // Style presets + per-channel sticky styles
