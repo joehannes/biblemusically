@@ -239,6 +239,132 @@ async fn probe_alive(url: &str) -> bool {
 
 /// The background streaming task. Owns the child `kaggle kernels logs -f` process and a periodic
 /// `kernels status` poll, writing everything into the shared `progress`.
+/// Watch a run without the CLI, by polling.
+///
+/// There is no REST equivalent of `kernels logs -f`: Kaggle's follow mode is the CLI proxying an SSE
+/// feed, and nothing public replaces it. TODOS.md asked the right question rather than assuming one
+/// had to be built — whether a phone needs the live boot log at all, or whether the run's *state* is
+/// enough. It is. What the boot log is actually watched for is one transition, "is it serving yet",
+/// and `kernels/output` carries the run's log in its response body, so the printed tunnel address is
+/// readable without following anything.
+///
+/// So this keeps the monitor's shape and drops only its line-by-line narration: same
+/// `KaggleProgress`, same phases, same liveness probe, same terminal conditions. The interface needs
+/// no changes and cannot tell which transport answered, beyond a quieter log.
+async fn run_monitor_http(
+    engine: String,
+    slug: String,
+    settings_key: &'static str,
+    progress: Arc<Mutex<KaggleProgress>>,
+    stop: Arc<AtomicBool>,
+    db: crate::store::Db,
+) {
+    let start = std::time::Instant::now();
+    let mut url_seen_ms: u128 = 0;
+    let mut seen_active = false;
+    let mut warned_slow = false;
+    progress.lock().unwrap().push(
+        "info",
+        "Watching over the Kaggle API (no command-line tool here), so this log shows the run's state \
+         rather than its output.".into());
+
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            let mut p = progress.lock().unwrap();
+            if !p.done { p.phase = "stopped".into(); }
+            return;
+        }
+        if start.elapsed().as_secs() > MONITOR_MAX_SECS {
+            progress.lock().unwrap()
+                .push("info", "Stopped watching after 20 min — the run may still be serving.".into());
+            return;
+        }
+
+        // State first: it is one cheap call and it decides whether waiting is still worthwhile.
+        if let Ok(raw) = crate::kaggle_api::kernel_status(&slug).await {
+            let ks = kstatus_from(&raw.to_uppercase());
+            if matches!(ks, "queued" | "running") { seen_active = true; }
+            let trustworthy = seen_active || start.elapsed().as_secs() > STALE_STATUS_GRACE_SECS;
+            let terminal_fail = {
+                let mut p = progress.lock().unwrap();
+                p.kernel_status = ks.to_string();
+                if phase_rank("queued") >= phase_rank(&p.phase) && ks == "running" {
+                    p.phase = "installing".into();
+                }
+                // Same rule the streaming monitor uses: a terminal status with no *verified* tunnel
+                // means the run died before serving, and right after a push the status can still
+                // describe the previous session.
+                if matches!(ks, "error" | "complete" | "cancelled") && !p.url_live && trustworthy {
+                    if p.error.is_none() {
+                        p.error = Some(match ks {
+                            "error" => format!("The run on {slug} ERRORED before a server came up — open the notebook on Kaggle to see why."),
+                            _ => format!("The run on {slug} ended ({ks}) before a server came up."),
+                        });
+                    }
+                    p.phase = "error".into();
+                    true
+                } else { false }
+            };
+            if terminal_fail { return; }
+        }
+
+        // Then the address, which is in the output response rather than behind a stream.
+        let known = { progress.lock().unwrap().url.clone() };
+        if known.is_none() {
+            if let Ok(Some(u)) = crate::kaggle_api::tunnel_url(&slug).await {
+                url_seen_ms = now_ms();
+                let mut p = progress.lock().unwrap();
+                p.push("info", format!("Server address found: {u}"));
+                p.url = Some(u);
+                p.phase = "serving".into();
+            }
+        }
+
+        // A quick tunnel is not routable the instant it is printed, so keep asking rather than
+        // judging it on one early try — the same reason the streaming monitor probes on a timer.
+        let pending = {
+            let p = progress.lock().unwrap();
+            match (&p.url, p.url_live) { (Some(u), false) => Some(u.clone()), _ => None }
+        };
+        if let Some(u) = pending {
+            if probe_alive(&u).await {
+                {
+                    let mut p = progress.lock().unwrap();
+                    p.url_live = true;
+                    p.phase = "serving".into();
+                    p.done = true;
+                    p.push("info", "Server is answering.".into());
+                }
+                let mut set = Document::new();
+                set.insert(settings_key, u);
+                let _ = db.collection::<Document>("settings")
+                    .update_one(doc! { "_id": "singleton" }, doc! { "$set": set }).await;
+                return;
+            }
+            let waited = ((now_ms().saturating_sub(url_seen_ms)) / 1000) as u64;
+            if waited >= TUNNEL_WARN_SECS && !warned_slow {
+                warned_slow = true;
+                progress.lock().unwrap().push(
+                    "info", format!("Tunnel printed {waited}s ago but not answering yet — still retrying…"));
+            }
+            if waited >= TUNNEL_FAIL_SECS {
+                let mut p = progress.lock().unwrap();
+                p.phase = "error".into();
+                p.error = Some(format!(
+                    "The notebook opened {u} but it never started answering ({waited}s). The Cloudflare quick tunnel did not come up."));
+                p.hint = Some("tunnel_dead".into());
+                return;
+            }
+        }
+
+        // Slower than the stream it replaces, because each tick is two HTTPS round trips against a
+        // rate-limited API rather than a line already in a pipe. A boot takes minutes; ten seconds
+        // of latency on noticing it finished is not worth being rude to Kaggle for.
+        let _ = engine; // named for the log message above; the loop keys off the slug
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    }
+}
+
 async fn run_monitor(
     engine: String,
     slug: String,
@@ -563,13 +689,23 @@ pub async fn kaggle_start_monitor(
     monitors.map.lock().unwrap().insert(engine.clone(), progress.clone());
     monitors.stops.lock().unwrap().insert(engine.clone(), stop.clone());
 
-    let kaggle = locate_kaggle();
+    // No CLI to follow means polling instead — same progress object, same phases, quieter log.
+    // See run_monitor_http for why a phone does not need the streamed boot output.
+    let found = super::settings::locate_kaggle_opt();
+    let http = crate::kaggle_api::transport(found.is_some()) == crate::kaggle_api::Transport::Http;
     let db = state.db.clone();
     let engine_moved = engine.clone();
     let slug_moved = slug.clone();
-    tauri::async_runtime::spawn(async move {
-        run_monitor(engine_moved, slug_moved, settings_key, kaggle, progress, stop, db).await;
-    });
+    if http {
+        tauri::async_runtime::spawn(async move {
+            run_monitor_http(engine_moved, slug_moved, settings_key, progress, stop, db).await;
+        });
+    } else {
+        let kaggle = found.unwrap_or_else(|| "kaggle".to_string());
+        tauri::async_runtime::spawn(async move {
+            run_monitor(engine_moved, slug_moved, settings_key, kaggle, progress, stop, db).await;
+        });
+    }
 
     Ok(serde_json::json!({ "ok": true, "detail": "monitor started" }))
 }

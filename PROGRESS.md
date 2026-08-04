@@ -45,7 +45,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | Mobile: `kernels push` over REST | ✅ 2026-08-04 — `kernel_push` + `start_kaggle_server_http` |
 | Mobile: `kernels pull` over REST | ✅ 2026-08-04 — `kernel_pull` |
 | Mobile: `kernels output` over REST | ✅ 2026-08-04 — `kernel_output` + `tunnel_url` |
-| Mobile: `kernels logs -f` — decide whether a phone needs the live boot log at all | ⬜ |
+| Mobile: `kernels logs -f` — **answered: it does not** | ✅ 2026-08-04 — `run_monitor_http` polls state instead |
 | Mobile: `locate_kaggle()` honesty → `locate_kaggle_opt()` + `require_kaggle_cli()`; `platform_capabilities` now reports `kaggle_cli` | ✅ 2026-08-04 |
 | Finish the catalogues (§8) | ⬜ |
 | i18n inventory stale by 77 strings; gate passes vacuously | ⬜ |
@@ -76,8 +76,6 @@ Pick the top unfinished one. Each is bounded; none needs a decision from the own
    instead. Applies to `gen_images` output too; video is only where it bites hardest.
 3. **Remote render (WISHLIST 1.5)** — 4 of 7 commands orphaned. Decide whether it is mid-build or
    abandoned and either finish it or delete it, as was done for the channel-creation watcher.
-4. **Mobile: `kernels logs -f`** — no REST streaming endpoint exists; the CLI proxies SSE. Decide
-   whether a phone needs the live boot log at all, or whether polling `status` is enough (probably).
 5. **Finish the catalogues** (TODOS §8).
 
 ### Waiting on the owner, not on effort
@@ -94,6 +92,11 @@ These are the ones a coding session should *not* decide by itself:
 
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 12)** — `run_monitor_http`: the monitor no longer dead-ends without
+  a CLI. TODOS asked whether a phone needs the streamed boot log; the answer is no — what it is
+  watched for is one transition, and `kernels/output` carries the log in its response. Same
+  `KaggleProgress`, same phases, same probe, quieter log. **All five mobile items are now closed.**
 
 - **2026-08-04 · session 1 (iter 11)** — `kernels output` over REST. The log arrives *inside* the
   output response, so a phone finds its server's tunnel URL with no download and no temp directory —
