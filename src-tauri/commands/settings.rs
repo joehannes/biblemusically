@@ -1830,19 +1830,27 @@ pub async fn supersede_session(db: &crate::store::Db, engine: &str) -> Res<Value
 pub async fn refresh_kaggle_url(db: &crate::store::Db, engine: &str) -> Option<String> {
     let (slug, _upstream, settings_key) = kaggle_slugs(db, engine).await?;
     let slug = slug.as_str();
-    let kaggle = locate_kaggle();
 
     // Only this account's own kernel is consulted. Falling back to the upstream template here would
     // hand back somebody else's tunnel URL — which is either dead or, worse, live and belonging to a
     // machine this user does not control.
-    let tmp = env::temp_dir().join(format!("bm-kaggle-{}", engine));
-    let _ = fs::create_dir_all(&tmp).await;
-    let _ = tokio::process::Command::new(&kaggle)
-        .args(["kernels", "output", slug, "-p"]).arg(&tmp).output().await;
-    let mut url = scan_dir_for_tunnel_url(&tmp).await;
-    if url.is_none() {
-        url = stream_logs_for_tunnel_url(&kaggle, slug, 25).await;
-    }
+    let found = locate_kaggle_opt();
+    let url = if crate::kaggle_api::transport(found.is_some()) == crate::kaggle_api::Transport::Http {
+        // The log comes back inside the output response, so there is nothing to download and no
+        // temp directory to scan — which is also why this works on a phone.
+        crate::kaggle_api::tunnel_url(slug).await.ok().flatten()
+    } else {
+        let kaggle = found.unwrap_or_else(|| "kaggle".to_string());
+        let tmp = env::temp_dir().join(format!("bm-kaggle-{}", engine));
+        let _ = fs::create_dir_all(&tmp).await;
+        let _ = tokio::process::Command::new(&kaggle)
+            .args(["kernels", "output", slug, "-p"]).arg(&tmp).output().await;
+        let mut u = scan_dir_for_tunnel_url(&tmp).await;
+        if u.is_none() {
+            u = stream_logs_for_tunnel_url(&kaggle, slug, 25).await;
+        }
+        u
+    };
     let u = url?;
 
     let alive = match reqwest::Client::new().get(&u).timeout(std::time::Duration::from_secs(8)).send().await {
@@ -1867,21 +1875,36 @@ pub async fn fetch_kaggle_url(state: State<'_, AppState>, engine: String) -> Res
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
     let slug = own.as_str();
-    // A phone can reach this, and a desktop may simply not have the CLI. Say which, in a
-    // sentence, rather than letting it surface as a spawn error. See require_kaggle_cli.
-    let kaggle = require_kaggle_cli()?;
+    // Both halves of this — asking the status and reading the log — now have an HTTP form, so a
+    // phone can find its server's address rather than only be told one exists.
+    let found = locate_kaggle_opt();
+    let http = crate::kaggle_api::transport(found.is_some()) == crate::kaggle_api::Transport::Http;
+    let kaggle = found.unwrap_or_else(|| "kaggle".to_string());
 
     // 1) Kernel status — so we can give an actionable message when there's no URL.
-    let status_str = match tokio::process::Command::new(&kaggle)
-        .args(["kernels", "status", slug]).output().await
-    {
-        Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
-        Err(err) => return Ok(serde_json::json!({
-            "ok": false, "status": "no_cli",
-            "detail": format!("Could not run the kaggle CLI: {}", err),
-            "next_step": "Install it with `pipx install kaggle` and place your token at ~/.kaggle/kaggle.json (Kaggle → Settings → Create New API Token)."
-        })),
+    let status_str = if http {
+        match crate::kaggle_api::kernel_status(slug).await {
+            Ok(s) => s,
+            Err(msg) => return Ok(serde_json::json!({
+                "ok": false, "status": "auth_error", "detail": msg,
+                "next_step": "Open the Kaggle token page, Create New API Token, and save it as ~/.kaggle/kaggle.json."
+            })),
+        }
+    } else {
+        match tokio::process::Command::new(&kaggle)
+            .args(["kernels", "status", slug]).output().await
+        {
+            Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+            Err(err) => return Ok(serde_json::json!({
+                "ok": false, "status": "no_cli",
+                "detail": format!("Could not run the kaggle CLI: {}", err),
+                "next_step": "Install it with `pipx install kaggle` and place your token at ~/.kaggle/kaggle.json (Kaggle → Settings → Create New API Token)."
+            })),
+        }
     };
+    // The REST status is a bare word ("running"); the CLI prints a sentence containing it uppercased.
+    // Upper-casing here lets one set of `contains` checks read both.
+    let status_str = status_str.to_uppercase();
     let kstatus = if status_str.contains("CANCEL") { "cancelled" }
         else if status_str.contains("COMPLETE") { "complete" }
         else if status_str.contains("RUNNING") { "running" }
@@ -1899,13 +1922,19 @@ pub async fn fetch_kaggle_url(state: State<'_, AppState>, engine: String) -> Res
     // 2) Pull the kernel's latest output/log and grep for the tunnel URL.
     //    `kernels output` only has data for COMPLETED runs; a RUNNING server (the case
     //    that matters) is only visible by streaming `kernels logs -f` for a bit.
-    let tmp = env::temp_dir().join(format!("bm-kaggle-{}", engine));
-    let _ = fs::create_dir_all(&tmp).await;
-    let _ = tokio::process::Command::new(&kaggle)
-        .args(["kernels", "output", slug, "-p"]).arg(&tmp).output().await;
-    let mut url = scan_dir_for_tunnel_url(&tmp).await;
+    let mut url = if http {
+        // `kernels/output` carries the run's log in the response, so the RUNNING case the comment
+        // above worries about is covered without streaming anything.
+        crate::kaggle_api::tunnel_url(slug).await.ok().flatten()
+    } else {
+        let tmp = env::temp_dir().join(format!("bm-kaggle-{}", engine));
+        let _ = fs::create_dir_all(&tmp).await;
+        let _ = tokio::process::Command::new(&kaggle)
+            .args(["kernels", "output", slug, "-p"]).arg(&tmp).output().await;
+        scan_dir_for_tunnel_url(&tmp).await
+    };
 
-    if url.is_none() && matches!(kstatus, "running" | "queued" | "unknown") {
+    if !http && url.is_none() && matches!(kstatus, "running" | "queued" | "unknown") {
         url = stream_logs_for_tunnel_url(&kaggle, slug, 25).await;
     }
 

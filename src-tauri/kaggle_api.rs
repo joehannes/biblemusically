@@ -305,6 +305,67 @@ pub async fn kernel_push(metadata: &Value, source: &str) -> Res<Value> {
     Ok(v)
 }
 
+// ── Output ──────────────────────────────────────────────────────────────────
+
+/// The last public tunnel URL printed in some text, if any.
+///
+/// The notebooks announce their address by printing it, so finding a server means reading its
+/// output. The *last* match wins: a run that reconnected has printed several, and the newest is the
+/// only live one. Shared by both transports so a phone and a desktop cannot disagree about which
+/// address is current.
+pub fn find_tunnel_url(text: &str) -> Option<String> {
+    let re = regex::Regex::new(
+        r"https://[a-z0-9-]+\.(?:trycloudflare\.com|gradio\.live|lhr\.life|serveo\.net)").ok()?;
+    re.find_iter(text).last().map(|m| m.as_str().to_string())
+}
+
+/// A finished or running kernel's output: its log, and whatever files it wrote.
+#[derive(Debug, Clone, Default)]
+pub struct KernelOutput {
+    /// The run's console log. This is where a notebook's printed tunnel URL ends up.
+    pub log: String,
+    /// `(file name, download url)` for each output file.
+    pub files: Vec<(String, String)>,
+}
+
+/// Fetch a kernel's session output.
+///
+/// `GET /kernels/output` — the same call `kaggle kernels output` makes. Note that the log comes back
+/// *in the response body*, not as one of the files: the CLI writes it out as `<slug>.log` afterwards,
+/// which is why scanning a downloaded folder finds it. Over HTTP there is nothing to download for
+/// the common case, since the log is already here.
+pub async fn kernel_output(slug: &str) -> Res<KernelOutput> {
+    let (owner, name) = slug.split_once('/')
+        .ok_or_else(|| format!("'{slug}' is not an owner/name kernel slug."))?;
+    let v = get("/kernels/output", &[("userName", owner), ("kernelSlug", name)]).await?;
+    let files = v["files"].as_array().map(|a| a.iter().filter_map(|f| {
+        let name = f["fileName"].as_str().or_else(|| f["file_name"].as_str())?;
+        let url = f["url"].as_str()?;
+        Some((name.to_string(), url.to_string()))
+    }).collect()).unwrap_or_default();
+    Ok(KernelOutput { log: v["log"].as_str().unwrap_or("").to_string(), files })
+}
+
+/// This engine's live tunnel URL, over HTTP.
+///
+/// The log alone answers it almost always. Falling back to the output files covers a notebook that
+/// wrote its address to a file rather than printing it — cheap, since the listing is already in hand,
+/// and only text-shaped files are read.
+pub async fn tunnel_url(slug: &str) -> Res<Option<String>> {
+    let out = kernel_output(slug).await?;
+    if let Some(u) = find_tunnel_url(&out.log) { return Ok(Some(u)); }
+    let client = client().await?;
+    for (name, url) in out.files.iter().take(20) {
+        if !name.ends_with(".txt") && !name.ends_with(".log") && !name.ends_with(".json") { continue; }
+        if let Ok(res) = client.get(url).send().await {
+            if let Ok(body) = res.text().await {
+                if let Some(u) = find_tunnel_url(&body) { return Ok(Some(u)); }
+            }
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +416,39 @@ mod tests {
     fn a_script_is_passed_through_unchanged() {
         assert_eq!(prepare_notebook_source("print('hi')", "script"), "print('hi')");
         assert_eq!(prepare_notebook_source("not json at all", "notebook"), "not json at all");
+    }
+
+    /// A run that reconnected has printed several addresses and only the newest is live. Handing
+    /// back the first would point the app at a tunnel that closed an hour ago — which fails as a
+    /// timeout, i.e. indistinguishable from the server never having started.
+    #[test]
+    fn the_newest_tunnel_url_wins() {
+        let log = "opening tunnel\n\
+                   https://old-address-here.trycloudflare.com\n\
+                   tunnel died, retrying\n\
+                   https://new-address-here.trycloudflare.com\n\
+                   ready";
+        assert_eq!(find_tunnel_url(log).as_deref(), Some("https://new-address-here.trycloudflare.com"));
+    }
+
+    /// Every tunnel the notebooks fall back through, since one provider being down is the reason
+    /// there is a chain at all.
+    #[test]
+    fn every_tunnel_provider_in_the_fallback_chain_is_recognised() {
+        for host in ["trycloudflare.com", "gradio.live", "lhr.life", "serveo.net"] {
+            let line = format!("serving at https://abc-123.{host} now");
+            assert_eq!(find_tunnel_url(&line).as_deref(), Some(&*format!("https://abc-123.{host}")));
+        }
+    }
+
+    /// No address is None, not an empty string — the caller distinguishes "not up yet" from "up at
+    /// nowhere", and only the first is worth waiting through.
+    #[test]
+    fn a_log_with_no_address_yields_nothing() {
+        assert!(find_tunnel_url("installing packages...\nno url here").is_none());
+        assert!(find_tunnel_url("").is_none());
+        // A bare mention of the domain without a scheme is not an address.
+        assert!(find_tunnel_url("see trycloudflare.com for details").is_none());
     }
 
     /// The source travels as plain text. Kaggle's client sets `request.text = script_body` straight

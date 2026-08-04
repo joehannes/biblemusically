@@ -44,7 +44,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 |---|---|
 | Mobile: `kernels push` over REST | ✅ 2026-08-04 — `kernel_push` + `start_kaggle_server_http` |
 | Mobile: `kernels pull` over REST | ✅ 2026-08-04 — `kernel_pull` |
-| Mobile: `kernels output` over REST | ⬜ |
+| Mobile: `kernels output` over REST | ✅ 2026-08-04 — `kernel_output` + `tunnel_url` |
 | Mobile: `kernels logs -f` — decide whether a phone needs the live boot log at all | ⬜ |
 | Mobile: `locate_kaggle()` honesty → `locate_kaggle_opt()` + `require_kaggle_cli()`; `platform_capabilities` now reports `kaggle_cli` | ✅ 2026-08-04 |
 | Finish the catalogues (§8) | ⬜ |
@@ -71,9 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-1. **Mobile: `kernels output` over REST** — `refresh_kaggle_url` / `fetch_kaggle_url` are still
-   CLI-only, so a phone can start a server but not learn its tunnel URL. `GET /kernels/output`
-   lists files with download URLs. The pull/push pair landed 2026-08-04; this is the same shape.
 2. **Clip durability (WISHLIST 2.1b)** — a filed clip is a Cloudflare tunnel URL that dies when the
    session ends, so the video must be composed before then. Download it into the project folder
    instead. Applies to `gen_images` output too; video is only where it bites hardest.
@@ -97,6 +94,11 @@ These are the ones a coding session should *not* decide by itself:
 
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 11)** — `kernels output` over REST. The log arrives *inside* the
+  output response, so a phone finds its server's tunnel URL with no download and no temp directory —
+  which also removes the CLI-only `logs -f` streaming fallback for the RUNNING case. `find_tunnel_url`
+  is now shared by both transports, and takes the *last* match. 347 Rust tests pass (3 new).
 
 - **2026-08-04 · session 1 (iter 10)** — `kernels pull` and `kernels push` over REST. A phone can now
   start a server, not only watch one. **TODOS.md was wrong** that the source is base64: Kaggle's own
