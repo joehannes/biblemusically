@@ -87,6 +87,50 @@ watching rather than forgetting.
 
 ---
 
+## Mobile: what still needs the CLI (2026-08-03, open)
+
+The Kaggle transport is now chosen rather than assumed (`kaggle_api::transport`): mobile is always
+HTTP, desktop keeps the CLI, and a desktop without the CLI falls back to HTTP instead of dead-ending
+on "could not run the kaggle CLI". Mobile is **not** a preference here — Android forbids `exec()`
+from an app's own data directory, so there is no CLI to choose even if one were installed.
+
+**Only `kernels status` is routed through it so far.** That was picked first because everything else
+depends on it and a wrong answer costs a re-poll rather than a lost session. So today a phone can
+*read* Kaggle state but cannot *start* anything, and the app does not say so — which is the part that
+will read as a bug.
+
+Still CLI-only, in the order they block a phone:
+
+1. **`kernels push`** (`start_kaggle_server`, `supersede_kaggle_session`) — the one that matters.
+   Without it a phone cannot start or stop a server at all. REST equivalent is
+   `POST /api/v1/kernels/push` with a JSON body carrying the metadata *and* the notebook source
+   base64-encoded in `text` — not multipart, despite the CLI's name for it. Needs the same
+   `kernel-metadata.json` fields the CLI writes, so `pull_kernel_for_push` can be reused wholesale.
+2. **`kernels pull`** (`pull_kernel_for_push`) — `GET /api/v1/kernels/pull?user_name=&kernel_slug=`
+   returns metadata plus source as JSON. Straightforward; blocked behind nothing.
+   Note the bundled-notebook fallback already covers the case where neither own nor upstream exists,
+   so on mobile the first run could skip the pull entirely.
+3. **`kernels output`** (`refresh_kaggle_url`, `fetch_kaggle_url`) —
+   `GET /api/v1/kernels/output?user_name=&kernel_slug=` lists files with download URLs.
+4. **`kernels logs -f`** (`kaggle_monitor`) — the hard one. There is no REST streaming endpoint; the
+   CLI proxies an SSE feed. A phone would have to poll `output` and diff, which changes the monitor's
+   shape rather than its transport. Worth deciding whether a phone needs the live boot log at all, or
+   whether "queued / running / ready" from `status` polling is enough — probably it is.
+
+**Also honestly broken on mobile today, and silent about it:** `locate_kaggle()` returns the string
+`"kaggle"` when it finds no binary, and every CLI call then fails with a spawn error that reads like
+a missing install rather than an impossible one. The transport switch fixes this for `status`; the
+other three still produce it. Until they are moved, the UI should say "this needs a desktop" rather
+than fail obscurely — see `mobile_auth::capabilities()` for the existing pattern.
+
+**Why not shell out to a terminal app on Android:** Android is Linux, and Termux does run a real
+userland — but a normal app cannot execute binaries in another app's sandbox, and since Android 10
+cannot execute anything it wrote to its own data directory either (W^X). Termux works because *it* is
+the app doing the executing. Bundling a "sidecar terminal" would mean shipping a second app the user
+installs separately, granting it storage permission, and driving it over an intent bridge — far more
+moving parts than four REST calls, and it would still fail on any device where the user declines.
+The REST API is the shorter road.
+
 ## THE TASK LIST — a new session can work straight down this
 
 Ordered so each item stands on what came before. Every one of them is a decision already made; none needs
