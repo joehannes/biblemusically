@@ -13,6 +13,7 @@ import {
   Tv, Plus, Link as LinkIcon, Trash2, ShieldCheck, KeyRound, RefreshCw, User, AtSign, Globe, Hash, Mail, Sparkles, Info, ChevronDown, X, Lightbulb, Search, Settings, Languages, Loader2, Clock,
 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 
 // ── Category definitions for discovery input labels ──
@@ -276,6 +277,14 @@ export default function Channels() {
   const [name, setName] = useState(""); const [ytId, setYtId] = useState(""); const [lang, setLang] = useState(""); const [region, setRegion] = useState("");
   const [styles, setStyles] = useState("");
   const [oauthDialog, setOauthDialog] = useState(null);
+  // The third tier of connecting: sign-in links you open yourself.
+  //
+  // Both automated tiers need the loopback server on 127.0.0.1 to catch Google's redirect. That is
+  // unavailable on a phone (mobile_auth uses deep links instead) and unhelpful when the system
+  // browser is signed into the wrong Google account — which is the common case for somebody running
+  // a pool of channels. `channels_connect_all_urls` mints one consent URL per unconnected channel
+  // and pins the OAuth client it chose, so each can be opened in whichever profile owns it.
+  const [linkList, setLinkList] = useState(null); // null = closed, [] = fetched-but-empty
   // Import-by-@handle: paste a channel's public handle (e.g. right after creating it on YouTube)
   // and it lands here with id/title/avatar scraped — no OAuth needed until upload time.
   const [importHandle, setImportHandle] = useState("");
@@ -487,8 +496,26 @@ export default function Channels() {
       }
       await load();
       toast.success(`Connected ${connected} of ${targets.length} channel${targets.length === 1 ? "" : "s"}.`);
+      // Both automated tiers needed the loopback redirect and neither landed a single channel. That
+      // is the signal to stop retrying the same mechanism and hand over links instead — offered
+      // here rather than left for the user to find, because at this point they have watched two
+      // things fail and have no reason to believe a third button is different.
+      if (connected === 0) await showConnectLinks();
     } finally {
       setIsConnectingAll(false);
+    }
+  };
+
+  const showConnectLinks = async () => {
+    try {
+      const r = await api.connectAllUrls();
+      const items = r?.items || [];
+      setLinkList(items);
+      if (!items.length) {
+        toast.message("No sign-in links to make — every channel is either connected already or has no OAuth client assigned.");
+      }
+    } catch (err) {
+      toast.error(`Could not build the sign-in links: ${err?.message || err}`);
     }
   };
 
@@ -708,6 +735,13 @@ export default function Channels() {
           </Button>
           <Button variant="outline" size="sm" onClick={refreshMetadata} disabled={isRefreshing}>
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />Refresh metadata
+          </Button>
+          {/* Reachable deliberately, not only after a failure: on a phone the loopback flow never
+              works, so waiting for two tiers to fail first would be a ritual with a known ending. */}
+          <Button variant="outline" data-testid="channels-connect-links-btn" onClick={showConnectLinks}
+                  disabled={isConnectingAll || !channels.length}
+                  title="Get a sign-in link per channel to open yourself — for phones, or when the browser is signed into the wrong Google account">
+            <LinkIcon className="w-4 h-4 mr-2" />Sign-in links
           </Button>
           <Button data-testid="channels-connect-all-btn" onClick={connectAllChannels} disabled={isConnectingAll || !channels.length}>
             <ShieldCheck className="w-4 h-4 mr-2" />{isConnectingAll ? "Connecting..." : "Connect all"}
@@ -1004,6 +1038,55 @@ export default function Channels() {
           />
         </div>
       )}
+
+      {/* ── Sign-in links: the manual tier ── */}
+      <Dialog open={linkList !== null} onOpenChange={(v) => !v && setLinkList(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Sign-in links</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            One link per channel that still needs connecting. Open each in a browser signed in as
+            that channel's owner — which is the point of doing it this way rather than letting the
+            app pick the browser. After authorizing, the channel connects itself.
+          </p>
+          <div className="space-y-1.5 max-h-[50vh] overflow-auto pr-1">
+            {(linkList || []).map((it) => (
+              <div key={it.channel_id} className="flex items-center gap-2 rounded border border-border/60 px-2 py-1.5">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm truncate">{it.name || "Untitled"}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {it.language || "—"}{it.label ? ` · via ${it.label}` : ""}
+                  </div>
+                </div>
+                <Button size="sm" variant="secondary" className="h-7 text-[11px] shrink-0"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(it.url)
+                            .then(() => toast.success(`Link for "${it.name || "channel"}" copied.`))
+                            .catch(() => toast.error("Could not copy — open it from the button beside this."));
+                        }}>
+                  Copy
+                </Button>
+                {/* Always the system browser: Google refuses to sign in inside an embedded webview,
+                    and it is also the only way to land in the right profile. */}
+                <Button size="sm" variant="outline" className="h-7 text-[11px] shrink-0"
+                        onClick={() => {
+                          openUrl(it.url).catch(() => {
+                            try { window.open(it.url, "_blank", "noopener"); }
+                            catch { toast.error("Could not open it — use Copy instead."); }
+                          });
+                        }}>
+                  Open
+                </Button>
+              </div>
+            ))}
+            {linkList?.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Nothing to connect — every channel either has a token already, or has no OAuth client
+                assigned to build a link from.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── OAuth manual fallback dialog ── */}
       <Dialog open={!!oauthDialog} onOpenChange={(v) => !v && setOauthDialog(null)}>

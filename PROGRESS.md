@@ -26,7 +26,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
 | 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
 | 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
-| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota`, `build_short`, `list_publish_times` + `channels_missing_publish_time` done; six to go |
+| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota`, `build_short`, publish-time pair, `channels_connect_all_urls` done; five to go |
 
 ### Wishlist Part 2 — pipeline coherence
 
@@ -71,7 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-3. **`channels_connect_all_urls`** — a bulk "connect these channels by URL" on Channels.
 4. **Channel creation flow** — `start_channel_creation_watcher` + `inject_channel_handle`.
 5. **`delete_edition` / `delete_authored_macro`** — two missing deletes beside existing creates.
 6. **`autosave_status`** — show whether the git autosave is healthy, next to the Save control.
@@ -83,6 +82,11 @@ Pick the top unfinished one. Each is bounded; none needs a decision from the own
     endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 3)** — `channels_connect_all_urls` surfaced on Channels as
+  "Sign-in links": the third connect tier, for when the loopback redirect cannot work (a phone) or
+  the browser is signed into the wrong Google account. Offered automatically when both automated
+  tiers connect nothing, and reachable deliberately.
 
 - **2026-08-04 · session 1 (iter 2)** — Publish-time scheduling. Found that `publish_time` was
   stored by three commands and *read by nothing* — a channel's publishing hour was decoration. Now
