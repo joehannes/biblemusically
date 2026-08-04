@@ -31,7 +31,9 @@ pub fn media_root() -> PathBuf {
 
 /// The extensions this route will serve. An allowlist rather than a blocklist, because the failure
 /// of a blocklist is silent and this one would be a file-disclosure bug.
-const SERVABLE: &[&str] = &["mp3", "wav", "ogg", "flac", "m4a", "opus", "png", "jpg", "jpeg", "webp", "svg", "mp4"];
+// `webm` matters more than it looks: SaveWEBM is what the ComfyUI video graphs write, so without it
+// a re-homed hero clip would be stored and then refused by the very route that serves it.
+const SERVABLE: &[&str] = &["mp3", "wav", "ogg", "flac", "m4a", "opus", "png", "jpg", "jpeg", "webp", "svg", "mp4", "webm", "gif"];
 
 /// Write bytes into the media root and return where they landed.
 pub fn store(kind: &str, ext: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
@@ -89,6 +91,8 @@ pub fn content_type(path: &Path) -> &'static str {
         "webp" => "image/webp",
         "svg" => "image/svg+xml",
         "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "gif" => "image/gif",
         _ => "application/octet-stream",
     }
 }

@@ -1970,6 +1970,51 @@ async fn real_overlay(
     Some(serde_json::json!({ "overlay_local_path": out_s, "style": style, "real": true }))
 }
 
+/// Copy a generated asset off the engine that made it and onto this machine.
+///
+/// Every engine hands back a URL on a host that is about to disappear: a Cloudflare quick tunnel
+/// that rotates on the next run, a Kaggle session that ends at the batch limit. For a still that is
+/// merely annoying, since it can be regenerated in seconds. For a hero clip it is 10-35 GPU-minutes
+/// out of a thirty-hour week, thrown away because the video happened to be composed the next day.
+///
+/// `local_media` already solves exactly this for engines that return bytes instead of a URL, so this
+/// re-uses it rather than inventing a second home: store the bytes, hand back the localhost URL the
+/// route serves them on. Nothing downstream changes — the composer still fetches a URL, and
+/// `is_animated` still reads the extension off it, because the encoded path keeps its suffix.
+///
+/// Returns `None` on any failure, and the caller keeps the remote URL: a clip that exists somewhere
+/// beats one that exists nowhere, and the run has already been paid for.
+pub(crate) async fn rehome_asset(url: &str, kind: &str, job_id: &str, db: &crate::store::Db) -> Option<String> {
+    let res = reqwest::Client::new().get(url)
+        .timeout(std::time::Duration::from_secs(180)).send().await.ok()?;
+    let ct = res.headers().get("content-type")
+        .and_then(|v| v.to_str().ok()).unwrap_or("").to_ascii_lowercase();
+    let bytes = res.bytes().await.ok()?;
+    if bytes.is_empty() { return None; }
+
+    // The extension decides both how the route labels it and whether the composer treats it as
+    // moving, so take it from the URL when it says, and from the content type when it does not.
+    let lower = url.to_ascii_lowercase();
+    let ext = ["webm", "mp4", "gif", "png", "jpg", "jpeg", "webp"]
+        .iter().find(|e| lower.contains(&format!(".{e}"))).copied()
+        .or_else(|| match ct.as_str() {
+            c if c.contains("webm") => Some("webm"),
+            c if c.contains("mp4") => Some("mp4"),
+            c if c.contains("gif") => Some("gif"),
+            c if c.contains("png") => Some("png"),
+            c if c.contains("jpeg") || c.contains("jpg") => Some("jpg"),
+            _ => None,
+        })?;
+
+    let path = crate::local_media::store(kind, ext, &bytes).ok()?;
+    // Callers outside the job runner pass an empty id; there is no job row to write a line into.
+    if !job_id.is_empty() {
+        db_log(db, job_id, &format!("kept a local copy ({} KB) — it outlives the render server",
+                                    bytes.len() / 1024)).await;
+    }
+    Some(crate::local_media::url_for(&path))
+}
+
 async fn real_ffmpeg(
     song: &Value,
     sections: &[Value],
@@ -3045,6 +3090,7 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
             }
 
             // ── SECTION CLIP (the "hero shot") ─────────────────────────
+            // (see `rehome_asset` below for why the URL this stores is a local one)
             //
             // A moving version of one section, replacing its still. Deliberately a job like every
             // other stage rather than a call the interface waits on: a clip is 10–35 GPU-minutes,
@@ -3075,9 +3121,18 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
 
                 let out = crate::commands::video::generate_clip(&settings_doc, &preset, &prompt, None, None, None)
                     .await.map_err(|err| anyhow::anyhow!(err))?;
-                let url = out["urls"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str())
+                let remote = out["urls"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("The video server returned no clip."))?
                     .to_string();
+
+                // The address this came back on belongs to a Cloudflare quick tunnel that rotates on
+                // the next run. Half an hour of GPU should not expire with it.
+                set_stage(db, job_id, "running", 90, "Saving the clip locally.", false).await;
+                let url = rehome_asset(&remote, "clips", job_id, db).await.unwrap_or_else(|| {
+                    // Keeping the remote URL is the better failure: the clip is still usable until
+                    // the session ends, which is exactly where things stood before this existed.
+                    remote.clone()
+                });
 
                 db.collection::<Document>("sections").update_one(
                     doc! { "id": tgt },

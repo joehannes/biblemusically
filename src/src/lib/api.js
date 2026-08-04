@@ -454,6 +454,9 @@ export const api = {
   genImage: (id) => invokeCommand("generate_section_image", { secid: id }),
   // Queues a moving clip that replaces this section's still. Minutes, so it is a job, not a wait.
   genSectionClip: (id) => invokeCommand("generate_section_clip", { secid: id }),
+  // Files an already-rendered clip on a section AND keeps a local copy, so it outlives
+  // the render server's tunnel. Use this rather than updateSection for a clip URL.
+  fileSectionClip: (id, url) => invokeCommand("file_section_clip", { secid: id, url }),
   batchImages: (sid) => invokeCommand("batch_generate_images", { sid }),
   bulkGenerateAll: (projectId) => invokeCommand("bulk_generate_all_images", { projectId }),
 

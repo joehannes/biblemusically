@@ -33,7 +33,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | # | Item | Status |
 |---|---|---|
 | 2.1 | Video Gen: clips file onto sections | ✅ 2026-08-04 (11c1e62) |
-| 2.1b | Download clips instead of referencing tunnel URLs | ⬜ |
+| 2.1b | Download clips instead of referencing tunnel URLs | ✅ 2026-08-04 — `rehome_asset` via `local_media`; both the job and the manual path |
 | 2.1c | A `videogen` stage in the Workflow orchestrator | ✅ 2026-08-04 — both runners, new `section_clip` job kind |
 | 2.2 | Declared stage dependencies (`requires`) | ✅ 2026-08-04 |
 | 2.3 | GPU quota visible app-wide | ✅ 2026-08-04 — `GpuQuotaBanner`, modelled on `AiBudgetBanner` |
@@ -71,9 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-2. **Clip durability (WISHLIST 2.1b)** — a filed clip is a Cloudflare tunnel URL that dies when the
-   session ends, so the video must be composed before then. Download it into the project folder
-   instead. Applies to `gen_images` output too; video is only where it bites hardest.
 3. **Remote render (WISHLIST 1.5)** — 4 of 7 commands orphaned. Decide whether it is mid-build or
    abandoned and either finish it or delete it, as was done for the channel-creation watcher.
 5. **Finish the catalogues** (TODOS §8).
@@ -92,6 +89,12 @@ These are the ones a coding session should *not* decide by itself:
 
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 13)** — Clip durability. `rehome_asset` copies a generated clip off
+  the render server into `local_media`, which already existed for engines that return bytes — so
+  nothing downstream changed, the composer still fetches a URL. Added `webm`/`gif` to the servable
+  list (SaveWEBM is what the ComfyUI video graphs write, so re-homing would have stored a clip the
+  route then refused). Both the `section_clip` job and Video Gen's manual filing go through it.
 
 - **2026-08-04 · session 1 (iter 12)** — `run_monitor_http`: the monitor no longer dead-ends without
   a CLI. TODOS asked whether a phone needs the streamed boot log; the answer is no — what it is

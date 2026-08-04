@@ -79,6 +79,30 @@ pub async fn generate_section_image(
     Ok(serde_json::to_value(job).map_err(e)?)
 }
 
+/// File an already-rendered clip onto a section, keeping a local copy of it.
+///
+/// The Video Gen page hands back an address on the render server's Cloudflare quick tunnel, which
+/// rotates on the next run — so storing that URL means the clip works until the session ends and
+/// then silently does not. Same treatment the `section_clip` job gives its own output: copy the
+/// bytes here, store the local URL. Falls back to the remote address if the copy fails, since a clip
+/// that works for a while beats one that works never.
+#[tauri::command]
+pub async fn file_section_clip(
+    state: State<'_, AppState>,
+    secid: String,
+    url: String,
+) -> Res<Value> {
+    state.db.collection::<Document>("sections")
+        .find_one(doc! { "id": &secid }).await.map_err(e)?
+        .ok_or_else(|| "section missing".to_string())?;
+    let kept = crate::jobs::rehome_asset(&url, "clips", "", &state.db).await.unwrap_or(url);
+    state.db.collection::<Document>("sections").update_one(
+        doc! { "id": &secid },
+        doc! { "$set": { "image_url": &kept, "is_video": true } },
+    ).await.map_err(e)?;
+    Ok(serde_json::json!({ "ok": true, "image_url": kept }))
+}
+
 /// Animate one section: queue a clip that replaces its still.
 ///
 /// A job rather than a call to wait on, like every other stage — a clip is 10-35 GPU-minutes, and a

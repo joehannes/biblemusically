@@ -68,17 +68,19 @@ export default function VideoGen() {
     return () => { alive = false; };
   }, [activeSongId]);
 
-  // Filing a clip is a section update, not a new concept: the same field a still image would have
-  // written. That keeps one code path in the composer instead of a parallel "video section" notion.
+  // Filing a clip writes the same field a still image would have, so the composer keeps one code
+  // path instead of gaining a parallel "video section" notion.
   const useClipFor = async (url, sectionId) => {
     try {
-      // `is_video` is what the section model always meant by this and nothing has ever set true —
-      // the composer sniffs the URL instead. Setting it costs nothing and makes the stored row
-      // describe itself correctly for anything that reads it later.
-      await api.updateSection(sectionId, { image_url: url, is_video: true });
+      // Not updateSection: this address belongs to the render server's Cloudflare quick tunnel,
+      // which rotates on the next run. `file_section_clip` copies the bytes here first, so a clip
+      // that cost 10-35 GPU-minutes does not expire with the session that made it — and hands back
+      // the local address it was stored under, which is what the section now holds.
+      const r = await api.fileSectionClip(sectionId, url);
+      const kept = r?.image_url || url;
       setAssigned((prev) => ({ ...prev, [url]: sectionId }));
-      setSections((prev) => prev.map((s) => (s.id === sectionId ? { ...s, image_url: url } : s)));
-      toast.success("Filed on that section — the next video render will use it as a moving segment.");
+      setSections((prev) => prev.map((s) => (s.id === sectionId ? { ...s, image_url: kept, is_video: true } : s)));
+      toast.success("Filed on that section, and copied here — the next video render will use it as a moving segment.");
     } catch (e) {
       toast.error(`Could not file the clip: ${e?.message || e}`);
     }
@@ -351,10 +353,10 @@ export default function VideoGen() {
               </SelectContent>
             </Select>
           </div>
-          <p className="text-[11px] text-amber-400 flex items-start gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
-            These play from the render server, whose address changes every time it restarts. File a
-            clip on a section to keep it, and render the video before the session ends.
+          <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
+            These previews play from the render server, whose address changes every time it restarts.
+            Filing a clip on a section copies it here first, so it keeps working after the session ends.
           </p>
           <div className="grid sm:grid-cols-2 gap-3">
             {results.map((u, i) => (
