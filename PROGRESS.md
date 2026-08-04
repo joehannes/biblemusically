@@ -67,7 +67,29 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | **Rotate the Ed25519 signing key** | ⬜ ⚠️ the private key was committed to git history up to v0.91.0; anyone with repo access can mint a lifetime entitlement |
 | Android build | ⛔ **blocked on toolchain** — needs `NDK_HOME` and JDK 17 (JDK is 26); an environment change, not a code change |
 
+## Next up, in order
+
+Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
+
+1. **`build_short`** — a "make a Short" action on Distribution, from a `video_ready` song.
+2. **Publish-time scheduling** — surface `list_publish_times` + `channels_missing_publish_time` on
+   the Upload page, where the channel list already is.
+3. **`channels_connect_all_urls`** — a bulk "connect these channels by URL" on Channels.
+4. **Channel creation flow** — `start_channel_creation_watcher` + `inject_channel_handle`.
+5. **`delete_edition` / `delete_authored_macro`** — two missing deletes beside existing creates.
+6. **`autosave_status`** — show whether the git autosave is healthy, next to the Save control.
+7. **Print safety** — `imagery_text_allowed` / `imagery_print_check` on Print-on-Demand.
+8. **Workflow stage `requires`** (WISHLIST 2.2) — declared dependencies so an empty stage stops the
+   run rather than reporting a green tick over nothing.
+9. **A `videogen` stage in the Workflow orchestrator** (WISHLIST 2.1c).
+10. **Mobile: `kernels push` over REST** — the largest remaining mobile item; TODOS.md has the
+    endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
+
 ## Session log
 
-- **2026-08-04 · session 1** — Audit of the whole app; WISHLIST.md written; Video Gen dead-end fixed
-  (2.1). Verified the subscription Worker and marketing site are live. Set up this ledger.
+- **2026-08-04 · session 1** — Audit of the whole app; WISHLIST.md written. Fixed: Video Gen
+  dead-end (2.1), Transitions preset save/delete (1.2), style-sample delete + clear-all (1.3),
+  learnings panel + new `forget_learnings` (1.4), GPU quota banner (2.3, and `kaggle_quota`'s first
+  caller), Kaggle CLI honesty on mobile (`locate_kaggle_opt`/`require_kaggle_cli`, plus a real
+  transport bug where the fallback string counted as a present CLI). Verified the subscription
+  Worker and marketing site are live. Commits: 11c1e62, 574701b, 8880c49, dd2bcad, 74027db.
