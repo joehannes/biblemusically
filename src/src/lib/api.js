@@ -478,8 +478,6 @@ export const api = {
   importFromGoogleAccount: (oauthClientId) => invokeCommand("import_from_google_account", { oauthClientId: oauthClientId }),
 
   // ============ Channel Creation Watcher ============
-  startChannelCreationWatcher: (port) => invokeCommand("start_channel_creation_watcher", { port }),
-  injectChannelHandle: (handle) => invokeCommand("inject_channel_handle", { handle }),
 
   // ============ Channel Settings & AI Translation ============
   getGlobalChannelSettings: (projectId) => invokeCommand("get_global_channel_settings", { projectId }),

@@ -692,8 +692,6 @@ pub fn run() {
             commands::import_channel_by_handle,
             commands::import_from_google_account,
             // Channel creation watcher commands
-            commands::start_channel_creation_watcher,
-            commands::inject_channel_handle,
             // Channel settings commands (AI translation, global settings, overrides)
             commands::get_global_channel_settings,
             commands::save_global_channel_settings,
