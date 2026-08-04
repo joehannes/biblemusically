@@ -1212,7 +1212,24 @@ pub async fn compute_providers(state: State<'_, AppState>) -> Res<Value> {
         .and_then(|d| d.get_str(k).ok()).map(|v| !v.trim().is_empty()).unwrap_or(false);
     let kaggle_ready = kaggle_cli_username().await.is_some();
 
+    // Which engine URLs point where. This is the whole basis for "is RunPod set up?", since nothing
+    // else in the store records that a pasted URL belongs to a particular provider.
+    let url_of = |k: &str| doc.as_ref().and_then(|d| d.get_str(k).ok()).unwrap_or("").to_string();
+    let in_use: Vec<(&str, cp::UrlOrigin)> = [
+        ("video", "video_api_url"), ("comfyui", "comfyui_api_url"), ("flux", "flux_api_url"),
+        ("heartmula", "heartmula_api_url"), ("acestep", "acestep_api_url"),
+    ].iter().map(|(engine, key)| (*engine, cp::provider_of_url(&url_of(key)))).collect();
+
+    let tunnelled: Vec<&str> = in_use.iter()
+        .filter(|(_, o)| *o == cp::UrlOrigin::Ambiguous).map(|(e, _)| *e).collect();
+    let unknown_host: Vec<&str> = in_use.iter()
+        .filter(|(_, o)| *o == cp::UrlOrigin::Unknown).map(|(e, _)| *e).collect();
+
     Ok(serde_json::json!({
+        // Engines on a quick tunnel, which could be Kaggle or a Lightning studio. Named separately
+        // so the panel can say so instead of leaving them invisible.
+        "on_a_tunnel": tunnelled,
+        "on_an_unrecognised_host": unknown_host,
         "providers": cp::PROVIDERS.iter().map(|p| {
             // "Configured" is per-provider because each needs a different thing: Kaggle a token
             // file, fal a key, everything else just a URL somebody pasted.
@@ -1220,16 +1237,24 @@ pub async fn compute_providers(state: State<'_, AppState>) -> Res<Value> {
                 "kaggle" => kaggle_ready,
                 "fal" => has("fal_api_key"),
                 "replicate" => has("replicate_api_key"),
-                // A URL provider is ready when any engine points somewhere that is not Kaggle's
-                // own tunnel — which is the only honest signal available without probing.
-                _ => false,
+                // For a URL provider the evidence is the hostname of whatever somebody pasted. A
+                // trycloudflare address is deliberately not counted for anybody: Kaggle and a
+                // Lightning studio open the identical kind of tunnel, so attributing one would put a
+                // "configured" badge on a provider that is not set up.
+                _ => in_use.iter().any(|(_, origin)| *origin == cp::UrlOrigin::Known(p.id)),
             };
+            let engines_here: Vec<&str> = in_use.iter()
+                .filter(|(_, origin)| *origin == cp::UrlOrigin::Known(p.id))
+                .map(|(engine, _)| *engine).collect();
             serde_json::json!({
                 "id": p.id, "label": p.label, "shape": p.shape, "cost": p.cost,
                 "price": p.price, "free_allowance": p.free_allowance,
                 "automated": p.automated, "engines": p.engines,
                 "signup_url": p.signup_url, "setup": p.setup, "needs": p.needs, "note": p.note,
                 "ready": ready,
+                // Which engines are actually pointed at this provider right now — so the panel can
+                // say "video is on RunPod" rather than only "RunPod: ready".
+                "engines_here": engines_here,
             })
         }).collect::<Vec<_>>(),
     }))

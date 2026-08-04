@@ -254,6 +254,59 @@ pub const PROVIDERS: &[Provider] = &[
     },
 ];
 
+/// Which provider a server URL belongs to, read from its hostname.
+///
+/// This is the answer to "is RunPod set up?" — nothing records that a pasted URL *is* RunPod, so the
+/// host is the only evidence there is. It is evidence rather than a guess for every provider that
+/// serves from its own domain, which is all of them except one:
+///
+/// A `*.trycloudflare.com` address is a quick tunnel, and Kaggle and a Lightning studio open exactly
+/// the same kind. So that case returns `Ambiguous` rather than picking one — reporting "Lightning is
+/// configured" because Kaggle's tunnel happens to be up would be worse than reporting nothing, since
+/// somebody would then stop looking for the thing that is actually missing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum UrlOrigin {
+    /// Confidently this provider.
+    Known(&'static str),
+    /// A notebook tunnel. Could be any host running our notebook.
+    Ambiguous,
+    /// Nothing configured.
+    Empty,
+    /// A host nothing here recognises — somebody's own box, and none the worse for it.
+    Unknown,
+}
+
+pub fn provider_of_url(url: &str) -> UrlOrigin {
+    let u = url.trim().to_ascii_lowercase();
+    if u.is_empty() { return UrlOrigin::Empty; }
+    // Take the host without parsing: these arrive hand-pasted and half of them lack a scheme.
+    let host = u.trim_start_matches("https://").trim_start_matches("http://")
+        .split('/').next().unwrap_or("").split(':').next().unwrap_or("");
+    if host.is_empty() { return UrlOrigin::Unknown; }
+
+    if host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0" || host == "[::1]" {
+        return UrlOrigin::Known("local");
+    }
+    // Ambiguous before the specific matches, since a tunnel host can front any of them.
+    if host.ends_with("trycloudflare.com") || host.ends_with("lhr.life")
+        || host.ends_with("serveo.net") || host.ends_with("gradio.live") {
+        return UrlOrigin::Ambiguous;
+    }
+    for (suffix, id) in [
+        ("proxy.runpod.net", "runpod"), ("runpod.io", "runpod"), ("runpod.net", "runpod"),
+        ("modal.run", "modal"), ("modal.host", "modal"),
+        ("vast.ai", "vast"), ("vastai.io", "vast"),
+        ("lightning.ai", "lightning"),
+        ("fal.run", "fal"), ("fal.ai", "fal"),
+        ("replicate.com", "replicate"), ("replicate.delivery", "replicate"),
+    ] {
+        if host == suffix || host.ends_with(&format!(".{suffix}")) {
+            return UrlOrigin::Known(id);
+        }
+    }
+    UrlOrigin::Unknown
+}
+
 pub fn provider(id: &str) -> Option<&'static Provider> {
     let id = id.trim().to_ascii_lowercase();
     PROVIDERS.iter().find(|p| p.id == id)
@@ -346,6 +399,58 @@ mod tests {
         // fal is restricted, and must not claim engines it cannot serve.
         assert!(!hosts(provider("fal").unwrap(), "heartmula"));
         assert!(hosts(provider("fal").unwrap(), "video"));
+    }
+
+    /// Reading the provider off a pasted URL is what turns "is RunPod set up?" from a guess into a
+    /// fact — nothing else records that a URL is RunPod.
+    #[test]
+    fn a_url_says_which_provider_it_belongs_to() {
+        assert_eq!(provider_of_url("https://abc-8188.proxy.runpod.net"), UrlOrigin::Known("runpod"));
+        assert_eq!(provider_of_url("https://me--comfy.modal.run"), UrlOrigin::Known("modal"));
+        assert_eq!(provider_of_url("http://12345.vast.ai:8188"), UrlOrigin::Known("vast"));
+        assert_eq!(provider_of_url("https://x.lightning.ai/app"), UrlOrigin::Known("lightning"));
+        assert_eq!(provider_of_url("http://127.0.0.1:8188"), UrlOrigin::Known("local"));
+        assert_eq!(provider_of_url("http://localhost:8188/"), UrlOrigin::Known("local"));
+    }
+
+    /// Kaggle and a Lightning studio open the same kind of quick tunnel, so a trycloudflare host
+    /// cannot be attributed to either. Saying so beats picking one: a wrong "configured" badge stops
+    /// somebody looking for what is actually missing.
+    #[test]
+    fn a_tunnel_is_reported_as_ambiguous_rather_than_attributed() {
+        assert_eq!(provider_of_url("https://angela-craft-icon.trycloudflare.com"), UrlOrigin::Ambiguous);
+        assert_eq!(provider_of_url("https://abc.lhr.life"), UrlOrigin::Ambiguous);
+    }
+
+    #[test]
+    fn an_unrecognised_host_is_not_forced_into_a_provider() {
+        assert_eq!(provider_of_url("https://comfy.my-own-server.example"), UrlOrigin::Unknown);
+        assert_eq!(provider_of_url(""), UrlOrigin::Empty);
+        assert_eq!(provider_of_url("   "), UrlOrigin::Empty);
+    }
+
+    /// A hostname that merely *contains* a provider name is not that provider — the check has to be
+    /// on the domain boundary, or `runpod.io.evil.example` would authenticate as RunPod.
+    #[test]
+    fn matching_is_on_the_domain_boundary() {
+        assert_eq!(provider_of_url("https://runpod.io.example.com"), UrlOrigin::Unknown);
+        assert_eq!(provider_of_url("https://notmodal.run.example.org"), UrlOrigin::Unknown);
+        // But a real subdomain does match.
+        assert_eq!(provider_of_url("https://a.b.proxy.runpod.net"), UrlOrigin::Known("runpod"));
+    }
+
+    /// Every id this can return has to name a real catalogue entry, or the UI matches nothing.
+    #[test]
+    fn detected_ids_all_exist_in_the_catalogue() {
+        for url in ["https://x.proxy.runpod.net", "https://x.modal.run", "https://x.vast.ai",
+                    "https://x.lightning.ai", "http://127.0.0.1:8188", "https://x.fal.run",
+                    "https://x.replicate.com"] {
+            if let UrlOrigin::Known(id) = provider_of_url(url) {
+                assert!(provider(id).is_some(), "{url} detected as '{id}', which is not in PROVIDERS");
+            } else {
+                panic!("{url} should have been recognised");
+            }
+        }
     }
 
     /// The ranking the module header argues for: free costs the most machinery, serverless the least.

@@ -113,6 +113,8 @@ export const api = {
     invokeCommand("generate_video", { preset, prompt, negative: negative || null,
                                       seed: seed || null, inputImage: inputImage || null }),
   testVideo: () => invokeCommand("test_video"),
+  // Check every graph against a live ComfyUI's /object_info before spending a generation on it.
+  verifyVideoGraphs: (preset) => invokeCommand("verify_video_graphs", { preset: preset || null }),
   openKaggleNotebook: (engine) => invokeCommand("open_kaggle_notebook", { engine }),
   openKaggleTokenPage: () => invokeCommand("open_kaggle_token_page"),
   kaggleNotebookUrl: (engine) => invokeCommand("kaggle_notebook_url", { engine }),

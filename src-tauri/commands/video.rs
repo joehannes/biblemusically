@@ -276,6 +276,102 @@ pub async fn generate_video(
     Err("Timed out waiting for the clip (40 min). The session may have been cut short.".to_string())
 }
 
+/// Check a graph against a running server before anything is generated.
+///
+/// This is how a graph stops being "unverified". ComfyUI's `/object_info` lists every node class it
+/// has registered, with each class's required inputs — so a graph can be checked completely without
+/// a GPU, without spending a generation, and without me ever having run the model: build it, ask the
+/// server what it knows, compare.
+///
+/// It catches the two failures that otherwise surface as an opaque `/prompt` rejection minutes into
+/// a session: a `class_type` this build of ComfyUI does not have (the likeliest fault in the Wan
+/// image-to-video graph, which was not transcribed from an official example), and a required input
+/// the graph never supplies.
+#[tauri::command]
+pub async fn verify_video_graphs(state: State<'_, AppState>, preset: Option<String>) -> Res<Value> {
+    let settings = settings_of(&state).await;
+    let base = settings["video_api_url"].as_str().unwrap_or("").trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return Ok(json!({ "ok": false, "reachable": false,
+            "detail": "No video server URL yet — start one, or paste a ComfyUI address, then run this again.",
+            "next_step": "Any ComfyUI works: Kaggle, a rented box, or http://127.0.0.1:8188 locally." }));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30)).build().map_err(e)?;
+    let Ok(res) = client.get(format!("{base}/object_info")).send().await else {
+        return Ok(json!({ "ok": false, "reachable": false,
+            "detail": format!("Could not reach {base}."),
+            "next_step": "The tunnel rotates every run — press Start & connect again." }));
+    };
+    if !res.status().is_success() {
+        return Ok(json!({ "ok": false, "reachable": false,
+            "detail": format!("{base} answered {}.", res.status()) }));
+    }
+    let info: Value = res.json().await.map_err(|_| "The server's node list was unreadable.".to_string())?;
+    let Some(known) = info.as_object() else {
+        return Ok(json!({ "ok": false, "reachable": true, "detail": "The server returned no node list." }));
+    };
+
+    // Every preset, or one. Checking all of them is the useful default: it is one request, and it
+    // tells you which parts of the catalogue this particular server can run.
+    let presets: Vec<&vm::VideoPreset> = match preset.as_deref() {
+        Some(id) => vm::preset(id).into_iter().collect(),
+        None => vm::PRESETS.iter().collect(),
+    };
+
+    let mut results = Vec::new();
+    for p in presets {
+        let Some(m) = vm::model_of(p) else { continue };
+        let img = if m.drive == Drive::ImageToVideo { Some("probe.png") } else { None };
+        let graph = match build_graph(p.id, "probe", "", 1, img) {
+            Ok(g) => g,
+            Err(err) => {
+                results.push(json!({ "preset": p.id, "label": p.label, "ok": false,
+                                     "problem": err, "missing_nodes": [] }));
+                continue;
+            }
+        };
+        let mut missing: Vec<String> = Vec::new();
+        let mut unfilled: Vec<String> = Vec::new();
+        for (_id, node) in graph.as_object().into_iter().flatten() {
+            let Some(class) = node["class_type"].as_str() else { continue };
+            let Some(spec) = known.get(class) else {
+                if !missing.iter().any(|c| c == class) { missing.push(class.to_string()); }
+                continue;
+            };
+            // Required inputs the graph does not provide. Links count — a wired input arrives as an
+            // array, not a literal — so only genuinely absent keys are reported.
+            if let Some(req) = spec["input"]["required"].as_object() {
+                for key in req.keys() {
+                    if node["inputs"].get(key).is_none() {
+                        unfilled.push(format!("{class}.{key}"));
+                    }
+                }
+            }
+        }
+        let ok = missing.is_empty() && unfilled.is_empty();
+        results.push(json!({
+            "preset": p.id, "label": p.label, "model": m.id, "ok": ok,
+            "missing_nodes": missing, "missing_inputs": unfilled,
+            "problem": if ok { Value::Null } else { Value::String(format!(
+                "This server does not have everything the {} graph needs.", m.label)) },
+        }));
+    }
+
+    let good = results.iter().filter(|r| r["ok"] == json!(true)).count();
+    Ok(json!({
+        "ok": good == results.len(),
+        "reachable": true,
+        "server": base,
+        "node_count": known.len(),
+        "verified": good,
+        "total": results.len(),
+        "results": results,
+        "detail": format!("{good} of {} graphs run on this server.", results.len()),
+    }))
+}
+
 /// What every one of these models is bad at, said once.
 ///
 /// Video models drift toward stillness and toward text artefacts far more than image models do, and

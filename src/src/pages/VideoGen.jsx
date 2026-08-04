@@ -7,7 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
 import {
-  Film, Loader2, Play, AlertTriangle, Info, Lightbulb, Cpu, Package, Wand2, Server,
+  Film, Loader2, Play, AlertTriangle, Info, Lightbulb, Cpu, Package, Wand2, Server, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,6 +43,7 @@ export default function VideoGen() {
   const [clips, setClips] = useState(1);
   const [busy, setBusy] = useState("");
   const [results, setResults] = useState([]);
+  const [verify, setVerify] = useState(null);
   const [kaggle, setKaggle] = useState({});
 
   useEffect(() => subscribeKaggle(setKaggle), []);
@@ -102,6 +103,18 @@ export default function VideoGen() {
     } catch (e) {
       toast.error(String(e?.message || e), { duration: 16000 });
     } finally { setBusy(""); }
+  };
+
+  const verifyGraphs = async () => {
+    setBusy("verify");
+    try {
+      const r = await api.verifyVideoGraphs();
+      setVerify(r);
+      if (!r.reachable) toast.error(`${r.detail}${r.next_step ? ` ${r.next_step}` : ""}`, { duration: 12000 });
+      else if (r.ok) toast.success(r.detail);
+      else toast.warning(r.detail, { duration: 12000 });
+    } catch (e) { toast.error(String(e?.message || e), { duration: 12000 }); }
+    finally { setBusy(""); }
   };
 
   const startServer = () => {
@@ -176,6 +189,31 @@ export default function VideoGen() {
         {kaggle?.video?.detail && (
           <p className="text-xs text-muted-foreground">{kaggle.video.detail}</p>
         )}
+        {/* Checks every graph against this server's own node list before a generation is spent on
+            one. The image-to-video graph is the one that needs it — it was not transcribed from an
+            official ComfyUI example, so a missing node is a real possibility. */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" className="h-7 text-[11px]"
+                  disabled={busy === "verify"} onClick={verifyGraphs}>
+            {busy === "verify" ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                               : <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />}
+            Check the graphs against this server
+          </Button>
+          {verify && (
+            <span className={`text-[11px] ${verify.ok ? "text-emerald-500" : "text-amber-400"}`}>
+              {verify.detail}
+            </span>
+          )}
+        </div>
+        {verify?.results?.filter((r) => !r.ok).map((r) => (
+          <div key={r.preset} className="text-[11px] text-amber-400">
+            <b>{r.label}</b>: {r.missing_nodes?.length > 0
+              ? `this server has no ${r.missing_nodes.join(", ")} node.`
+              : r.missing_inputs?.length > 0
+                ? `missing inputs — ${r.missing_inputs.join(", ")}.`
+                : r.problem}
+          </div>
+        ))}
         <p className="text-[11px] text-muted-foreground">
           A separate Kaggle session from the image server, so stills and clips render at the same time
           on separate quota.

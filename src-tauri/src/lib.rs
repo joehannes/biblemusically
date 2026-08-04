@@ -614,6 +614,7 @@ pub fn run() {
             commands::video_catalogue,
             commands::video_advice,
             commands::generate_video,
+            commands::verify_video_graphs,
             commands::test_video,
             commands::activate_kaggle_account,
             commands::remove_kaggle_account,
