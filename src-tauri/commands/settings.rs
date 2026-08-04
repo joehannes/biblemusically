@@ -719,17 +719,48 @@ fn hidden_engine_reply(engine: &str) -> Value {
     })
 }
 
-/// The Kaggle username the CLI will actually authenticate as.
+/// The username written in `~/.kaggle/kaggle.json`.
 ///
-/// Read from `~/.kaggle/kaggle.json`, because that file — not the app's settings — is what every
-/// `kaggle` subprocess uses. Taking the app's stored `kaggle_active` on faith is how the app came to
-/// address one account's kernels while the CLI was signed in as another.
-pub(crate) async fn kaggle_cli_username() -> Option<String> {
+/// Note carefully: this is *not* necessarily who the CLI authenticates as — see
+/// `kaggle_cli_identity` below. Kept separate because the disagreement between the two is a real
+/// state a user can be in, and collapsing them hides it.
+pub(crate) async fn kaggle_json_username() -> Option<String> {
     let home = env::var("HOME").ok()?;
     let raw = fs::read_to_string(PathBuf::from(home).join(".kaggle/kaggle.json")).await.ok()?;
     let parsed: Value = serde_json::from_str(&raw).ok()?;
     let name = parsed["username"].as_str()?.trim().to_string();
     (!name.is_empty()).then_some(name)
+}
+
+/// Who the CLI is *actually* signed in as, and how.
+///
+/// `kaggle config view` reports both, and it is the only authoritative answer — because the modern
+/// Kaggle client prefers a cached OAuth token at `~/.kaggle/access_token` over the API key in
+/// `kaggle.json`, and reports `auth_method: ACCESS_TOKEN` when it does. When that token exists,
+/// writing a different account's `kaggle.json` changes nothing: every command still runs as whoever
+/// the token belongs to.
+///
+/// This is exactly the trap that made "I added another Kaggle account" not take effect, and then
+/// made the fix for it worse — reading the username out of `kaggle.json` looked like the
+/// authoritative source and is not, so the app began addressing an account the CLI could not write
+/// to. Ask the CLI.
+pub(crate) async fn kaggle_cli_identity() -> Option<(String, String)> {
+    let out = tokio::process::Command::new(locate_kaggle())
+        .args(["config", "view"]).output().await.ok()?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    let field = |k: &str| text.lines()
+        .find_map(|l| l.trim().strip_prefix(&format!("- {k}:")))
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty() && v != "None");
+    let user = field("username")?;
+    Some((user, field("auth_method").unwrap_or_else(|| "API_KEY".into())))
+}
+
+/// The Kaggle username commands will run as: the CLI's own answer where there is a CLI, else the
+/// key file. On mobile there is no CLI to ask, and the key file is the only credential there is.
+pub(crate) async fn kaggle_cli_username() -> Option<String> {
+    if let Some((user, _)) = kaggle_cli_identity().await { return Some(user); }
+    kaggle_json_username().await
 }
 
 /// The owner half of the slug: whoever the CLI is signed in as, falling back to the app's record and
@@ -1109,6 +1140,26 @@ pub async fn reconcile_kaggle_identity(db: &crate::store::Db) -> Option<String> 
     Some(cli_user)
 }
 
+/// A kernel's status, by whichever transport this platform can use.
+///
+/// The first operation moved off the CLI, because it is the one every other flow depends on and the
+/// one with no side effects — a wrong answer costs a re-poll, not a lost session. Push and pull stay
+/// on the CLI for now: they upload a multipart blob, which is real work rather than a query.
+pub(crate) async fn kernel_status_any(slug: &str) -> Res<String> {
+    let kaggle = locate_kaggle();
+    let cli_present = PathBuf::from(&kaggle).is_file() || kaggle == "kaggle";
+    match crate::kaggle_api::transport(cli_present) {
+        crate::kaggle_api::Transport::Cli => {
+            let out = tokio::process::Command::new(&kaggle)
+                .args(["kernels", "status", slug]).output().await
+                .map_err(|err| format!("Could not run the kaggle CLI: {err}"))?;
+            Ok(format!("{}{}", String::from_utf8_lossy(&out.stdout),
+                       String::from_utf8_lossy(&out.stderr)))
+        }
+        crate::kaggle_api::Transport::Http => crate::kaggle_api::kernel_status(slug).await,
+    }
+}
+
 /// Everything about how this app is currently wired to Kaggle, in one answer.
 ///
 /// Exists because the failure that motivated it was completely invisible from the interface: the app
@@ -1120,7 +1171,14 @@ pub async fn reconcile_kaggle_identity(db: &crate::store::Db) -> Option<String> 
 pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<String>) -> Res<Value> {
     let kaggle = locate_kaggle();
     let cli_present = PathBuf::from(&kaggle).is_file() || kaggle == "kaggle";
-    let cli_user = kaggle_cli_username().await;
+    let identity = kaggle_cli_identity().await;
+    let cli_user = match &identity { Some((u, _)) => Some(u.clone()), None => kaggle_json_username().await };
+    let auth_method = identity.as_ref().map(|(_, m)| m.clone()).unwrap_or_default();
+    let json_user = kaggle_json_username().await;
+    // The trap: a cached OAuth token overrides the key file silently, so adding an account by
+    // pasting a new kaggle.json changes nothing and says nothing.
+    let token_overrides = auth_method == "ACCESS_TOKEN"
+        && json_user.is_some() && json_user != cli_user;
 
     let doc = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.ok().flatten();
@@ -1142,10 +1200,7 @@ pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<Strin
     let mut per_engine = Vec::new();
     for eng in engines {
         let Some((own, upstream, key)) = kaggle_slugs(&state.db, &eng).await else { continue };
-        let status = tokio::process::Command::new(&kaggle)
-            .args(["kernels", "status", &own]).output().await.ok()
-            .map(|o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
-            .unwrap_or_default();
+        let status = kernel_status_any(&own).await.unwrap_or_default();
         let stored_url = doc.as_ref().and_then(|d| d.get_str(key).ok()).unwrap_or("").to_string();
         let url_alive = if stored_url.is_empty() { None } else {
             Some(matches!(reqwest::Client::new().get(&stored_url)
@@ -1170,7 +1225,14 @@ pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<Strin
         "ok": true,
         "cli_path": kaggle,
         "cli_present": cli_present,
+        "transport": crate::kaggle_api::transport(cli_present),
+        "http_usable": crate::kaggle_api::http_usable().await,
         "cli_username": cli_user,
+        "auth_method": auth_method,
+        "kaggle_json_username": json_user,
+        // True when a cached ~/.kaggle/access_token is authenticating as somebody other than the
+        // account in kaggle.json — which makes "add another account" a silent no-op.
+        "token_overrides_key_file": token_overrides,
         "stored_active": stored_active,
         "accounts": accounts,
         "identity_mismatch": identity_mismatch,

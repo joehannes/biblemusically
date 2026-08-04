@@ -64,6 +64,24 @@ export default function KaggleDiagnostics() {
           {diag.cli_username && (
             <Row>Signed in to Kaggle as <b data-no-i18n>{diag.cli_username}</b>, and the app addresses that account's notebooks.</Row>
           )}
+          {/* The silent no-op: a cached OAuth token outranks the key file, so pasting a new
+              kaggle.json switches nothing and reports nothing. Named first because it makes every
+              other symptom below make sense. */}
+          {diag.token_overrides_key_file && (
+            <Row bad>
+              The Kaggle CLI is signed in as <b data-no-i18n>{diag.cli_username}</b> using a cached
+              access token (<code>~/.kaggle/access_token</code>), which <b>overrides</b> the API key
+              in <code>~/.kaggle/kaggle.json</code> — that file names{" "}
+              <b data-no-i18n>{diag.kaggle_json_username}</b>. Adding an account by pasting a
+              kaggle.json therefore changes nothing. To switch accounts, delete{" "}
+              <code>~/.kaggle/access_token</code>, or run <code>kaggle auth login</code> as the
+              account you want.
+            </Row>
+          )}
+          {diag.auth_method && (
+            <Row>Authenticating by <b data-no-i18n>{diag.auth_method === "ACCESS_TOKEN"
+              ? "cached access token" : "API key"}</b>.</Row>
+          )}
           {diag.identity_mismatch && (
             <Row bad>
               The app had <b data-no-i18n>{diag.stored_active}</b> recorded as active while the CLI signs in as{" "}

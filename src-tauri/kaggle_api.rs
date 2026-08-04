@@ -83,6 +83,34 @@ async fn get(path: &str, query: &[(&str, &str)]) -> Res<Value> {
                              text.chars().take(200).collect::<String>()))
 }
 
+// ── Which way to talk to Kaggle ─────────────────────────────────────────────
+
+/// How a Kaggle operation should be carried out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum Transport {
+    /// Spawn the `kaggle` CLI. Everything the app has always done, and still the default wherever it
+    /// can run — it is the better-tested path, and its `kernels push` handles the multipart upload
+    /// this module does not yet implement.
+    Cli,
+    /// Speak the REST API directly. The only option on Android, and the fallback anywhere the CLI is
+    /// absent or the user would rather not install Python.
+    Http,
+}
+
+/// Decide, from the platform and what is installed.
+///
+/// Mobile is not a preference — Android forbids `exec()` from an app's own data directory, so there
+/// is no CLI to choose. On desktop the CLI wins when present, so nothing that works today changes;
+/// HTTP is what a machine without it falls back to instead of failing with "could not run the kaggle
+/// CLI", which is the error this removes.
+pub fn transport(cli_present: bool) -> Transport {
+    if cfg!(mobile) { return Transport::Http; }
+    if cli_present { Transport::Cli } else { Transport::Http }
+}
+
+/// Whether HTTP can work at all: it needs a key file, since there is no cached CLI session to borrow.
+pub async fn http_usable() -> bool { credentials().await.is_some() }
+
 // ── Quota ───────────────────────────────────────────────────────────────────
 
 /// GPU time used and allowed this week.
@@ -155,6 +183,29 @@ pub async fn kernel_status(slug: &str) -> Res<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Nothing that works on a desktop today may change: with a CLI present, the CLI is used.
+    #[test]
+    fn the_cli_stays_the_desktop_default() {
+        if cfg!(mobile) { return; }
+        assert_eq!(transport(true), Transport::Cli);
+    }
+
+    /// A desktop without the CLI falls back rather than failing — that fallback is the whole point.
+    #[test]
+    fn a_desktop_without_the_cli_falls_back_to_http() {
+        if cfg!(mobile) { return; }
+        assert_eq!(transport(false), Transport::Http);
+    }
+
+    /// On Android there is no choice to make: exec() from the app's data directory is forbidden, so
+    /// "is the CLI installed" is not a question that can have a useful answer.
+    #[test]
+    fn mobile_is_always_http_whatever_is_installed() {
+        if !cfg!(mobile) { return; }
+        assert_eq!(transport(true), Transport::Http);
+        assert_eq!(transport(false), Transport::Http);
+    }
 
     /// Kaggle has serialised these durations three different ways. Reading any of them as zero would
     /// make the advisor report no quota left and block every run.
