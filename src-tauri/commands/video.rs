@@ -167,12 +167,20 @@ pub async fn video_advice(
             Ok(r) if r.status().as_u16() < 500)
     };
 
+    // Best effort: no token, no network, or an unexpected shape all mean "unknown", which the
+    // advisor already treats as "do not claim a quota problem" rather than as zero.
+    let quota_left = crate::kaggle_api::quota().await.ok().map(|q| q.left_minutes.max(0) as u32);
+
     let setup = Setup {
         tier: tier_of(&settings),
         preset: preset.or_else(|| settings["video_preset"].as_str().map(String::from)),
         pack: pack.or_else(|| settings["video_pack"].as_str().map(String::from)),
         planned_clips: planned_clips.unwrap_or(1),
-        quota_minutes_left: settings["kaggle_quota_minutes_left"].as_u64().map(|v| v as u32),
+        // Asked of Kaggle directly rather than read from settings. The stored key was never
+        // populated by anything — the advisor was written expecting a number the app had no way to
+        // obtain, so its quota rules could not fire. `kernels/quota` is that number.
+        quota_minutes_left: quota_left.or_else(||
+            settings["kaggle_quota_minutes_left"].as_u64().map(|v| v as u32)),
         connected_accounts: accounts,
         server_live,
         disk_gb_free: settings["video_disk_gb_free"].as_f64().map(|v| v as f32),
@@ -182,6 +190,8 @@ pub async fn video_advice(
         "server_live": server_live,
         "blocked": advisor::is_blocked(&hints),
         "hints": hints,
+        // Surfaced so the page can show the real figure rather than only warn when it runs low.
+        "quota_minutes_left": quota_left,
     }))
 }
 

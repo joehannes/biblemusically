@@ -123,6 +123,8 @@ export const api = {
   listKaggleAccounts: () => invokeCommand("list_kaggle_accounts"),
   // Which account the CLI signs in as, which kernel each engine addresses, and whether it exists.
   kaggleDiagnostics: (engine) => invokeCommand("kaggle_diagnostics", { engine: engine || null }),
+  // Real GPU quota over HTTP — no CLI, so this also works on Android.
+  kaggleQuota: () => invokeCommand("kaggle_quota"),
   activateKaggleAccount: (username) => invokeCommand("activate_kaggle_account", { username }),
   removeKaggleAccount: (username) => invokeCommand("remove_kaggle_account", { username }),
   rotateKaggleAccount: () => invokeCommand("rotate_kaggle_account"),

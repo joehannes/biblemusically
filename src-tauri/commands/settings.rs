@@ -1260,6 +1260,22 @@ pub async fn compute_providers(state: State<'_, AppState>) -> Res<Value> {
     }))
 }
 
+/// This account's real GPU quota, from Kaggle rather than from a stored guess.
+///
+/// Also the cheapest proof that the app can talk to Kaggle without the CLI at all: it is a plain
+/// authenticated GET, and it works on a phone, where spawning the CLI cannot.
+#[tauri::command]
+pub async fn kaggle_quota() -> Res<Value> {
+    match crate::kaggle_api::quota().await {
+        Ok(q) => Ok(serde_json::json!({
+            "ok": true, "used_minutes": q.used_minutes, "allowed_minutes": q.allowed_minutes,
+            "left_minutes": q.left_minutes, "resets_at": q.resets_at,
+            "detail": format!("{} of {} GPU minutes used this week.", q.used_minutes, q.allowed_minutes),
+        })),
+        Err(detail) => Ok(serde_json::json!({ "ok": false, "detail": detail })),
+    }
+}
+
 /// Activate a stored account: write its kaggle.json and mark it active.
 #[tauri::command]
 pub async fn activate_kaggle_account(state: State<'_, AppState>, username: String) -> Res<Value> {
