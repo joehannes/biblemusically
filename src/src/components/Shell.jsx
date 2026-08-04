@@ -852,6 +852,28 @@ export default function Shell({ children }) {
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState(null);
 
+  // Whether this project's repo has anything uncommitted. `autosave_status` was written for exactly
+  // this ("drives the save button's dot", says its own doc comment) and had no caller, so the Save
+  // button looked identical whether everything was committed or an hour of work was not.
+  //
+  // Polled rather than pushed: the background autosave sweep commits on its own every 45s, so the
+  // dot has to be able to *clear* without the user doing anything. A slower tick than the sweep
+  // would show a dot for work that was already saved, which is the failure worth avoiding here.
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!activeProjectId) { setDirty(false); return; }
+    let alive = true;
+    const check = async () => {
+      try {
+        const s = await api.autosaveStatus(activeProjectId);
+        if (alive) setDirty(!!s?.repo && !!s?.dirty);
+      } catch { /* no repo, no git, an older backend — the dot simply stays off */ }
+    };
+    check();
+    const t = setInterval(check, 20_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [activeProjectId, saving]);
+
   useEffect(() => {
     if (!saveOpen) return;
     const handler = (e) => { if (saveRef.current && !saveRef.current.contains(e.target)) setSaveOpen(false); };
@@ -1360,14 +1382,25 @@ export default function Shell({ children }) {
                       ? "bg-emerald-500/20 text-emerald-400"
                       : "bg-muted/40 hover:bg-muted/70 text-foreground"
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  title="Save to local file system"
+                  title={dirty ? "Unsaved changes in this project — save to local file system"
+                               : "Save to local file system"}
                 >
                   {saveFeedback === "saved" ? (
                     <Check className="w-3.5 h-3.5" />
                   ) : saving ? (
                     <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   ) : (
-                    <Save className="w-3.5 h-3.5" />
+                    <span className="relative inline-flex">
+                      <Save className="w-3.5 h-3.5" />
+                      {/* The dot the command was written for. Never shown mid-save or right after
+                          one — a "you have unsaved work" mark that appears while saving is noise. */}
+                      {dirty && (
+                        <span
+                          aria-label="Unsaved changes"
+                          className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 ring-1 ring-background"
+                        />
+                      )}
+                    </span>
                   )}
                   <span className="hidden sm:inline">{saving ? "Saving…" : "Save"}</span>
                 </button>
