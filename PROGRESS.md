@@ -35,7 +35,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 2.1 | Video Gen: clips file onto sections | ✅ 2026-08-04 (11c1e62) |
 | 2.1b | Download clips instead of referencing tunnel URLs | ⬜ |
 | 2.1c | A `videogen` stage in the Workflow orchestrator | ⬜ |
-| 2.2 | Declared stage dependencies (`requires`) | ⬜ |
+| 2.2 | Declared stage dependencies (`requires`) | ✅ 2026-08-04 |
 | 2.3 | GPU quota visible app-wide | ✅ 2026-08-04 — `GpuQuotaBanner`, modelled on `AiBudgetBanner` |
 
 ### TODOS.md — what is actually still open
@@ -71,13 +71,16 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-8. **Workflow stage `requires`** (WISHLIST 2.2) — declared dependencies so an empty stage stops the
-   run rather than reporting a green tick over nothing.
 9. **A `videogen` stage in the Workflow orchestrator** (WISHLIST 2.1c).
 10. **Mobile: `kernels push` over REST** — the largest remaining mobile item; TODOS.md has the
     endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 8)** — Workflow stages now declare `requires`, asked before
+  `pending`. The two produce the same count and mean opposite things: a run whose images never
+  rendered used to finish with a column of green ticks over an empty result. A stage whose input
+  never arrived is now amber and stops the run.
 
 - **2026-08-04 · session 1 (iter 7)** — Print safety. `imagery_print_check` now runs against the
   blueprint's real print area when a product is opened, replacing a hand-waved "at least half that"

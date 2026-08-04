@@ -11,7 +11,7 @@ import { Badge } from "../components/ui/badge";
 import { Switch } from "../components/ui/switch";
 import {
   Workflow as WorkflowIcon, BookText, Music2, BarChart3, Image as ImageIcon, Layers, Film,
-  UploadCloud, Play, Loader2, CheckCircle2, XCircle, CircleDashed, RotateCw,
+  UploadCloud, Play, Loader2, CheckCircle2, XCircle, CircleDashed, RotateCw, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import GuidedPanel from "../components/GuidedPanel";
@@ -23,6 +23,13 @@ import { workflowFlow } from "../lib/guidedFlows";
 // "N songs" badge and is what `run()` iterates; stages without it (lyrics generation, which
 // creates a song rather than acting on existing ones; images/overlays, which already have their
 // own bulk backend commands scoped to the whole project) leave it out.
+//
+// `requires(songs)` returns a reason string when this stage's *input* does not exist at all, or null
+// when it does. That is a different question from `pending`, and conflating the two is what made a
+// broken run look like a finished one: "nothing pending" is the right answer both when the work is
+// already done and when the previous stage produced nothing to work on, and the old code called both
+// of them done and carried on — so a pipeline whose images never rendered still finished with a
+// column of green ticks over an empty result.
 function buildStages({ activeProjectId, includeUpload }) {
   return [
     {
@@ -40,6 +47,8 @@ function buildStages({ activeProjectId, includeUpload }) {
     },
     {
       id: "music",
+      requires: (songs) => songs.length ? null
+        : "this project has no songs yet — lyrics produced nothing to set to music.",
       label: "Music generation",
       icon: Music2,
       hint: "Queues server-side Suno generation for every song that has no audio yet.",
@@ -52,6 +61,8 @@ function buildStages({ activeProjectId, includeUpload }) {
     },
     {
       id: "analysis",
+      requires: (songs) => songs.some((s) => s.audio_url || s.local_audio_path) ? null
+        : "no song has audio yet — music generation produced nothing to analyse.",
       label: "Analysis",
       icon: BarChart3,
       hint: "Section/beat analysis for every song that has audio but hasn't been analyzed yet.",
@@ -64,6 +75,8 @@ function buildStages({ activeProjectId, includeUpload }) {
     },
     {
       id: "images",
+      requires: (songs) => songs.some((s) => s.status === "analyzed" || s.status === "video_ready") ? null
+        : "no song has been analysed yet, so there are no sections to illustrate.",
       label: "Section images",
       icon: ImageIcon,
       hint: "Bulk-generates every section's image across the whole project (skips sections that already have one).",
@@ -75,6 +88,8 @@ function buildStages({ activeProjectId, includeUpload }) {
     },
     {
       id: "overlays",
+      requires: (songs) => songs.some((s) => s.audio_url || s.local_audio_path) ? null
+        : "no song has audio yet — an overlay is generated from it.",
       label: "Overlays",
       icon: Layers,
       hint: "Generates overlay assets for every analyzed song that doesn't have one yet.",
@@ -86,6 +101,8 @@ function buildStages({ activeProjectId, includeUpload }) {
     },
     {
       id: "video",
+      requires: (songs) => songs.some((s) => s.overlay_local_path) ? null
+        : "no song has an overlay yet — the overlay stage produced nothing to assemble over.",
       label: "Video assembly",
       icon: Film,
       hint: "Renders/concatenates the final video for every song with an overlay that isn't video_ready yet. No bulk endpoint exists server-side, so this loops one compose call per song.",
@@ -98,6 +115,8 @@ function buildStages({ activeProjectId, includeUpload }) {
     },
     {
       id: "upload",
+      requires: (songs) => songs.some((s) => s.status === "video_ready") ? null
+        : "no song is video_ready yet — video assembly produced nothing to publish.",
       label: "Bulk upload",
       icon: UploadCloud,
       hint: includeUpload
@@ -121,8 +140,11 @@ function buildStages({ activeProjectId, includeUpload }) {
   ];
 }
 
-const STATUS_ICON = { idle: CircleDashed, running: Loader2, done: CheckCircle2, error: XCircle };
-const STATUS_COLOR = { idle: "text-muted-foreground/50", running: "text-primary animate-spin", done: "text-emerald-500", error: "text-red-500" };
+// `blocked` is deliberately not green and not red: nothing failed, but nothing happened either, and
+// the honest colour for "the stage before this produced nothing" is the same amber the rest of the
+// app uses for a thing you need to look at.
+const STATUS_ICON = { idle: CircleDashed, running: Loader2, done: CheckCircle2, error: XCircle, blocked: AlertTriangle };
+const STATUS_COLOR = { idle: "text-muted-foreground/50", running: "text-primary animate-spin", done: "text-emerald-500", error: "text-red-500", blocked: "text-amber-400" };
 
 export default function Workflow() {
   const { activeProjectId, activeProject, songs, refreshSongs, jobs } = useStudio();
@@ -209,6 +231,16 @@ export default function Workflow() {
 
   const runOne = async (stage) => {
     if (runningStageId || runningAll) return;
+    // Same question as the full run asks. Running a stage by hand whose input does not exist would
+    // otherwise fail somewhere inside the backend call, with a message about the symptom rather than
+    // the cause.
+    const blocker = stage.requires?.(songs);
+    if (blocker) {
+      setStage(stage.id, { status: "blocked", note: blocker });
+      pushLog(`${stage.label}: ${blocker}`, "error");
+      toast.warning(blocker);
+      return;
+    }
     await runStage(stage);
   };
 
@@ -263,6 +295,19 @@ export default function Workflow() {
         }
         if (stage.id === "upload" && !includeUpload) {
           pushLog(`${stage.label}: skipped (upload not included in this run).`);
+          continue;
+        }
+        // Asked before `pending`, because the two produce the same count and mean opposite things.
+        // A stage whose input never arrived has not finished — it never started, and every stage
+        // after it is about to report the same emptiness as success.
+        const blocker = stage.requires?.(songs);
+        if (blocker) {
+          setStage(stage.id, { status: "blocked", note: blocker });
+          pushLog(`${stage.label}: ${blocker}`, "error");
+          if (stopOnError) {
+            pushLog("Full pipeline stopped — the stage before this one produced nothing.", "error");
+            break;
+          }
           continue;
         }
         if (stage.pending && stage.pending(songs).length === 0) {
