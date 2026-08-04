@@ -42,8 +42,8 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 | Item | Status |
 |---|---|
-| Mobile: `kernels push` over REST (blocks starting/stopping any server from a phone) | ⬜ |
-| Mobile: `kernels pull` over REST | ⬜ |
+| Mobile: `kernels push` over REST | ✅ 2026-08-04 — `kernel_push` + `start_kaggle_server_http` |
+| Mobile: `kernels pull` over REST | ✅ 2026-08-04 — `kernel_pull` |
 | Mobile: `kernels output` over REST | ⬜ |
 | Mobile: `kernels logs -f` — decide whether a phone needs the live boot log at all | ⬜ |
 | Mobile: `locate_kaggle()` honesty → `locate_kaggle_opt()` + `require_kaggle_cli()`; `platform_capabilities` now reports `kaggle_cli` | ✅ 2026-08-04 |
@@ -71,10 +71,14 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-10. **Mobile: `kernels push` over REST** — the largest remaining mobile item; TODOS.md has the
-    endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 10)** — `kernels pull` and `kernels push` over REST. A phone can now
+  start a server, not only watch one. **TODOS.md was wrong** that the source is base64: Kaggle's own
+  client sends it as a plain string — verified against `kaggle_api_extended.py`. Two undocumented
+  requirements found and handled: cell `source` must be joined to one string, outputs must be
+  stripped. 344 Rust tests pass (5 new).
 
 - **2026-08-04 · session 1 (iter 9)** — Hero clips are a pipeline stage. New `section_clip` job kind
   (clip generation was only ever a 40-minute blocking command); `generate_clip` extracted from the

@@ -101,15 +101,20 @@ will read as a bug.
 
 Still CLI-only, in the order they block a phone:
 
-1. **`kernels push`** (`start_kaggle_server`, `supersede_kaggle_session`) — the one that matters.
-   Without it a phone cannot start or stop a server at all. REST equivalent is
-   `POST /api/v1/kernels/push` with a JSON body carrying the metadata *and* the notebook source
-   base64-encoded in `text` — not multipart, despite the CLI's name for it. Needs the same
-   `kernel-metadata.json` fields the CLI writes, so `pull_kernel_for_push` can be reused wholesale.
-2. **`kernels pull`** (`pull_kernel_for_push`) — `GET /api/v1/kernels/pull?user_name=&kernel_slug=`
-   returns metadata plus source as JSON. Straightforward; blocked behind nothing.
-   Note the bundled-notebook fallback already covers the case where neither own nor upstream exists,
-   so on mobile the first run could skip the pull entirely.
+1. ~~**`kernels push`**~~ — **done 2026-08-04** (`kaggle_api::kernel_push`,
+   `settings::start_kaggle_server_http`). `start_kaggle_server` now branches on `transport()`, so a
+   phone — or a desktop without the CLI — starts a server over HTTP.
+   **Correction to what this entry used to say:** the source is *not* base64-encoded. Kaggle's own
+   client sets `request.text = script_body`, the file read straight off disk as a plain string
+   (`kaggle_api_extended.py`, `kernels_push`). It is right that it is not multipart. Two things it
+   did not mention and that do matter: a notebook's cell `source` must be **joined into one string**
+   (the `.ipynb` spec allows a list, the server accepts only a string — the client's own comment says
+   so), and cell **outputs must be stripped**, or every push re-uploads the last run's install
+   chatter. Both live in `prepare_notebook_source`, with tests.
+2. ~~**`kernels pull`**~~ — **done 2026-08-04** (`kaggle_api::kernel_pull`). `GET /kernels/pull`
+   returns `metadata` plus `blob.source`, the source verbatim as a string. A missing kernel is
+   `Ok(None)` rather than an error, since a first run legitimately has no copy yet; the caller then
+   tries upstream, then the bundled notebook.
 3. **`kernels output`** (`refresh_kaggle_url`, `fetch_kaggle_url`) —
    `GET /api/v1/kernels/output?user_name=&kernel_slug=` lists files with download URLs.
 4. **`kernels logs -f`** (`kaggle_monitor`) — the hard one. There is no REST streaming endpoint; the

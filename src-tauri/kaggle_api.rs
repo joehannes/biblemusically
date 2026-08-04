@@ -179,6 +179,132 @@ pub async fn kernel_status(slug: &str) -> Res<String> {
     Ok(v["status"].as_str().unwrap_or("unknown").to_string())
 }
 
+// ── Pull and push ───────────────────────────────────────────────────────────
+
+/// A kernel as Kaggle holds it: its metadata, and its source as one string.
+#[derive(Debug, Clone)]
+pub struct PulledKernel {
+    /// The `owner/name` slug this came back under.
+    pub slug: String,
+    /// Kaggle's own metadata block, in the shape `kernel-metadata.json` uses.
+    pub metadata: Value,
+    /// The notebook or script, verbatim. For a notebook this is the `.ipynb` JSON as text.
+    pub source: String,
+}
+
+/// Fetch a kernel's metadata and source.
+///
+/// `GET /kernels/pull` — the same call `kaggle kernels pull -m` makes. Returns `Ok(None)` when the
+/// kernel does not exist, which is not an error: the first run on a fresh account legitimately has
+/// no copy yet, and the caller falls back to upstream or to the bundled notebook.
+pub async fn kernel_pull(slug: &str) -> Res<Option<PulledKernel>> {
+    let (owner, name) = slug.split_once('/')
+        .ok_or_else(|| format!("'{slug}' is not an owner/name kernel slug."))?;
+    let v = match get("/kernels/pull", &[("userName", owner), ("kernelSlug", name)]).await {
+        Ok(v) => v,
+        // A missing kernel comes back as a 404 and reads here as "Kaggle answered 404 Not Found".
+        // Distinguished from a real failure so a first run is not reported as broken.
+        Err(msg) if msg.contains("404") => return Ok(None),
+        Err(msg) => return Err(msg),
+    };
+    let source = v["blob"]["source"].as_str().unwrap_or("").to_string();
+    if source.is_empty() { return Ok(None); }
+    Ok(Some(PulledKernel {
+        slug: v["metadata"]["ref"].as_str().unwrap_or(slug).to_string(),
+        metadata: v["metadata"].clone(),
+        source,
+    }))
+}
+
+/// Prepare a notebook's source the way Kaggle's own client does before pushing it.
+///
+/// Two transformations, both load-bearing and neither obvious:
+///
+///   * **Outputs are stripped.** Pushing a notebook with cell outputs re-uploads every image and log
+///     line the last run produced, which for these engine notebooks is megabytes of install chatter.
+///   * **A cell's `source` is joined into one string.** The `.ipynb` spec allows a list of lines and
+///     Kaggle's server accepts only a single string — the client's own comment says so. A notebook
+///     pulled from Kaggle comes back already joined, but the *bundled* notebooks in this repo are
+///     ordinary files written by hand and by Jupyter, so they have the list form.
+///
+/// A non-notebook, or anything that does not parse as JSON, is passed through untouched.
+pub fn prepare_notebook_source(source: &str, kernel_type: &str) -> String {
+    if !kernel_type.eq_ignore_ascii_case("notebook") { return source.to_string(); }
+    let Ok(mut nb) = serde_json::from_str::<Value>(source) else { return source.to_string() };
+    if let Some(cells) = nb["cells"].as_array_mut() {
+        for cell in cells.iter_mut() {
+            if cell["cell_type"] == "code" { cell["outputs"] = Value::Array(vec![]); }
+            if let Some(list) = cell["source"].as_array() {
+                let joined: String = list.iter().filter_map(|l| l.as_str()).collect();
+                cell["source"] = Value::String(joined);
+            }
+        }
+    }
+    serde_json::to_string(&nb).unwrap_or_else(|_| source.to_string())
+}
+
+/// The body `POST /kernels/push` expects, built from a metadata block and a source string.
+///
+/// Kaggle's client sends the source as **plain text in `text`** — `request.text = script_body`,
+/// where `script_body` is the file read straight off disk. It is not base64, and it is not a
+/// multipart upload despite the CLI calling the operation "push"; TODOS.md said base64 and was
+/// wrong, which is the kind of detail that costs an afternoon.
+pub fn push_body(metadata: &Value, source: &str) -> Value {
+    let s = |k: &str| metadata[k].as_str().unwrap_or("");
+    let b = |k: &str, d: bool| metadata[k].as_bool().unwrap_or(d);
+    let arr = |k: &str| metadata[k].as_array().cloned().unwrap_or_default();
+    let kernel_type = if s("kernel_type").is_empty() { "notebook" } else { s("kernel_type") };
+
+    serde_json::json!({
+        "id": s("id"),
+        "newTitle": s("title"),
+        "text": prepare_notebook_source(source, kernel_type),
+        "language": if s("language").is_empty() { "python" } else { s("language") },
+        "kernelType": kernel_type,
+        "isPrivate": b("is_private", true),
+        "enableGpu": b("enable_gpu", false),
+        "enableTpu": b("enable_tpu", false),
+        "enableInternet": b("enable_internet", true),
+        "datasetDataSources": arr("dataset_sources"),
+        "competitionDataSources": arr("competition_sources"),
+        "kernelDataSources": arr("kernel_sources"),
+        "modelDataSources": arr("model_sources"),
+        "categoryIds": arr("keywords"),
+    })
+}
+
+/// Create or update a kernel and start its run.
+///
+/// `POST /kernels/push`. This is the call that makes a phone able to *start* a server rather than
+/// only watch one — the last CLI-only operation on the critical path.
+pub async fn kernel_push(metadata: &Value, source: &str) -> Res<Value> {
+    let (user, key) = credentials().await
+        .ok_or("No ~/.kaggle/kaggle.json — connect a Kaggle account first.")?;
+    let res = client().await?
+        .post(format!("{BASE}/kernels/push"))
+        .basic_auth(&user, Some(&key))
+        .json(&push_body(metadata, source))
+        .send().await.map_err(|e| format!("Could not reach Kaggle: {e}"))?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            401 | 403 => "Kaggle rejected the API token. Create a fresh one at Kaggle → Settings → \
+                          Create New API Token.".to_string(),
+            _ => format!("Kaggle answered {status}: {}", text.chars().take(300).collect::<String>()),
+        });
+    }
+    let v: Value = serde_json::from_str(&text)
+        .map_err(|_| format!("Kaggle returned something unreadable: {}",
+                             text.chars().take(200).collect::<String>()))?;
+    // A push can answer 200 and still have refused: `error` carries the reason, and it is the field
+    // the CLI prints. Treating a 200 as success regardless is how "it said it worked" happens.
+    if let Some(err) = v["error"].as_str().filter(|s| !s.trim().is_empty()) {
+        return Err(err.to_string());
+    }
+    Ok(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,6 +322,72 @@ mod tests {
     fn a_desktop_without_the_cli_falls_back_to_http() {
         if cfg!(mobile) { return; }
         assert_eq!(transport(false), Transport::Http);
+    }
+
+    /// The server accepts one string per cell, not the list the .ipynb spec allows — Kaggle's own
+    /// client joins them with a comment saying exactly that, and a bundled notebook written by
+    /// Jupyter has the list form. Getting this wrong is a push that is accepted and runs nothing.
+    #[test]
+    fn a_notebooks_cell_source_is_joined_into_one_string() {
+        let nb = json!({ "cells": [
+            { "cell_type": "code", "source": ["import os\n", "print(os.getcwd())\n"], "outputs": [] },
+        ]}).to_string();
+        let out: Value = serde_json::from_str(&prepare_notebook_source(&nb, "notebook")).unwrap();
+        assert_eq!(out["cells"][0]["source"], "import os\nprint(os.getcwd())\n");
+    }
+
+    /// Outputs are megabytes of install chatter on these notebooks, and re-uploading them on every
+    /// start would make each push slower than the run it triggers.
+    #[test]
+    fn outputs_are_stripped_before_pushing() {
+        let nb = json!({ "cells": [
+            { "cell_type": "code", "source": "x=1", "outputs": [{ "text": "noise" }] },
+            { "cell_type": "markdown", "source": "# title" },
+        ]}).to_string();
+        let out: Value = serde_json::from_str(&prepare_notebook_source(&nb, "notebook")).unwrap();
+        assert_eq!(out["cells"][0]["outputs"], json!([]));
+        // A markdown cell has no outputs key to clear, and must not gain one.
+        assert!(out["cells"][1].get("outputs").is_none());
+    }
+
+    /// A script, or anything that is not JSON, goes through untouched rather than being mangled.
+    #[test]
+    fn a_script_is_passed_through_unchanged() {
+        assert_eq!(prepare_notebook_source("print('hi')", "script"), "print('hi')");
+        assert_eq!(prepare_notebook_source("not json at all", "notebook"), "not json at all");
+    }
+
+    /// The source travels as plain text. Kaggle's client sets `request.text = script_body` straight
+    /// off the file — not base64, and not a multipart upload despite the CLI's name for the verb.
+    #[test]
+    fn the_push_body_carries_plain_source_and_kaggles_own_field_names() {
+        let meta = json!({
+            "id": "someone/engine-video", "title": "Video engine", "code_file": "engine.ipynb",
+            "language": "python", "kernel_type": "notebook", "is_private": true,
+            "enable_gpu": true, "enable_internet": true,
+        });
+        let body = push_body(&meta, "print('hi')");
+        assert_eq!(body["id"], "someone/engine-video");
+        assert_eq!(body["newTitle"], "Video engine");
+        assert_eq!(body["text"], "print('hi')", "the source must travel verbatim, not encoded");
+        assert_eq!(body["enableGpu"], true);
+        assert_eq!(body["enableInternet"], true);
+        assert_eq!(body["kernelType"], "notebook");
+        // Absent list fields become empty arrays rather than null, which the server rejects.
+        assert_eq!(body["datasetDataSources"], json!([]));
+        assert_eq!(body["categoryIds"], json!([]));
+    }
+
+    /// Defaults matter: a metadata block missing these must not silently push a public kernel or one
+    /// with no internet, which would fail minutes later inside the run rather than at the push.
+    #[test]
+    fn push_body_defaults_are_the_safe_ones() {
+        let body = push_body(&json!({ "id": "a/b" }), "src");
+        assert_eq!(body["isPrivate"], true);
+        assert_eq!(body["enableInternet"], true);
+        assert_eq!(body["enableGpu"], false);
+        assert_eq!(body["language"], "python");
+        assert_eq!(body["kernelType"], "notebook");
     }
 
     /// On Android there is no choice to make: exec() from the app's data directory is forbidden, so

@@ -1543,9 +1543,15 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
-    // A phone can reach this, and a desktop may simply not have the CLI. Say which, in a
-    // sentence, rather than letting it surface as a spawn error. See require_kaggle_cli.
-    let kaggle = require_kaggle_cli()?;
+    // A phone has no CLI to spawn, and a desktop may simply not have installed one. Both now take
+    // the HTTP path rather than dead-ending: `kernels push` was the last operation on the critical
+    // path that only the CLI could do, which is what made a phone able to watch a server but never
+    // start one.
+    let found = locate_kaggle_opt();
+    if crate::kaggle_api::transport(found.is_some()) == crate::kaggle_api::Transport::Http {
+        return start_kaggle_server_http(&engine, &own, &upstream).await;
+    }
+    let kaggle = found.unwrap_or_else(|| "kaggle".to_string());
 
     // Pull the kernel (code + metadata) from Kaggle so this works from the installed app, which
     // doesn't ship the notebook sources — own copy if there is one, else the published template,
@@ -1620,6 +1626,119 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
             "detail": out.trim().chars().take(400).collect::<String>(),
             "next_step": "Open the notebook (Open notebook) and check the kernel there. If it looks fine, retry Start & connect."
         }))
+    }
+}
+
+/// Turn whatever Kaggle said about a refused push into the app's own outcome codes.
+///
+/// Shared by both transports on purpose. The CLI prints its reasons and the API returns them, but
+/// they are the *same* reasons — and a phone hitting the concurrent-session cap deserves the same
+/// sentence a desktop gets rather than a raw error body.
+fn classify_push_failure(text: &str) -> Value {
+    let low = text.to_lowercase();
+    if low.contains("session count") || low.contains("concurrent") || low.contains("maximum number")
+        || low.contains("too many") || low.contains("reached the maximum") || low.contains("active session")
+    {
+        serde_json::json!({
+            "ok": false, "status": "gpu_slots_full",
+            "detail": "Kaggle allows only 2 concurrent GPU batch sessions and both are in use.",
+            "next_step": "Open each engine's notebook and look for one still showing a running session with a dead tunnel — click Stop Session there, then retry."
+        })
+    } else if low.contains("quota") || low.contains("exceeded") {
+        serde_json::json!({
+            "ok": false, "status": "gpu_quota",
+            "detail": "Your weekly Kaggle GPU quota (30 h) looks exhausted — a GPU batch run can't start.",
+            "next_step": "Wait for the weekly reset (Saturdays UTC), or run the engine on another free GPU host and paste its URL."
+        })
+    } else if low.contains("403") || low.contains("forbidden") || low.contains("401")
+        || low.contains("unauthorized") || low.contains("token")
+    {
+        serde_json::json!({
+            "ok": false, "status": "auth_error",
+            "detail": "Kaggle rejected the push — the API token is missing or invalid.",
+            "next_step": "Create a new API token at Kaggle → Settings and save it as ~/.kaggle/kaggle.json, then retry."
+        })
+    } else {
+        serde_json::json!({
+            "ok": false, "status": "push_failed",
+            "detail": text.trim().chars().take(400).collect::<String>(),
+            "next_step": "Open the notebook and check the kernel there. If it looks fine, retry Start & connect."
+        })
+    }
+}
+
+/// Start an engine's server without the CLI — the phone path.
+///
+/// The same three steps the CLI path takes, over HTTP: find a notebook to push (this account's copy,
+/// else the published template, else the copy bundled in the binary), re-address it to this account
+/// and turn the GPU on, then push. Nothing here touches the filesystem, because a pulled kernel is
+/// already a string and writing it to a temp file only existed so the CLI had a folder to read.
+async fn start_kaggle_server_http(engine: &str, own: &str, upstream: &str) -> Res<Value> {
+    use crate::kaggle_api as kapi;
+
+    let pulled = match kapi::kernel_pull(own).await {
+        Ok(Some(k)) => Some((k.metadata, k.source, false)),
+        Ok(None) => match kapi::kernel_pull(upstream).await {
+            Ok(Some(k)) => Some((k.metadata, k.source, true)),
+            Ok(None) => None,
+            Err(msg) => return Ok(serde_json::json!({
+                "ok": false, "status": "pull_failed", "detail": msg,
+                "next_step": "Check that ~/.kaggle/kaggle.json is valid (Kaggle → Settings → Create New API Token)."
+            })),
+        },
+        Err(msg) => return Ok(serde_json::json!({
+            "ok": false, "status": "pull_failed", "detail": msg,
+            "next_step": "Check that ~/.kaggle/kaggle.json is valid (Kaggle → Settings → Create New API Token)."
+        })),
+    };
+
+    // Neither copy exists: the normal state for an engine whose notebook was never published. The
+    // bundled copy is also what keeps the app independent of the author's Kaggle account staying
+    // alive — the notebooks ship inside the binary, and Kaggle is only a place to run them.
+    let name = own.split('/').next_back().unwrap_or("biblemusically-server");
+    let (mut meta, source, from_upstream) = match pulled {
+        Some(v) => v,
+        None => {
+            let Some(source) = bundled_notebook(engine) else {
+                return Ok(serde_json::json!({
+                    "ok": false, "status": "pull_failed",
+                    "detail": format!("Neither {own} nor {upstream} exists on Kaggle, and no copy of the {engine} notebook is bundled."),
+                    "next_step": "Update the app, or open the notebook on Kaggle once so this account has a copy."
+                }));
+            };
+            (serde_json::json!({
+                "id": own, "title": name, "code_file": "setup_and_serve.ipynb",
+                "language": "python", "kernel_type": "notebook", "is_private": true,
+            }), source.to_string(), true)
+        }
+    };
+
+    // Re-address to this account: `id` is the only field the push derives its target from.
+    meta["id"] = Value::String(own.to_string());
+    // Kaggle rejects a title under five characters, and a fresh kernel needs one.
+    if !meta["title"].as_str().map(|t| t.trim().chars().count() >= 5).unwrap_or(false) {
+        meta["title"] = Value::String(name.to_string());
+    }
+    // `id_no` names a specific existing kernel numerically and would override `id`, sending the push
+    // straight back at the template we copied from.
+    if let Some(obj) = meta.as_object_mut() { obj.remove("id_no"); }
+    // A serving run needs the GPU: the notebook only opens its tunnel when one is present.
+    meta["enable_gpu"] = Value::Bool(true);
+    meta["enable_internet"] = Value::Bool(true);
+
+    match kapi::kernel_push(&meta, &source).await {
+        Ok(_) => {
+            let created = if from_upstream {
+                format!(" This is the first run on “{}”, so the notebook was copied to that account.",
+                        own.split('/').next().unwrap_or(""))
+            } else { String::new() };
+            Ok(serde_json::json!({
+                "ok": true, "status": "starting", "slug": own, "created": from_upstream,
+                "detail": format!("{engine} server starting on Kaggle (GPU batch run).{created} It needs ~8-10 min to install, download models and open the tunnel."),
+                "next_step": "Watch the live log below. The run serves until Kaggle's ~9-12 h batch limit."
+            }))
+        }
+        Err(msg) => Ok(classify_push_failure(&msg)),
     }
 }
 
