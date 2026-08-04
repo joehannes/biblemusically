@@ -2378,11 +2378,46 @@ async fn real_youtube_upload(
     let privacy = upload["privacy"].as_str().unwrap_or("private").to_string();
 
     // Convert privacy string to YouTube API value
-    let privacy_status = match privacy.as_str() {
+    let mut privacy_status = match privacy.as_str() {
         "public" => "public",
         "unlisted" => "unlisted",
         _ => "private",
     };
+
+    // The channel's publishing hour, finally doing something.
+    //
+    // `publish_time` has been storable since the feature was written — suggested by AI, editable per
+    // channel, shown on the Channels page — and *nothing had ever read it*. A channel's chosen hour
+    // was decoration. YouTube's own scheduling is the way to honour it without the app having to stay
+    // running: upload private, hand over `status.publishAt`, and YouTube flips it public itself.
+    //
+    // Only for uploads that were going out public anyway. Someone who picked "unlisted" or "private"
+    // asked for that, and a schedule must not quietly promote their video.
+    let mut publish_at: Option<String> = None;
+    if privacy_status == "public" {
+        let days: Vec<String> = channel["publish_days"].as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        publish_at = crate::commands::publish_time::next_publish_instant(
+            channel["publish_time"].as_str().unwrap_or(""),
+            &days,
+            channel["publish_timezone"].as_str().unwrap_or(""),
+            chrono::Utc::now(),
+        );
+        if let Some(at) = &publish_at {
+            // `publishAt` is only honoured on a private video — a public one is already out.
+            privacy_status = "private";
+            db_log(db, job_id, &format!("youtube: scheduled to go public at {at} (channel's publishing hour)")).await;
+        }
+    }
+
+    let mut status = serde_json::json!({
+        "privacyStatus": privacy_status,
+        "madeForKids": false
+    });
+    if let Some(at) = &publish_at {
+        status["publishAt"] = serde_json::Value::String(at.clone());
+    }
 
     let metadata = serde_json::json!({
         "snippet": {
@@ -2396,10 +2431,7 @@ async fn real_youtube_upload(
                 _ => "24",
             }
         },
-        "status": {
-            "privacyStatus": privacy_status,
-            "madeForKids": false
-        }
+        "status": status
     });
 
     // Step 5: Initiate resumable upload session

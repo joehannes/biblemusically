@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { useRequireGuideStep } from "../components/GuideStepDialog";
 import { getStepForPath } from "../lib/pageSteps";
 import GuidedPanel from "../components/GuidedPanel";
+import PublishTimesPanel from "../components/PublishTimesPanel";
 import { uploadFlow } from "../lib/guidedFlows";
 
 const ALL_FORMATS = [
@@ -192,6 +193,10 @@ export default function Upload() {
         />
       </div>
 
+
+      {/* When each channel will actually publish — asked here, with the queue in front of you,
+          rather than one channel at a time on the Channels page where it is chosen. */}
+      <PublishTimesPanel />
 
       <Card className="p-5 mb-5">
         <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2"><Sparkles className="w-3 h-3" />Global description (used by AI enrich)</div>

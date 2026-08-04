@@ -256,9 +256,107 @@ pub async fn channels_missing_publish_time(state: State<'_, AppState>) -> Res<Va
     Ok(json!({ "missing": missing, "count": missing.len() }))
 }
 
+/// The next instant matching `HH:MM` on one of `days`, in `timezone`, strictly after `after`.
+///
+/// Returns RFC3339 in UTC, which is what YouTube's `status.publishAt` wants. `None` when the channel
+/// has nothing usable — no time, an unparseable time, or a zone name the tz database doesn't know —
+/// so the caller can fall back to publishing immediately rather than guessing an hour.
+///
+/// Days are English weekday names as the model returns them ("Monday"); an empty list means "any
+/// day", which is the right reading of "publish at 19:00" with no days attached.
+pub fn next_publish_instant(
+    time_hhmm: &str,
+    days: &[String],
+    timezone: &str,
+    after: chrono::DateTime<chrono::Utc>,
+) -> Option<String> {
+    use chrono::{Datelike, TimeZone, Timelike};
+
+    let (h, m) = time_hhmm.split_once(':')?;
+    let (h, m): (u32, u32) = (h.trim().parse().ok()?, m.trim().parse().ok()?);
+    if h > 23 || m > 59 { return None; }
+
+    let tz: chrono_tz::Tz = timezone.trim().parse().ok()?;
+
+    // Weekday names → chrono's numbering, so a day list can be compared without locale parsing.
+    let wanted: Vec<u32> = days.iter()
+        .filter_map(|d| match d.trim().to_ascii_lowercase().as_str() {
+            s if s.starts_with("mon") => Some(0),
+            s if s.starts_with("tue") => Some(1),
+            s if s.starts_with("wed") => Some(2),
+            s if s.starts_with("thu") => Some(3),
+            s if s.starts_with("fri") => Some(4),
+            s if s.starts_with("sat") => Some(5),
+            s if s.starts_with("sun") => Some(6),
+            _ => None,
+        })
+        .collect();
+
+    // Walk forward a day at a time from "now" in the channel's own zone. Eight days rather than
+    // seven so a match later *today* is still found when today is also the only wanted weekday.
+    let local_now = after.with_timezone(&tz);
+    for offset in 0..8 {
+        let day = (local_now + chrono::Duration::days(offset)).date_naive();
+        if !wanted.is_empty() && !wanted.contains(&day.weekday().num_days_from_monday()) { continue; }
+        let naive = day.and_hms_opt(h, m, 0)?;
+        // A local time can be ambiguous (clocks going back) or absent (going forward). `single()`
+        // refuses both rather than picking one, and the next day is a better answer than a guess.
+        let Some(local) = tz.from_local_datetime(&naive).single() else { continue };
+        let utc = local.with_timezone(&chrono::Utc);
+        // Strictly after, and far enough ahead that YouTube won't reject it as past by the time the
+        // upload finishes. A minute is plenty and costs nothing.
+        if utc > after + chrono::Duration::minutes(1) {
+            return Some(utc.with_nanosecond(0)?.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn a_local_publish_hour_becomes_the_right_instant_in_utc() {
+        // Sao Paulo is UTC-3 in August. 19:00 local on the 4th is 22:00Z on the 4th.
+        let got = next_publish_instant("19:00", &[], "America/Sao_Paulo", at("2026-08-04T10:00:00Z"));
+        assert_eq!(got.as_deref(), Some("2026-08-04T22:00:00Z"));
+    }
+
+    #[test]
+    fn a_time_already_past_today_rolls_to_tomorrow() {
+        // 19:00 in Sao Paulo is 22:00Z; asking at 23:00Z must not answer with an instant in the past,
+        // which YouTube rejects outright rather than publishing immediately.
+        let got = next_publish_instant("19:00", &[], "America/Sao_Paulo", at("2026-08-04T23:00:00Z"));
+        assert_eq!(got.as_deref(), Some("2026-08-05T22:00:00Z"));
+    }
+
+    #[test]
+    fn day_restrictions_are_honoured() {
+        // 2026-08-04 is a Tuesday. Asking for Saturday only must skip to the 8th.
+        let got = next_publish_instant("12:00", &["Saturday".into()], "UTC", at("2026-08-04T10:00:00Z"));
+        assert_eq!(got.as_deref(), Some("2026-08-08T12:00:00Z"));
+    }
+
+    #[test]
+    fn an_empty_day_list_means_any_day() {
+        let got = next_publish_instant("12:00", &[], "UTC", at("2026-08-04T10:00:00Z"));
+        assert_eq!(got.as_deref(), Some("2026-08-04T12:00:00Z"));
+    }
+
+    #[test]
+    fn nothing_usable_is_none_rather_than_a_guess() {
+        // No time, a nonsense time, and a zone the database has never heard of. Each must decline,
+        // so the uploader falls back to publishing now instead of inventing an hour.
+        assert!(next_publish_instant("", &[], "UTC", at("2026-08-04T10:00:00Z")).is_none());
+        assert!(next_publish_instant("nope", &[], "UTC", at("2026-08-04T10:00:00Z")).is_none());
+        assert!(next_publish_instant("25:00", &[], "UTC", at("2026-08-04T10:00:00Z")).is_none());
+        assert!(next_publish_instant("19:00", &[], "Mars/Olympus", at("2026-08-04T10:00:00Z")).is_none());
+    }
 
     #[test]
     fn every_shape_a_model_answers_with_becomes_one_comparable_time() {

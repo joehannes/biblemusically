@@ -65,6 +65,11 @@ uuid             = { version = "1", features = ["v4"] }
 regex            = "1"
 dotenvy          = "0.15"
 chrono           = { version = "0.4", features = ["serde"] }
+# IANA zone names, because a publish time is a *local* time. Channels store "America/Sao_Paulo",
+# and resolving that to an instant needs the tz database — offsets alone get DST wrong twice a year,
+# which for a scheduled upload means an hour late in exactly the season the audience changed habits.
+# Pure Rust, so it cross-compiles to Android like the rest of the store.
+chrono-tz        = "0.9"
 which            = "6"
 anyhow           = "1"
 thiserror        = "1"

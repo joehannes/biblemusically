@@ -26,7 +26,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
 | 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
 | 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
-| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota` (GPU banner) and `build_short` (Social → hook cut) done; eight to go |
+| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota`, `build_short`, `list_publish_times` + `channels_missing_publish_time` done; six to go |
 
 ### Wishlist Part 2 — pipeline coherence
 
@@ -71,8 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-2. **Publish-time scheduling** — surface `list_publish_times` + `channels_missing_publish_time` on
-   the Upload page, where the channel list already is.
 3. **`channels_connect_all_urls`** — a bulk "connect these channels by URL" on Channels.
 4. **Channel creation flow** — `start_channel_creation_watcher` + `inject_channel_handle`.
 5. **`delete_edition` / `delete_authored_macro`** — two missing deletes beside existing creates.
@@ -85,6 +83,12 @@ Pick the top unfinished one. Each is bounded; none needs a decision from the own
     endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 2)** — Publish-time scheduling. Found that `publish_time` was
+  stored by three commands and *read by nothing* — a channel's publishing hour was decoration. Now
+  real: `next_publish_instant` (new, + `chrono-tz`) resolves the channel's local hour against the
+  IANA zone, and `real_youtube_upload` hands it to YouTube as `status.publishAt`. Fleet view added
+  to the Upload page. 9 publish_time tests pass (5 new).
 
 - **2026-08-04 · session 1 (cont.)** — `build_short` surfaced on Social as "Cut from the hook"; it supersedes `derive_song_versions`' simpler `cut_vertical_short` and had no caller.
 - **2026-08-04 · session 1** — Audit of the whole app; WISHLIST.md written. Fixed: Video Gen
