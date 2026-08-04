@@ -5,6 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { toast } from "sonner";
 import {
   Share2, UserCheck, Sparkles, Scissors, Send, RefreshCw, Trash2, Plug, Loader2,
@@ -21,6 +22,18 @@ const TIER_LABEL = {
   review_gated: { text: "Needs app review", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
   macro: { text: "Browser macro", className: "bg-muted text-muted-foreground border-border" },
 };
+
+// The vertical formats build_short knows how to cut, with the one fact per platform that changes
+// what you would choose. These mirror `platform_spec` in commands/shorts.rs — the lengths are its,
+// not guesses, and the TikTok one is the counter-intuitive case worth saying out loud.
+const SHORT_PLATFORMS = [
+  { id: "shorts", label: "YouTube Shorts", note: "Under 60s — the Shorts feed cap." },
+  { id: "tiktok", label: "TikTok", note: "75s on purpose: under a minute, Creator Rewards pays nothing." },
+  { id: "reels", label: "Instagram Reels", note: "Up to 89s; 75s by default." },
+  { id: "facebook", label: "Facebook Reels", note: "Pays per view, but only past 10k followers." },
+  { id: "snapchat", label: "Snapchat Spotlight", note: "Revenue share with a $100 payout floor." },
+  { id: "pinterest", label: "Pinterest", note: "Worth cutting for traffic; it pays nothing per view." },
+];
 
 function Section({ icon: Icon, title, subtitle, children, action }) {
   return (
@@ -122,6 +135,7 @@ export default function Social() {
   const [question, setQuestion] = useState("");
   const [derivatives, setDerivatives] = useState([]);
   const [targets, setTargets] = useState(() => new Set(["mastodon"]));
+  const [shortPlatform, setShortPlatform] = useState("shorts");
   const [busy, setBusy] = useState("");
 
   const song = songs?.find((s) => s.id === activeSongId);
@@ -325,6 +339,34 @@ export default function Social() {
               }}>
                 <Send className="h-3.5 w-3.5 mr-1" /> Publish all drafts
               </Button>
+            </div>
+
+            {/* "Derive versions" cuts a short with its own simple helper: the platform's window,
+                taken from the top. `build_short` is the better one and had no caller — it finds the
+                *hook* (the chorus if the analysis found one, else the peak-mood section, else a third
+                of the way in) and burns a "full video" card into the closing seconds. One button
+                each rather than replacing the other, because the cheap cut is still the right answer
+                when a song has no analysis to reason about. */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+              <span className="text-xs text-muted-foreground">Hook cut:</span>
+              <Select value={shortPlatform} onValueChange={setShortPlatform}>
+                <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SHORT_PLATFORMS.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="secondary" disabled={busy === "hook"} onClick={() =>
+                run("hook", () => api.buildShort({ song_id: song.id, platform: shortPlatform }),
+                  (r) => `Cut ${r?.seconds ? `${Math.round(r.seconds)}s` : "a short"} from ${r?.hook_start != null ? `${Math.round(r.hook_start)}s in` : "the hook"}`)
+                  .then(refreshDerivatives)}>
+                {busy === "hook" ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Scissors className="h-3.5 w-3.5 mr-1" />}
+                Cut from the hook
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                Needs a rendered video. {SHORT_PLATFORMS.find((p) => p.id === shortPlatform)?.note}
+              </span>
             </div>
 
             <div className="space-y-1">

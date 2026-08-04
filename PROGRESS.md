@@ -26,7 +26,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
 | 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
 | 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
-| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota` now used by the GPU banner; nine to go |
+| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota` (GPU banner) and `build_short` (Social → hook cut) done; eight to go |
 
 ### Wishlist Part 2 — pipeline coherence
 
@@ -71,7 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-1. **`build_short`** — a "make a Short" action on Distribution, from a `video_ready` song.
 2. **Publish-time scheduling** — surface `list_publish_times` + `channels_missing_publish_time` on
    the Upload page, where the channel list already is.
 3. **`channels_connect_all_urls`** — a bulk "connect these channels by URL" on Channels.
@@ -87,6 +86,7 @@ Pick the top unfinished one. Each is bounded; none needs a decision from the own
 
 ## Session log
 
+- **2026-08-04 · session 1 (cont.)** — `build_short` surfaced on Social as "Cut from the hook"; it supersedes `derive_song_versions`' simpler `cut_vertical_short` and had no caller.
 - **2026-08-04 · session 1** — Audit of the whole app; WISHLIST.md written. Fixed: Video Gen
   dead-end (2.1), Transitions preset save/delete (1.2), style-sample delete + clear-all (1.3),
   learnings panel + new `forget_learnings` (1.4), GPU quota banner (2.3, and `kaggle_quota`'s first
