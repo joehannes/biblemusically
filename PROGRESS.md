@@ -24,7 +24,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.1 | Suno HTTP engine | ⛔ **deliberately deferred** — admin-gated later, per owner |
 | 1.2 | Transitions preset save/delete | ✅ 2026-08-04 |
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
-| 1.4 | Learnings inspection panel | ⬜ |
+| 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
 | 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
 | 1.6 | Ten smaller orphans (shorts, publish-time, bulk OAuth, channel creation, print checks, deletes, autosave status, vault_put) | ⬜ |
 

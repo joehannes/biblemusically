@@ -16,7 +16,7 @@
 //! styles, kept-image notes, channel leanings, etc. Callers merge into `data` via `record_*`.
 
 use crate::state::AppState;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::path::PathBuf;
 use tauri::State;
 
@@ -216,6 +216,59 @@ pub async fn learnings_prompt_block(state: &AppState, project_id: &str) -> Strin
     }
     if lines.is_empty() { return String::new(); }
     format!("LEARNED USER TASTE (bias choices toward these unless the current request overrides them):\n{}\n", lines.join("\n"))
+}
+
+/// Forget learnings — a whole store, one kind, or one key within a kind.
+///
+/// This exists because `update_*_learnings` cannot express deletion: `merge` is a deep merge, so a
+/// patch can only add or overwrite. An empty object merges to nothing and a `null` writes a literal
+/// null, which would leave the key present and the tally readable. Anything the app is going to feed
+/// back into a generation prompt (see `learnings_prompt_block`) needs a real way out, not an
+/// approximation of one — a personalisation store you cannot empty is one the user cannot refuse.
+///
+/// `scope` = "user" | "project". `kind` omitted clears the store; `key` omitted clears the kind.
+#[tauri::command]
+pub async fn forget_learnings(
+    state: State<'_, AppState>,
+    scope: String,
+    project_id: Option<String>,
+    kind: Option<String>,
+    key: Option<String>,
+) -> Res<Value> {
+    let path = if scope == "project" {
+        project_path(&state, project_id.as_deref().unwrap_or("")).await?
+    } else {
+        global_path()?
+    };
+
+    let Some(kind) = kind.filter(|k| !k.trim().is_empty()) else {
+        // No kind: the whole store goes, envelope and all.
+        write_data(&path, json!({}))?;
+        return Ok(json!({}));
+    };
+
+    let mut data = read_data(&path);
+    let obj = data.as_object_mut().ok_or("learnings root is not an object")?;
+
+    match key.filter(|k| !k.trim().is_empty()) {
+        // One key: drop its tally entry and every signal that named it.
+        Some(key) => {
+            if let Some(per_kind) = obj.get_mut("tally").and_then(|t| t.get_mut(&kind)).and_then(|v| v.as_object_mut()) {
+                per_kind.remove(&key);
+            }
+            if let Some(arr) = obj.get_mut("signals").and_then(|s| s.get_mut(&kind)).and_then(|v| v.as_array_mut()) {
+                arr.retain(|sig| sig["key"].as_str() != Some(key.as_str()));
+            }
+        }
+        // The whole kind.
+        None => {
+            if let Some(m) = obj.get_mut("tally").and_then(|v| v.as_object_mut()) { m.remove(&kind); }
+            if let Some(m) = obj.get_mut("signals").and_then(|v| v.as_object_mut()) { m.remove(&kind); }
+        }
+    }
+
+    write_data(&path, data.clone())?;
+    Ok(data)
 }
 
 /// Where the learnings live on disk — surfaced so the UI can show/open the folder.

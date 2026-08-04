@@ -152,6 +152,8 @@ export const api = {
   getProjectLearnings: (projectId) => invokeCommand("get_project_learnings", { projectId }),
   updateProjectLearnings: (projectId, patch) => invokeCommand("update_project_learnings", { projectId, patch }),
   recordLearningSignal: (scope, projectId, kind, key, detail) => invokeCommand("record_learning_signal", { scope, projectId, kind, key, detail }),
+  // Omit `kind` to clear the whole store; omit `key` to clear one kind. See forget_learnings.
+  forgetLearnings: (scope, projectId, kind, key) => invokeCommand("forget_learnings", { scope, projectId: projectId || null, kind: kind || null, key: key || null }),
   learningsLocations: (projectId) => invokeCommand("learnings_locations", { projectId }),
   openYoutubeCreateChannel: () => invokeCommand("open_youtube_create_channel"),
   importChannelByHandle: (handle) => invokeCommand("import_channel_by_handle", { handle }),

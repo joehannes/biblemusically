@@ -558,6 +558,7 @@ pub fn run() {
             commands::get_project_learnings,
             commands::update_project_learnings,
             commands::record_learning_signal,
+            commands::forget_learnings,
             commands::learnings_locations,
             // Data / storage transparency + legacy import
             commands::service_health,

@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { downloadAndInstallUpdate } from "../lib/updateInstall";
 import { SubscribePrompt } from "../components/Paywall";
+import LearningsPanel from "../components/LearningsPanel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The account: what you have, what it covers, where it is signed in, and what is new.
@@ -275,6 +276,12 @@ export default function Account() {
           </div>
         </Card>
       )}
+
+      {/* ── What it has worked out about you ─────────────────────────────── */}
+      {/* Beside the analytics card on purpose: both are "what this app knows about you", and the
+          one that shapes your output deserves at least as much visibility as the one that counts
+          your clicks. */}
+      <LearningsPanel />
 
       {/* ── Being studied ────────────────────────────────────────────────── */}
       <Card className="p-4 space-y-2">
