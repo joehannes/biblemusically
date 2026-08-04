@@ -686,6 +686,39 @@ pub(crate) fn kaggle_kernel_for(engine: &str) -> Option<(&'static str, &'static 
     }
 }
 
+// ── Engines that are switched off ───────────────────────────────────────────
+//
+// An engine listed here keeps all of its code — notebook, commands, job path, tests — and simply
+// stops being offered or started. Hiding rather than deleting because "not now" is not "never": the
+// pipeline for it still compiles and still has its tests, so turning it back on is removing a string
+// from this list rather than rebuilding anything.
+//
+// The important half is that a hidden engine must consume nothing. It is refused by the two entry
+// points that spend real resources — pushing a Kaggle run, and starting the log monitor that streams
+// for up to twenty minutes — and `idle_guard::touch` ignores it, so the idle sweep never adopts it as
+// something to watch and periodically try to stop.
+//
+// Nothing is switched off right now. ACE-Step was briefly listed here on a misreading: "under 10
+// seconds" is its *generation speed* per song, not its output length — it writes full tracks, and
+// this app already drives it at `acestep_duration` (240 s by default, 10–600 s allowed).
+pub const HIDDEN_ENGINES: &[&str] = &[];
+
+/// Is this engine switched off? Case- and whitespace-insensitive, because engine ids arrive from
+/// settings documents and UI strings as well as from code.
+pub fn engine_hidden(engine: &str) -> bool {
+    let e = engine.trim().to_ascii_lowercase();
+    HIDDEN_ENGINES.iter().any(|h| *h == e)
+}
+
+/// The refusal a hidden engine gives, shaped like every other command result so no caller special-cases it.
+fn hidden_engine_reply(engine: &str) -> Value {
+    serde_json::json!({
+        "ok": false, "status": "engine_hidden", "hidden": true,
+        "detail": format!("The {engine} engine is turned off in this build."),
+        "next_step": "Pick a different engine in Settings → Music engine.",
+    })
+}
+
 /// The Kaggle username the CLI will actually authenticate as.
 ///
 /// Read from `~/.kaggle/kaggle.json`, because that file — not the app's settings — is what every
@@ -1103,7 +1136,8 @@ pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<Strin
 
     let engines: Vec<String> = match engine {
         Some(e) => vec![e],
-        None => ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"].iter().map(|s| s.to_string()).collect(),
+        None => ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"].iter()
+            .filter(|e| !engine_hidden(e)).map(|s| s.to_string()).collect(),
     };
     let mut per_engine = Vec::new();
     for eng in engines {
@@ -1323,6 +1357,8 @@ pub async fn pick_directory(
 
 #[tauri::command]
 pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> Res<Value> {
+    // Refused before anything is pulled or pushed: a hidden engine must not occupy a GPU slot.
+    if engine_hidden(&engine) { return Ok(hidden_engine_reply(&engine)); }
     let (own, upstream, _) = match kaggle_slugs(&state.db, &engine).await {
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
@@ -2080,6 +2116,41 @@ mod kaggle_slug_tests {
                         bundled notebook, so a fresh account can never start it"));
             assert!(nb.contains("\"cells\""), "'{derived}' notebook is not a notebook");
         }
+    }
+
+    /// Hiding is not deleting. A hidden engine keeps its kernel mapping and its bundled notebook, so
+    /// switching it back on is removing a string from HIDDEN_ENGINES and nothing else.
+    #[test]
+    fn a_hidden_engine_keeps_everything_it_would_need_to_come_back() {
+        for engine in HIDDEN_ENGINES {
+            assert!(engine_hidden(engine));
+            let (name, _) = kaggle_kernel_for(engine)
+                .unwrap_or_else(|| panic!("'{engine}' is hidden but lost its kernel mapping"));
+            assert!(bundled_notebook(engine_of_slug(&format!("x/{name}"))).is_some(),
+                    "'{engine}' is hidden but lost its notebook");
+        }
+    }
+
+    /// Engine ids reach this from settings documents and UI strings, not only from code, so the
+    /// match has to survive casing and padding — and must not catch a name that merely starts the
+    /// same way.
+    #[test]
+    fn hiding_matches_on_the_whole_name_only() {
+        for hidden in HIDDEN_ENGINES {
+            assert!(engine_hidden(hidden));
+            assert!(engine_hidden(&format!("  {} ", hidden.to_uppercase())));
+            assert!(!engine_hidden(&format!("{hidden}-old")),
+                    "a longer name that starts the same way is a different engine");
+        }
+        assert!(!engine_hidden(""));
+        assert!(!engine_hidden("heartmula"));
+    }
+
+    /// Whatever is hidden must leave a music engine behind, or nothing can generate a song at all.
+    #[test]
+    fn hiding_never_removes_every_music_engine() {
+        assert!(["heartmula", "acestep", "riffusion"].iter().any(|e| !engine_hidden(e)),
+                "every music engine is hidden — nothing can generate a song");
     }
 
     #[test]

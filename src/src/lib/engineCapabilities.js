@@ -327,11 +327,17 @@ export const imageEngine = (id) => IMAGE_ENGINES[canonical(id)] || EMPTY;
 /** The engines a picker should offer, as `[id, engine]` pairs. */
 function offer(catalogue, settings, current) {
   const show = settings?.show_risky_engines === true;
-  return Object.entries(catalogue).filter(([id, engine]) =>
-    // The one already selected is always offered, even when it is hidden. A picker whose value is
-    // missing from its own list renders blank, and somebody on an engine they cannot see cannot
-    // choose to leave it.
-    !engine.risky || show || id === canonical(current));
+  return Object.entries(catalogue).filter(([id, engine]) => {
+    // A switched-off engine is not offered even when it is the current selection — unlike the risky
+    // ones below, there is no "turn it on" setting that would bring it back, so keeping it in the
+    // list would only offer a choice that cannot be acted on. Somebody already on it therefore sees
+    // the picker fall to its first entry, which is the honest outcome: that engine is gone for now.
+    if (engineHidden(id)) return false;
+    // The one already selected is always offered, even when it is hidden behind the risky switch. A
+    // picker whose value is missing from its own list renders blank, and somebody on an engine they
+    // cannot see cannot choose to leave it.
+    return !engine.risky || show || id === canonical(current);
+  });
 }
 
 export const visibleMusicEngines = (settings, current) => offer(MUSIC_ENGINES, settings, current);
@@ -396,3 +402,21 @@ export function engineContext(settings) {
     image_caps: i.caps,
   };
 }
+
+// ── Engines switched off in this build ──────────────────────────────────────
+//
+// Mirrors HIDDEN_ENGINES in commands/settings.rs. Nothing is deleted: the engine keeps its settings
+// card, its job path and its capability entry, and simply stops being offered or started. The
+// backend refuses to push a run or start a monitor for anything listed there, so this list only
+// controls what a person can *see* — it is not the safety mechanism, just the tidiness one.
+//
+// Empty right now. Kept because "not this one, for now" is a recurring need and the gate below is
+// where it belongs — one string, rather than deletions scattered across six files.
+export const HIDDEN_ENGINES = [];
+
+/** Is this engine switched off? */
+export const engineHidden = (id) =>
+  HIDDEN_ENGINES.includes(String(id || "").trim().toLowerCase());
+
+/** Drop switched-off engines from a list of ids. */
+export const visibleEngines = (ids) => (ids || []).filter((e) => !engineHidden(e));

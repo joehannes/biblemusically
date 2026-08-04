@@ -530,6 +530,13 @@ pub async fn kaggle_start_monitor(
     state: State<'_, AppState>,
     monitors: State<'_, KaggleMonitors>,
 ) -> Res<Value> {
+    // A hidden engine gets no monitor. This is the long-lived one — it holds a `kaggle kernels
+    // logs -f` child process and polls status for up to twenty minutes — so refusing here is most of
+    // what "consumes nothing" means in practice.
+    if crate::commands::settings::engine_hidden(&engine) {
+        return Ok(serde_json::json!({ "ok": false, "hidden": true,
+            "detail": format!("The {engine} engine is turned off in this build.") }));
+    }
     let (slug, _upstream, settings_key) = match kaggle_slugs(&state.db, &engine).await {
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),

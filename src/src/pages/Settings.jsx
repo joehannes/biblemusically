@@ -22,6 +22,7 @@ import { markStopped } from "../lib/serverLifecycle";
 import { useRequireGuideStep } from "../components/GuideStepDialog";
 import OAuthClientsPanel from "../components/OAuthClientsPanel";
 import { toast } from "sonner";
+import { engineHidden } from "../lib/engineCapabilities";
 import { AutoSaveChip } from "../lib/hooks";
 import { useStudio } from "../lib/store";
 
@@ -915,7 +916,8 @@ const SettingsComponent = () => {
         </div>
       </Card>
 
-      <Card className="p-6 mb-5">
+      {!engineHidden("acestep") && (
+        <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Music2 className="w-4 h-4 text-primary" /><h2 className="font-semibold">ACE-Step 1.5 (free, open source)</h2><StatusPill k="acestep" /></div>
         <div className="grid md:grid-cols-2 gap-4">
           <Field k="acestep_api_url" label="ACE-Step server URL" placeholder="https://xxxx.gradio.live or http://localhost:8001" testid="settings-acestep-url" value={s.acestep_api_url} onValueChange={updateS} />
@@ -935,6 +937,7 @@ const SettingsComponent = () => {
         <KaggleAutoStatus engine="acestep" />
         <div className="mt-3 text-xs text-muted-foreground">Run the ACE-Step notebook (<code>scripts/kaggle_acestep/</code>) on a free Kaggle/Colab GPU — it prints a public URL you paste above. Note: Kaggle/Colab share URLs rotate roughly every 72 hours, so re-paste when it expires. For a permanent setup, run <code>acestep-api</code> on a local GPU and use <code>http://localhost:8001</code>.</div>
       </Card>
+      )}
 
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4"><Music2 className="w-4 h-4 text-primary" /><h2 className="font-semibold">HeartMuLa (free, Apache-2.0)</h2><StatusPill k="heartmula" /></div>

@@ -232,8 +232,8 @@ export default function Lyrics() {
                 data-testid="annotator-engine-select"
                 title="Each engine reads section structure differently"
               >
-                <option value="heartmula">HeartMuLa</option>
                 <option value="acestep">ACE-Step</option>
+                <option value="heartmula">HeartMuLa</option>
                 <option value="suno">Suno</option>
               </select>
             </div>

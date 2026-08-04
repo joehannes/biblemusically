@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
+import { visibleEngines } from "../lib/engineCapabilities";
 import { stopAllStarted } from "../lib/serverLifecycle";
 import { autoStartKaggleServer, getKaggleState } from "../lib/kaggleServerPipeline";
 import { Card } from "../components/ui/card";
@@ -212,7 +213,8 @@ export default function Workflow() {
   };
 
   // Kaggle GPU engines the app can start on demand (Suno/Midjourney are browser flows, not servers).
-  const KAGGLE_ENGINES = { music: ["heartmula", "acestep"], images: ["comfyui", "flux"] };
+  // Switched-off engines are filtered out so the workflow never tries to bring one up.
+  const KAGGLE_ENGINES = { music: visibleEngines(["heartmula", "acestep"]), images: ["comfyui", "flux"] };
 
   // Auto-start the server a stage needs, so a full run is hands-off: start before, stop after (the
   // `finally` below). Idempotent — autoStartKaggleServer skips straight to a health check if the

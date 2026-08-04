@@ -39,6 +39,9 @@ fn seen() -> &'static Mutex<HashMap<String, Instant>> {
 /// takes twenty minutes does not age into the timeout while it is still running.
 pub fn touch(engine: &str) {
     if engine.trim().is_empty() { return; }
+    // A switched-off engine is never entered into the map, so the periodic sweep never has a reason
+    // to wake up for it, and never tries to stop a session it should not have started.
+    if crate::commands::settings::engine_hidden(engine) { return; }
     if let Ok(mut m) = seen().lock() {
         m.insert(engine.trim().to_ascii_lowercase(), Instant::now());
     }
@@ -125,8 +128,25 @@ mod tests {
     #[test]
     fn every_engine_the_guard_touches_can_actually_be_stopped() {
         for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"] {
+            // Hidden engines keep their kernel mapping — hiding is not deleting, and the mapping is
+            // what makes turning one back on a one-line change.
             assert!(crate::commands::kaggle_kernel_for(engine).is_some(),
                     "jobs.rs touches '{engine}', but stop_kaggle_server does not know that name");
+        }
+    }
+
+    /// A switched-off engine must never enter the map. If it did, the sweep would wake for it and
+    /// try to stop a Kaggle session this build never started — spending CLI calls and logging
+    /// failures nobody can act on.
+    #[test]
+    fn a_hidden_engine_is_never_adopted_by_the_sweep() {
+        for engine in crate::commands::settings::HIDDEN_ENGINES {
+            touch(engine);
+            let later = Instant::now() + Duration::from_secs(60 * 60);
+            assert!(!stale(0, Instant::now()).contains(&engine.to_string()),
+                    "'{engine}' is hidden but was adopted immediately");
+            assert!(!stale(25, later).contains(&engine.to_string()),
+                    "'{engine}' is hidden but aged into the sweep");
         }
     }
 
