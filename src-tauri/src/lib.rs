@@ -674,6 +674,7 @@ pub fn run() {
             commands::list_sections,
             commands::update_section,
             commands::generate_section_image,
+            commands::generate_section_clip,
             commands::batch_generate_images,
             commands::bulk_generate_all_images,
             commands::get_effects_presets,

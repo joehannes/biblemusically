@@ -79,6 +79,23 @@ pub async fn generate_section_image(
     Ok(serde_json::to_value(job).map_err(e)?)
 }
 
+/// Animate one section: queue a clip that replaces its still.
+///
+/// A job rather than a call to wait on, like every other stage — a clip is 10-35 GPU-minutes, and a
+/// promise held open that long has no progress, no log and nothing to cancel.
+#[tauri::command]
+pub async fn generate_section_clip(
+    state: State<'_, AppState>,
+    state_arc: State<'_, Arc<AppState>>,
+    secid: String,
+) -> Res<Value> {
+    state.db.collection::<Document>("sections")
+        .find_one(doc! { "id": &secid }).await.map_err(e)?
+        .ok_or_else(|| "section missing".to_string())?;
+    let job = enqueue("section_clip", &secid, &state_arc).await.map_err(e)?;
+    Ok(serde_json::to_value(job).map_err(e)?)
+}
+
 #[tauri::command]
 pub async fn batch_generate_images(
     state: State<'_, AppState>,

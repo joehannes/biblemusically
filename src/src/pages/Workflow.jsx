@@ -12,6 +12,7 @@ import { Switch } from "../components/ui/switch";
 import {
   Workflow as WorkflowIcon, BookText, Music2, BarChart3, Image as ImageIcon, Layers, Film,
   UploadCloud, Play, Loader2, CheckCircle2, XCircle, CircleDashed, RotateCw, AlertTriangle,
+  Clapperboard,
 } from "lucide-react";
 import { toast } from "sonner";
 import GuidedPanel from "../components/GuidedPanel";
@@ -30,7 +31,24 @@ import { workflowFlow } from "../lib/guidedFlows";
 // already done and when the previous stage produced nothing to work on, and the old code called both
 // of them done and carried on — so a pipeline whose images never rendered still finished with a
 // column of green ticks over an empty result.
-function buildStages({ activeProjectId, includeUpload }) {
+// The section worth spending a video clip on, by the same rule `shorts.rs::hook_start` uses: a
+// chorus is the hook by definition; failing that the brightest-mood section; failing that a third of
+// the way in, never the intro. Kept in step with that function deliberately — a "hero shot" and a
+// short should be cut from the same moment, or the two derivatives of one song disagree about what
+// the song is about.
+const BRIGHT_MOODS = ["radiant", "epic", "celestial", "warm"];
+function pickHookSection(sections) {
+  if (!sections?.length) return null;
+  const ordered = [...sections].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+  const named = (needle) => ordered.find((s) =>
+    `${s.name || ""} ${s.line || ""}`.toLowerCase().includes(needle));
+  return named("chorus") || named("hook") || named("refrain")
+      || ordered.find((s) => BRIGHT_MOODS.includes((s.mood || "").toLowerCase()))
+      || ordered[Math.floor(ordered.length / 3)]
+      || ordered[0];
+}
+
+function buildStages({ activeProjectId, includeUpload, includeVideoGen }) {
   return [
     {
       id: "lyrics",
@@ -84,6 +102,41 @@ function buildStages({ activeProjectId, includeUpload }) {
       run: async () => {
         const res = await api.bulkGenerateAll(activeProjectId);
         return `queued ${res?.queued ?? res?.count ?? "some"} image job(s)`;
+      },
+    },
+    {
+      // After the stills, because a clip *replaces* one on the section it lands on, and before
+      // assembly, which reads whatever each section ended up holding.
+      id: "videogen",
+      requires: (songs) => songs.some((s) => s.status === "analyzed" || s.status === "video_ready") ? null
+        : "no song has been analysed yet, so there is no hook section to animate.",
+      label: "Hero clips",
+      icon: Clapperboard,
+      hint: includeVideoGen
+        ? "Generates one moving clip per song, for its hook section — the chorus if the analysis found one. Included in \"Run full pipeline\". Each clip is 10–35 GPU-minutes out of a 30-hour week, so this is the expensive stage."
+        : "Generates one moving clip per song, for its hook section — the chorus if the analysis found one. Excluded from \"Run full pipeline\" by default because each clip costs 10–35 GPU-minutes out of a 30-hour week; flip the switch above to include it, or run this stage by hand.",
+      pending: null,
+      run: async (songs) => {
+        const settings = await api.getSettings(activeProjectId);
+        // Presets differ by an order of magnitude in cost, so guessing one is not a kindness. Caught
+        // here as well as in the job so the whole batch fails at once rather than one job at a time.
+        if (!settings?.video_preset) {
+          throw new Error("No video preset chosen yet — pick one on the Video Gen page first; they differ by 10× in GPU time.");
+        }
+        const targets = songs.filter((s) => s.status === "analyzed" || s.status === "video_ready");
+        let queued = 0;
+        let skipped = 0;
+        for (const song of targets) {
+          const sections = await api.listSections(song.id).catch(() => []);
+          const hook = pickHookSection(sections);
+          // No hook, no prompt, or already moving — a re-run must not spend another half-hour of GPU
+          // on the same second of the same song.
+          if (!hook || hook.is_video || !(hook.image_prompt || hook.line || "").trim()) { skipped += 1; continue; }
+          await api.genSectionClip(hook.id);
+          queued += 1;
+        }
+        if (!queued && skipped) return `nothing to animate — ${skipped} song(s) already had a clip or no usable hook`;
+        return `queued ${queued} clip${queued === 1 ? "" : "s"}${skipped ? `, skipped ${skipped}` : ""}`;
       },
     },
     {
@@ -152,6 +205,10 @@ export default function Workflow() {
   const [guidedStopAfter, setGuidedStopAfter] = useState("video");
   const navigate = useNavigate();
   const [includeUpload, setIncludeUpload] = useState(false);
+  // Off by default for the same reason upload is, but a different one in kind: upload is excluded
+  // because it is irreversible, this because it is expensive. A full run that quietly spent
+  // half the week's GPU on hero shots would be a nasty thing to discover afterwards.
+  const [includeVideoGen, setIncludeVideoGen] = useState(false);
   const [stopOnError, setStopOnError] = useState(true);
   const [runningStageId, setRunningStageId] = useState(null);
   const [runningAll, setRunningAll] = useState(false);
@@ -166,7 +223,8 @@ export default function Workflow() {
       .catch(() => {});
   }, [activeProjectId]);
 
-  const stages = useMemo(() => buildStages({ activeProjectId, includeUpload }), [activeProjectId, includeUpload]);
+  const stages = useMemo(() => buildStages({ activeProjectId, includeUpload, includeVideoGen }),
+    [activeProjectId, includeUpload, includeVideoGen]);
   const activeJobsCount = jobs.filter((j) => j.status === "queued" || j.status === "running").length;
   // Suno is the only engine driven by the embedded Browser tab (no public API) — everything
   // else here (ACE-Step/HeartMuLa, Midjourney's proxy, ComfyUI/FLUX) is a plain REST job, so a
@@ -199,7 +257,7 @@ export default function Workflow() {
     try {
       const r = await api.startWorkflowRun({
         project_id: activeProjectId, stop_after: guidedStopAfter,
-        include_upload: includeUpload, stop_on_error: stopOnError,
+        include_upload: includeUpload, include_videogen: includeVideoGen, stop_on_error: stopOnError,
       });
       pushLog(`Background run started: ${(r.steps || []).join(" → ")}`);
       toast.success("Running in the background — you can switch projects freely.");
@@ -295,6 +353,10 @@ export default function Workflow() {
         }
         if (stage.id === "upload" && !includeUpload) {
           pushLog(`${stage.label}: skipped (upload not included in this run).`);
+          continue;
+        }
+        if (stage.id === "videogen" && !includeVideoGen) {
+          pushLog(`${stage.label}: skipped (hero clips not included in this run).`);
           continue;
         }
         // Asked before `pending`, because the two produce the same count and mean opposite things.
@@ -455,6 +517,11 @@ export default function Workflow() {
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <Switch checked={includeUpload} onCheckedChange={setIncludeUpload} />
           Include upload/publish
+        </label>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground"
+               title="One animated clip per song, on its hook section. 10–35 GPU-minutes each out of a 30-hour week.">
+          <Switch checked={includeVideoGen} onCheckedChange={setIncludeVideoGen} />
+          Include hero clips
         </label>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <Switch checked={stopOnError} onCheckedChange={setStopOnError} />

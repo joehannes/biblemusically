@@ -2685,7 +2685,7 @@ async fn get_job_settings(db: &crate::store::Db, kind: &str, tgt: &str) -> Value
                 }
             }
         }
-        "image" => {
+        "image" | "section_clip" => {
             if let Ok(Some(sec)) = db.collection::<Document>("sections").find_one(doc! { "id": tgt }).await {
                 if let Some(song_id) = sec.get_str("song_id").ok() {
                     if let Ok(Some(song)) = db.collection::<Document>("songs").find_one(doc! { "id": song_id }).await {
@@ -3042,6 +3042,49 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 db.collection::<Document>("characters").update_one(doc! { "id": tgt }, update).await?;
                 set_stage(db, job_id, "done", 100, &format!("Done — {} character take(s) ready.", v.len()), true).await;
                 serde_json::json!({ "variants": v.len(), "total_variants": all_variants.len(), "real": true })
+            }
+
+            // ── SECTION CLIP (the "hero shot") ─────────────────────────
+            //
+            // A moving version of one section, replacing its still. Deliberately a job like every
+            // other stage rather than a call the interface waits on: a clip is 10–35 GPU-minutes,
+            // and holding a promise open that long gives no progress, no log and nothing to cancel.
+            // The composer needs no teaching — `is_animated` already treats an .mp4/.webm on a
+            // section's `image_url` as a moving segment.
+            "section_clip" => {
+                let sec = fetch_doc(db, "sections", "id", tgt).await;
+                let prompt = sec["image_prompt"].as_str()
+                    .filter(|s| !s.trim().is_empty())
+                    .or(sec["line"].as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if prompt.is_empty() {
+                    return Err(anyhow::anyhow!("This section has no prompt or line to animate."));
+                }
+                let preset = settings_doc["video_preset"].as_str().unwrap_or("").trim().to_string();
+                if preset.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "No video preset chosen yet — pick one on the Video Gen page. They differ by \
+                         roughly 10x in GPU time, so there is no safe default to guess."));
+                }
+
+                set_stage(db, job_id, "running", 10, "Rendering the clip — minutes, not seconds.", false).await;
+                db_log(db, job_id, &format!("clip: preset {preset}")).await;
+                crate::idle_guard::touch("video");
+
+                let out = crate::commands::video::generate_clip(&settings_doc, &preset, &prompt, None, None, None)
+                    .await.map_err(|err| anyhow::anyhow!(err))?;
+                let url = out["urls"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("The video server returned no clip."))?
+                    .to_string();
+
+                db.collection::<Document>("sections").update_one(
+                    doc! { "id": tgt },
+                    doc! { "$set": { "image_url": &url, "is_video": true } },
+                ).await?;
+                set_stage(db, job_id, "done", 100, "Done — the hook section moves now.", true).await;
+                serde_json::json!({ "url": url, "preset": preset, "real": true })
             }
 
             // ── IMAGE ──────────────────────────────────────────────────

@@ -34,7 +34,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 |---|---|---|
 | 2.1 | Video Gen: clips file onto sections | ✅ 2026-08-04 (11c1e62) |
 | 2.1b | Download clips instead of referencing tunnel URLs | ⬜ |
-| 2.1c | A `videogen` stage in the Workflow orchestrator | ⬜ |
+| 2.1c | A `videogen` stage in the Workflow orchestrator | ✅ 2026-08-04 — both runners, new `section_clip` job kind |
 | 2.2 | Declared stage dependencies (`requires`) | ✅ 2026-08-04 |
 | 2.3 | GPU quota visible app-wide | ✅ 2026-08-04 — `GpuQuotaBanner`, modelled on `AiBudgetBanner` |
 
@@ -71,11 +71,16 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-9. **A `videogen` stage in the Workflow orchestrator** (WISHLIST 2.1c).
 10. **Mobile: `kernels push` over REST** — the largest remaining mobile item; TODOS.md has the
     endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 9)** — Hero clips are a pipeline stage. New `section_clip` job kind
+  (clip generation was only ever a 40-minute blocking command); `generate_clip` extracted from the
+  Tauri command so the job runner can call it. Added to **both** sequencers — the frontend list and
+  the backend `ALL_STEPS` — with a shared hook rule matching `shorts.rs`. Off by default: expensive,
+  not irreversible. 10 workflow_run tests pass (2 new).
 
 - **2026-08-04 · session 1 (iter 8)** — Workflow stages now declare `requires`, asked before
   `pending`. The two produce the same count and mean opposite things: a run whose images never

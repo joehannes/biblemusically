@@ -452,6 +452,8 @@ export const api = {
   listSections: (sid) => invokeCommand("list_sections", { sid }),
   updateSection: (id, b) => invokeCommand("update_section", { secid: id, body: b }),
   genImage: (id) => invokeCommand("generate_section_image", { secid: id }),
+  // Queues a moving clip that replaces this section's still. Minutes, so it is a job, not a wait.
+  genSectionClip: (id) => invokeCommand("generate_section_clip", { secid: id }),
   batchImages: (sid) => invokeCommand("batch_generate_images", { sid }),
   bulkGenerateAll: (projectId) => invokeCommand("bulk_generate_all_images", { projectId }),
 

@@ -206,6 +206,23 @@ pub async fn generate_video(
     input_image: Option<String>,
 ) -> Res<Value> {
     let settings = settings_of(&state).await;
+    generate_clip(&settings, &preset, &prompt, negative.as_deref(), seed, input_image.as_deref()).await
+}
+
+/// The generator itself, callable without a `State` — so the job runner can render a clip for a
+/// section on the background queue rather than the interface holding a promise open for forty
+/// minutes with no job row, no progress and nothing to cancel.
+pub async fn generate_clip(
+    settings: &Value,
+    preset: &str,
+    prompt: &str,
+    negative: Option<&str>,
+    seed: Option<u64>,
+    input_image: Option<&str>,
+) -> Res<Value> {
+    let preset = preset.to_string();
+    let negative = negative.map(|s| s.to_string());
+    let input_image = input_image.map(|s| s.to_string());
     let base = settings["video_api_url"].as_str().unwrap_or("").trim().trim_end_matches('/').to_string();
     if base.is_empty() {
         return Err("The video server has no URL yet — press Start & connect in Settings → Video."

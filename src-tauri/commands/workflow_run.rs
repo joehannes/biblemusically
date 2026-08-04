@@ -43,20 +43,53 @@ fn bson_to_value(doc: Document) -> Value {
 // ────────────────────────────────────────────────────────────────
 
 /// The pipeline, in order. Each id is either a job kind to enqueue or a named backend action.
-pub const ALL_STEPS: &[&str] = &["lyrics", "music", "analysis", "images", "overlays", "video", "upload"];
+pub const ALL_STEPS: &[&str] = &["lyrics", "music", "analysis", "images", "videogen", "overlays", "video", "upload"];
 
 /// The steps a run should perform.
 ///
 /// `stop_after` is inclusive. Upload is excluded unless asked for, because publishing is the one step
 /// that is public and irreversible — a "run everything" that quietly uploaded would be a trap.
 pub fn step_order(stop_after: &str, include_upload: bool) -> Vec<String> {
+    step_order_with(stop_after, include_upload, false)
+}
+
+/// As `step_order`, plus the opt-in hero-clip step.
+///
+/// Excluded by default for a different reason than upload: upload is irreversible, this is merely
+/// expensive — one clip is 10-35 GPU-minutes out of a thirty-hour week, so a "run everything" that
+/// quietly animated every song would empty the quota before anyone noticed.
+pub fn step_order_with(stop_after: &str, include_upload: bool, include_videogen: bool) -> Vec<String> {
     let mut out = Vec::new();
     for step in ALL_STEPS {
         if *step == "upload" && !include_upload { continue; }
+        if *step == "videogen" && !include_videogen { continue; }
         out.push(step.to_string());
         if *step == stop_after { break; }
     }
     out
+}
+
+/// The section worth spending a clip on: the hook.
+///
+/// Same rule `shorts.rs::hook_start` cuts a short by — a chorus is the hook by definition, failing
+/// that the brightest-mood section, failing that a third of the way in, never the intro nobody stays
+/// for. Deliberately in step with that function: the hero shot and the short should be the same
+/// moment of the song, or a project's two derivatives disagree about what the song is about.
+pub fn hook_section(sections: &[Value]) -> Option<&Value> {
+    if sections.is_empty() { return None; }
+    let mut ordered: Vec<&Value> = sections.iter().collect();
+    ordered.sort_by_key(|s| s["index"].as_i64().unwrap_or(0));
+
+    let named = |needle: &str| ordered.iter().copied().find(|s| {
+        format!("{} {}",
+            s["name"].as_str().unwrap_or(""),
+            s["line"].as_str().unwrap_or("")).to_ascii_lowercase().contains(needle)
+    });
+    named("chorus").or_else(|| named("hook")).or_else(|| named("refrain"))
+        .or_else(|| ordered.iter().copied().find(|s| matches!(
+            s["mood"].as_str().unwrap_or(""), "radiant" | "epic" | "celestial" | "warm")))
+        .or_else(|| ordered.get(ordered.len() / 3).copied())
+        .or_else(|| ordered.first().copied())
 }
 
 /// Which songs a step still has work for.
@@ -108,6 +141,9 @@ pub struct StartRequest {
     pub stop_after: Option<String>,
     #[serde(default)]
     pub include_upload: Option<bool>,
+    /// Animate each song's hook section. Off by default — see `step_order_with`.
+    #[serde(default)]
+    pub include_videogen: Option<bool>,
     /// Halt the run when a step's jobs all fail. Default: keep going.
     #[serde(default)]
     pub stop_on_error: Option<bool>,
@@ -118,7 +154,8 @@ pub struct StartRequest {
 pub async fn start_workflow_run(state: State<'_, AppState>, payload: StartRequest) -> Res<Value> {
     let stop_after = payload.stop_after.unwrap_or_else(|| "video".into());
     let include_upload = payload.include_upload.unwrap_or(false);
-    let steps = step_order(&stop_after, include_upload);
+    let include_videogen = payload.include_videogen.unwrap_or(false);
+    let steps = step_order_with(&stop_after, include_upload, include_videogen);
     if steps.is_empty() {
         return Err(format!("'{stop_after}' is not a step in the pipeline"));
     }
@@ -278,6 +315,29 @@ async fn dispatch_step(state: &Arc<AppState>, project_id: &str, step: &str) -> R
                 }
             }
         }
+        "videogen" => {
+            // One clip per song, on its hook section — not per section, which would be a week of GPU
+            // for one project. `hook_section` is the same rule shorts.rs cuts by, so the hero shot
+            // and the short are the same moment of the song rather than two different opinions.
+            for song in &songs {
+                let status = song["status"].as_str().unwrap_or("");
+                if status != "analyzed" && status != "video_ready" { continue; }
+                let Some(song_id) = song["id"].as_str() else { continue };
+                let mut sections: Vec<Value> = Vec::new();
+                if let Ok(mut cursor) = state.db.collection::<Document>("sections")
+                    .find(doc! { "song_id": song_id }).await {
+                    while let Some(Ok(d)) = cursor.next().await { sections.push(bson_to_value(d)); }
+                }
+                let Some(hook) = hook_section(&sections) else { continue };
+                // Already moving: a re-run must not spend another half-hour on the same second.
+                if hook["is_video"].as_bool().unwrap_or(false) { continue; }
+                if let Some(sid) = hook["id"].as_str() {
+                    if let Ok(job) = crate::jobs::enqueue("section_clip", sid, state).await {
+                        ids.push(job.id);
+                    }
+                }
+            }
+        }
         "upload" => {
             // Only rows that already exist and are waiting. Creating rows and enriching their metadata
             // stays in the Upload view: those are decisions, not work.
@@ -349,6 +409,43 @@ mod tests {
 
         let with = step_order("upload", true);
         assert_eq!(with.last().unwrap(), "upload");
+    }
+
+    #[test]
+    fn hero_clips_are_never_included_unless_asked_for() {
+        // Not irreversible like upload — merely expensive. One clip is 10-35 GPU-minutes out of a
+        // thirty-hour week, so a default "run everything" that animated every song would empty the
+        // quota before anybody noticed it had started.
+        assert!(!step_order("video", false).contains(&"videogen".to_string()));
+        let with = step_order_with("video", false, true);
+        assert_eq!(with, vec!["lyrics", "music", "analysis", "images", "videogen", "overlays", "video"]);
+        // Ordered after the stills it replaces and before the assembly that reads the result.
+        let i = |s: &str| with.iter().position(|x| x == s).unwrap();
+        assert!(i("images") < i("videogen") && i("videogen") < i("video"));
+    }
+
+    #[test]
+    fn the_hook_is_the_chorus_then_the_brightest_then_never_the_intro() {
+        let secs = vec![
+            json!({ "id": "a", "index": 0, "name": "Intro",  "mood": "calm" }),
+            json!({ "id": "b", "index": 1, "name": "Verse",  "mood": "calm" }),
+            json!({ "id": "c", "index": 2, "name": "Chorus", "mood": "calm" }),
+        ];
+        assert_eq!(hook_section(&secs).unwrap()["id"], "c");
+
+        // No chorus: the brightest mood carries it.
+        let bright = vec![
+            json!({ "id": "a", "index": 0, "name": "Intro", "mood": "calm" }),
+            json!({ "id": "b", "index": 1, "name": "Verse", "mood": "radiant" }),
+        ];
+        assert_eq!(hook_section(&bright).unwrap()["id"], "b");
+
+        // Neither: a third of the way in, which is the one rule whose whole point is to not be zero.
+        let plain: Vec<Value> = (0..9).map(|i|
+            json!({ "id": format!("s{i}"), "index": i, "name": "Verse", "mood": "calm" })).collect();
+        assert_eq!(hook_section(&plain).unwrap()["id"], "s3");
+
+        assert!(hook_section(&[]).is_none());
     }
 
     #[test]
