@@ -26,7 +26,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
 | 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
 | 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
-| 1.6 | Ten smaller orphans (shorts, publish-time, bulk OAuth, channel creation, print checks, deletes, autosave status, vault_put) | ⬜ |
+| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota` now used by the GPU banner; nine to go |
 
 ### Wishlist Part 2 — pipeline coherence
 
@@ -36,7 +36,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 2.1b | Download clips instead of referencing tunnel URLs | ⬜ |
 | 2.1c | A `videogen` stage in the Workflow orchestrator | ⬜ |
 | 2.2 | Declared stage dependencies (`requires`) | ⬜ |
-| 2.3 | GPU quota visible app-wide | ⬜ |
+| 2.3 | GPU quota visible app-wide | ✅ 2026-08-04 — `GpuQuotaBanner`, modelled on `AiBudgetBanner` |
 
 ### TODOS.md — what is actually still open
 

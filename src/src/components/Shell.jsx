@@ -11,6 +11,7 @@ import AccountFab from "./AccountFab";
 import HealthBanner from "./HealthBanner";
 import UpdateBanner from "./UpdateBanner";
 import AiBudgetBanner from "./AiBudgetBanner";
+import GpuQuotaBanner from "./GpuQuotaBanner";
 import { api } from "../lib/api";
 import { getVersion } from "@tauri-apps/api/app";
 // Fallback only, for the very first paint before getVersion() resolves — this file lives
@@ -1493,6 +1494,11 @@ export default function Shell({ children }) {
         {/* Free AI running low, said while it can still change a decision rather than at the request
             that fails. Silent until it is about two songs' worth, and on billed keys entirely. */}
         <AiBudgetBanner />
+
+        {/* The same, for the other rationed resource. Music, images and video each open their own
+            Kaggle session, but the weekly GPU figure was only ever shown on the Video Gen page —
+            so every other page could spend it without saying so. Silent above ~45 minutes left. */}
+        <GpuQuotaBanner />
 
         <PageActionsContext.Provider value={setPageActions}>
         <ActionRegistryContext.Provider value={actionRegistry}>
