@@ -26,7 +26,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
 | 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
 | 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
-| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota`, `build_short`, publish-time pair, `channels_connect_all_urls` done; channel-creation pair **removed as superseded**, `delete_edition` + `delete_authored_macro` + `autosave_status` done; one to go (print safety) |
+| 1.6 | Ten smaller orphans | ✅ 2026-08-04 — all resolved: eight wired, the channel-creation pair **removed as superseded** |
 
 ### Wishlist Part 2 — pipeline coherence
 
@@ -71,7 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-7. **Print safety** — `imagery_text_allowed` / `imagery_print_check` on Print-on-Demand.
 8. **Workflow stage `requires`** (WISHLIST 2.2) — declared dependencies so an empty stage stops the
    run rather than reporting a green tick over nothing.
 9. **A `videogen` stage in the Workflow orchestrator** (WISHLIST 2.1c).
@@ -79,6 +78,11 @@ Pick the top unfinished one. Each is bounded; none needs a decision from the own
     endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 7)** — Print safety. `imagery_print_check` now runs against the
+  blueprint's real print area when a product is opened, replacing a hand-waved "at least half that"
+  with the destination's own DPI floor and its advice; `imagery_text_allowed` explains why product
+  art carries no words. **Wishlist 1.6 is now complete.**
 
 - **2026-08-04 · session 1 (iter 6)** — `autosave_status` now drives the Save button's dot, which is
   what its own doc comment always said it was for. Polled every 20s so the dot can *clear* when the

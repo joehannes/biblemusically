@@ -47,6 +47,11 @@ export default function PrintOnDemand() {
   const [search, setSearch] = useState("shirt");
   const [blueprints, setBlueprints] = useState([]);
   const [detail, setDetail] = useState(null);
+  // The imagery layer's verdicts on the blueprint currently open: will it print, and may words go
+  // inside the picture at all. Both are refusals rather than preferences, so they are shown next to
+  // "Use this product" rather than buried.
+  const [printCheck, setPrintCheck] = useState(null);
+  const [textRule, setTextRule] = useState(null);
   const [picked, setPicked] = useState([]);
   const [price, setPrice] = useState(2499);
   const [made, setMade] = useState([]);
@@ -98,11 +103,29 @@ export default function PrintOnDemand() {
     finally { setBusy(""); }
   };
 
+  // What the app will actually generate for product art. The image engines top out around here on a
+  // free GPU, and the whole point of checking is to compare that against the blueprint's real print
+  // area — not against the 4000×4000 the destination nominally asks for.
+  const GENERATED_ART_PX = 2048;
+
   const openBlueprint = async (b) => {
     setBusy(`bp-${b.id}`);
     try {
       const d = await api.printifyBlueprintDetail(b.id);
       setDetail({ ...d, title: b.title });
+      setPrintCheck(null);
+      setTextRule(null);
+
+      // Two guardrails the imagery layer already knows how to apply, asked here — before the product
+      // is picked — because afterwards the GPU time and the listing are already spent. The page used
+      // to state a rule of thumb ("at least half that") instead of the real DPI arithmetic.
+      const front = (d.variants || [])[0]?.placeholders?.find((p) => p.position === "front")
+                 || (d.variants || [])[0]?.placeholders?.[0];
+      if (front?.width && front?.height) {
+        api.imageryPrintCheck("product", GENERATED_ART_PX, GENERATED_ART_PX, front.width, front.height)
+          .then(setPrintCheck).catch(() => setPrintCheck(null));
+      }
+      api.imageryTextAllowed("product", "flux_dev").then(setTextRule).catch(() => setTextRule(null));
     } catch (err) { toast.error(`${err}`); }
     finally { setBusy(""); }
   };
@@ -309,9 +332,29 @@ export default function PrintOnDemand() {
               {(detail.variants || []).slice(0, 1).map((v) => (
                 <div key={v.id} className="text-xs text-muted-foreground">
                   Print areas: {(v.placeholders || []).map((p) => `${p.position} ${p.width}×${p.height}`).join(", ")}
-                  {" — "}art needs to be at least half that to print sharply.
                 </div>
               ))}
+
+              {/* The real arithmetic, not the rule of thumb this used to print. `imagery_print_check`
+                  refuses below the destination's own minimum DPI and says what to do instead. */}
+              {printCheck && (
+                printCheck.refused || printCheck.ok === false ? (
+                  <div className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-amber-200 flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px text-amber-400" />
+                    <span>{printCheck.reason || "This would not print sharply at the size the art is generated."}</span>
+                  </div>
+                ) : printCheck.checked === false ? null : (
+                  <div className="text-xs text-emerald-500">
+                    Prints at {printCheck.dpi} DPI from {GENERATED_ART_PX}px art — above the 150 DPI floor.
+                  </div>
+                )
+              )}
+
+              {/* Product art carries no words by design: DTG loses thin strokes, and the typography
+                  layer sets them in a real font afterwards, which never misspells anything. */}
+              {textRule && textRule.allowed === false && (
+                <div className="text-[11px] text-muted-foreground">{textRule.reason}</div>
+              )}
             </Card>
           )}
 
