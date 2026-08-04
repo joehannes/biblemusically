@@ -42,3 +42,23 @@ export async function generateSample(kind, key, label, spec) {
   await refresh();
   return entry;
 }
+
+/**
+ * Delete a sample (file + manifest entry) and refresh the shared cache.
+ *
+ * Samples are files in the global app folder generated on demand, so without this they only ever
+ * accumulate — and a sample generated on the wrong engine, or before a style was retuned, is worse
+ * than none because it is what the picker shows you.
+ */
+export async function deleteSample(kind, key) {
+  await api.deleteStyleSample(kind, key);
+  await refresh();
+}
+
+/** Every sample currently on disk, as [{ kind, key, label, path }]. For bulk management. */
+export function allSamples(map) {
+  return Object.entries(map || {}).map(([id, entry]) => {
+    const idx = id.indexOf(":");
+    return { kind: id.slice(0, idx), key: id.slice(idx + 1), ...entry };
+  });
+}

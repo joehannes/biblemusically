@@ -6,9 +6,11 @@ import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { Switch } from "../components/ui/switch";
 import { toast } from "sonner";
+import { allSamples, deleteSample } from "../lib/styleSamples";
 import {
   Database, FolderOpen, GitCommit, CloudUpload, CloudDownload, KeyRound, Lock, Unlock,
   RefreshCw, Trash2, ShieldCheck, HardDrive, PackageOpen, AlertTriangle, Check, ExternalLink,
+  Palette,
 } from "lucide-react";
 
 // Bytes → something a human reads without counting digits.
@@ -70,6 +72,10 @@ export default function DataSync() {
   const [iaAccess, setIaAccess] = useState("");
   const [iaSecret, setIaSecret] = useState("");
   const [syncLog, setSyncLog] = useState([]);
+  // Style/genre samples are generated on demand into the global app folder and were, until now,
+  // write-only: nothing in the app could remove one. They are the only category of app data that
+  // grows without a ceiling and without an owner, which is what earns them a panel here.
+  const [samples, setSamples] = useState([]);
 
   const projectId = activeProjectId || null;
 
@@ -77,6 +83,7 @@ export default function DataSync() {
     try { setInfo(await api.storeInfo()); } catch (e) { toast.error(`Storage info: ${e}`); }
     try { setVault(await api.vaultStatus()); } catch { /* vault is optional */ }
     try { setVaultKeys(await api.vaultList()); } catch { /* ditto */ }
+    try { setSamples(allSamples(await api.listStyleSamples())); } catch { setSamples([]); }
   }, []);
 
   const refreshProject = useCallback(async () => {
@@ -186,6 +193,39 @@ export default function DataSync() {
           )}
         </div>
       </Section>
+
+      {/* ── Style samples ─────────────────────────────────────────────── */}
+      {samples.length > 0 && (
+        <Section
+          icon={Palette}
+          title="Style samples"
+          subtitle="The “what does this style look/sound like?” previews, generated on demand with your own engine and kept in the app folder. Removing one makes the picker offer to generate a fresh one on whatever engine is current now."
+        >
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant="secondary">{samples.filter((s) => s.kind === "image").length} image</Badge>
+            <Badge variant="secondary">{samples.filter((s) => s.kind === "music").length} music</Badge>
+            <span className="text-muted-foreground">{samples.length} sample(s) on disk</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={busy === "samples"}
+              onClick={() => {
+                if (!window.confirm(`Delete all ${samples.length} style sample(s)?\n\nThey are previews only — nothing that has been generated into a song or a video is touched. Each one is re-creatable on demand.`)) return;
+                run("samples", async () => {
+                  // One call per sample rather than a bulk endpoint: the delete command already
+                  // exists and is per-sample, and this is the rare path, not the hot one.
+                  for (const s of samples) await deleteSample(s.kind, s.key);
+                  return { count: samples.length };
+                }, (r) => `Removed ${r.count} sample(s)`).then(refreshData);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear all samples
+            </Button>
+          </div>
+        </Section>
+      )}
 
       {/* ── Legacy database ───────────────────────────────────────────── */}
       {legacy.present && (

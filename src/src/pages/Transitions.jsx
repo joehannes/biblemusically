@@ -5,8 +5,9 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
+import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Clapperboard, Wand2, Save, Sparkles, Info } from "lucide-react";
+import { Clapperboard, Wand2, Save, Sparkles, Info, PackagePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const AUTOMATION = [
@@ -27,14 +28,22 @@ export default function Transitions() {
   const [packs, setPacks] = useState([]);
   const [packId, setPackId] = useState("");
   const [busy, setBusy] = useState(false);
+  // A pack you tuned by hand was previously unkeepable: the backend has had save/delete since the
+  // packs were introduced, and only the buttons were missing. Named here rather than prompt()ed
+  // because the name is the only field a custom pack has that the sections cannot supply.
+  const [newPackName, setNewPackName] = useState("");
 
   useEffect(() => { refreshSongs && refreshSongs(); }, [refreshSongs]);
-  useEffect(() => {
-    (async () => {
-      try { const r = await api.listTransitionPresets(); const ps = r?.presets || []; setPacks(ps); if (ps[0] && !packId) setPackId(ps[0].id); }
-      catch (e) { console.error(e); }
-    })();
-  }, []); // eslint-disable-line
+
+  const loadPacks = useCallback(async (preferId) => {
+    try {
+      const r = await api.listTransitionPresets();
+      const ps = r?.presets || [];
+      setPacks(ps);
+      setPackId((cur) => preferId || (ps.some((p) => p.id === cur) ? cur : ps[0]?.id || ""));
+    } catch (e) { console.error(e); }
+  }, []);
+  useEffect(() => { loadPacks(); }, [loadPacks]);
 
   const loadSections = useCallback(async (sid) => {
     if (!sid) return setSections([]);
@@ -77,6 +86,41 @@ export default function Transitions() {
     } catch (e) { console.error(e); toast.error("Save failed."); }
   };
 
+  // What a custom pack is made of: the transitions this song actually ended up using, with the
+  // commonest as the default. That is the shape a pack has, and it is exactly what somebody who
+  // just hand-tuned twenty scenes wants to keep — rather than asking them to re-pick a vocabulary
+  // they have already expressed by choosing.
+  const packFromSections = () => {
+    const used = sections.map((s) => s.transition).filter(Boolean);
+    if (!used.length) return null;
+    const counts = used.reduce((acc, t) => ({ ...acc, [t]: (acc[t] || 0) + 1 }), {});
+    const transitions = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    return { transitions, default: transitions[0] };
+  };
+
+  const saveAsPack = async () => {
+    const name = newPackName.trim();
+    if (!name) return toast.error("Give the pack a name first.");
+    const built = packFromSections();
+    if (!built) return toast.error("Set some per-scene transitions first — a pack is made from what you used.");
+    try {
+      const r = await api.saveTransitionPreset({ name, ...built });
+      setNewPackName("");
+      await loadPacks(r?.id);
+      toast.success(`Saved “${name}” — ${built.transitions.length} transition(s), default ${built.default}.`);
+    } catch (e) { console.error(e); toast.error(`Could not save the pack: ${e?.message || e}`); }
+  };
+
+  const deletePack = async () => {
+    if (!pack || pack.builtin) return;
+    if (!window.confirm(`Delete the pack “${pack.name}”? This cannot be undone.`)) return;
+    try {
+      await api.deleteTransitionPreset(pack.id);
+      await loadPacks();
+      toast.success(`Deleted “${pack.name}”.`);
+    } catch (e) { console.error(e); toast.error(`Could not delete the pack: ${e?.message || e}`); }
+  };
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-2 mb-1">
@@ -111,10 +155,19 @@ export default function Transitions() {
           </div>
           <div className="space-y-1">
             <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Preset pack</Label>
-            <Select value={packId} onValueChange={setPackId}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Pick a pack…" /></SelectTrigger>
-              <SelectContent>{packs.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}{p.builtin ? " (built-in)" : ""}</SelectItem>)}</SelectContent>
-            </Select>
+            <div className="flex gap-1.5">
+              <Select value={packId} onValueChange={setPackId}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Pick a pack…" /></SelectTrigger>
+                <SelectContent>{packs.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}{p.builtin ? " (built-in)" : ""}</SelectItem>)}</SelectContent>
+              </Select>
+              {/* Built-ins are refused by the backend too — disabled here so the refusal is visible
+                  before it is a toast. */}
+              <Button variant="outline" size="icon" className="shrink-0" onClick={deletePack}
+                      disabled={!pack || pack.builtin}
+                      title={pack?.builtin ? "Built-in packs cannot be deleted" : "Delete this pack"}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2 mt-4">
@@ -123,6 +176,17 @@ export default function Transitions() {
             {busy ? "Working…" : automation === "full" ? "AI suggest transitions" : automation === "assist" ? "Auto-set (rules)" : "Apply default to all"}
           </Button>
           <Button variant="secondary" onClick={save} disabled={!sections.length}><Save className="w-4 h-4 mr-2" />Save edits</Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-border/50">
+          <Input value={newPackName} onChange={(e) => setNewPackName(e.target.value)}
+                 placeholder="Name a pack from the scenes below…" className="h-8 w-64 text-sm" />
+          <Button variant="outline" size="sm" className="h-8" onClick={saveAsPack}
+                  disabled={!sections.length || !newPackName.trim()}>
+            <PackagePlus className="w-3.5 h-3.5 mr-1.5" />Save as pack
+          </Button>
+          <span className="text-[11px] text-muted-foreground">
+            Keeps the transitions this song ended up using, commonest as the default.
+          </span>
         </div>
         {pack?.transitions?.length ? (
           <div className="mt-3 text-xs text-muted-foreground">Pack vocabulary: {pack.transitions.join(", ")} · default <Badge variant="secondary">{pack.default}</Badge></div>
