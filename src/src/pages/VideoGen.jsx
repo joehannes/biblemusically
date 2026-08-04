@@ -1,13 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../lib/api";
+import { useStudio } from "../lib/store";
 import { subscribeKaggle, autoStartKaggleServer } from "../lib/kaggleServerPipeline";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   Film, Loader2, Play, AlertTriangle, Info, Lightbulb, Cpu, Package, Wand2, Server, ShieldCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,8 +48,41 @@ export default function VideoGen() {
   const [results, setResults] = useState([]);
   const [verify, setVerify] = useState(null);
   const [kaggle, setKaggle] = useState({});
+  // Where a rendered clip goes. Without this the page is a viewer: the URLs live in React state,
+  // point at a Cloudflare quick tunnel that rotates every run, and are gone on the next navigation.
+  // A section is the one place the rest of the app already looks — `real_ffmpeg` reads each
+  // section's `image_url` and treats `.mp4`/`.webm` as a moving segment (see `is_animated` in
+  // jobs.rs), so assigning a clip here is what puts it in the finished video.
+  const { songs, activeSongId, selectSong } = useStudio();
+  const [sections, setSections] = useState([]);
+  const [assigned, setAssigned] = useState({}); // clip url -> section id it was filed under
 
   useEffect(() => subscribeKaggle(setKaggle), []);
+
+  useEffect(() => {
+    if (!activeSongId) { setSections([]); return; }
+    let alive = true;
+    api.listSections(activeSongId)
+      .then((s) => { if (alive) setSections(Array.isArray(s) ? s : []); })
+      .catch(() => { if (alive) setSections([]); });
+    return () => { alive = false; };
+  }, [activeSongId]);
+
+  // Filing a clip is a section update, not a new concept: the same field a still image would have
+  // written. That keeps one code path in the composer instead of a parallel "video section" notion.
+  const useClipFor = async (url, sectionId) => {
+    try {
+      // `is_video` is what the section model always meant by this and nothing has ever set true —
+      // the composer sniffs the URL instead. Setting it costs nothing and makes the stored row
+      // describe itself correctly for anything that reads it later.
+      await api.updateSection(sectionId, { image_url: url, is_video: true });
+      setAssigned((prev) => ({ ...prev, [url]: sectionId }));
+      setSections((prev) => prev.map((s) => (s.id === sectionId ? { ...s, image_url: url } : s)));
+      toast.success("Filed on that section — the next video render will use it as a moving segment.");
+    } catch (e) {
+      toast.error(`Could not file the clip: ${e?.message || e}`);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -298,11 +334,59 @@ export default function VideoGen() {
       </Card>
 
       {results.length > 0 && (
-        <Card className="p-4 space-y-2">
-          <h2 className="font-medium text-sm">Rendered</h2>
-          <div className="grid sm:grid-cols-2 gap-2">
+        <Card className="p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h2 className="font-medium text-sm">Rendered</h2>
+            {/* Which song's sections these clips can be filed against. Rendering without picking one
+                is allowed — you may just be trying a preset out — but nothing is kept until a clip
+                is filed, and the note below says so rather than letting it be discovered later. */}
+            <Select value={activeSongId || ""} onValueChange={(v) => selectSong(v)}>
+              <SelectTrigger className="h-7 w-[15rem] text-[11px]">
+                <SelectValue placeholder="Pick a song to file clips against" />
+              </SelectTrigger>
+              <SelectContent>
+                {(songs || []).map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.title || "Untitled"}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-[11px] text-amber-400 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+            These play from the render server, whose address changes every time it restarts. File a
+            clip on a section to keep it, and render the video before the session ends.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
             {results.map((u, i) => (
-              <video key={`${u}-${i}`} src={u} controls loop className="w-full rounded-lg border border-border" />
+              <div key={`${u}-${i}`} className="space-y-1.5">
+                <video src={u} controls loop className="w-full rounded-lg border border-border" />
+                {assigned[u] ? (
+                  <div className="text-[11px] text-emerald-500 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Filed on “{sections.find((s) => s.id === assigned[u])?.line || "that section"}”.
+                  </div>
+                ) : sections.length > 0 ? (
+                  <Select onValueChange={(secId) => useClipFor(u, secId)}>
+                    <SelectTrigger className="h-7 text-[11px]">
+                      <SelectValue placeholder="Use for section…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sections.map((s, idx) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {idx + 1}. {(s.line || "section").slice(0, 60)}
+                          {s.image_url ? " — replaces current" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">
+                    {activeSongId
+                      ? "That song has no sections yet — run Analysis on it first."
+                      : "Pick a song above to file this clip on one of its sections."}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </Card>

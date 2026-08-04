@@ -8,6 +8,7 @@ A Tauri 2 desktop app that turns a Bible chapter (or any topic) into fully-produ
 > - [STATUS.md](STATUS.md) — dated log of where the project is and how it got here
 > - [TODOS.md](TODOS.md) — known bugs, dead code, and gaps
 > - [BACKLOG.md](BACKLOG.md) — ideas for what's next
+> - [WISHLIST.md](WISHLIST.md) — built-but-unreachable features, and what an integration audit turned up
 
 ## What it does
 
