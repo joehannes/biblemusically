@@ -71,6 +71,30 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
+1. **Mobile: `kernels output` over REST** — `refresh_kaggle_url` / `fetch_kaggle_url` are still
+   CLI-only, so a phone can start a server but not learn its tunnel URL. `GET /kernels/output`
+   lists files with download URLs. The pull/push pair landed 2026-08-04; this is the same shape.
+2. **Clip durability (WISHLIST 2.1b)** — a filed clip is a Cloudflare tunnel URL that dies when the
+   session ends, so the video must be composed before then. Download it into the project folder
+   instead. Applies to `gen_images` output too; video is only where it bites hardest.
+3. **Remote render (WISHLIST 1.5)** — 4 of 7 commands orphaned. Decide whether it is mid-build or
+   abandoned and either finish it or delete it, as was done for the channel-creation watcher.
+4. **Mobile: `kernels logs -f`** — no REST streaming endpoint exists; the CLI proxies SSE. Decide
+   whether a phone needs the live boot log at all, or whether polling `status` is enough (probably).
+5. **Finish the catalogues** (TODOS §8).
+
+### Waiting on the owner, not on effort
+
+These are the ones a coding session should *not* decide by itself:
+
+- **Suno admin switch** — the engine stays disconnected until there is one.
+- **i18n**: refreshing the inventory adds 77 strings × 16 languages and turns the gate red until
+  they are translated. The catalogues were finished by hand; that cost is a decision.
+- **Rotate the Ed25519 signing key** — a production credential operation. ⚠️ still outstanding.
+- **Subscription flow end-to-end** — needs a real account to test against.
+- **Android build** — `NDK_HOME` and JDK 17; an environment change.
+- **Multi-user / team**, **mobile parity** — product questions with no obvious right answer.
+
 
 ## Session log
 
