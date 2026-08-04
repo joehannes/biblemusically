@@ -46,10 +46,16 @@ jq --arg v "$NEW_VERSION" '.version = $v' "$ROOT_DIR/src/package.json" > "$ROOT_
 # Update src-tauri/tauri.conf.json
 jq --arg v "$NEW_VERSION" '.version = $v' "$ROOT_DIR/src-tauri/tauri.conf.json" > "$ROOT_DIR/src-tauri/tauri.conf.json.tmp" && mv "$ROOT_DIR/src-tauri/tauri.conf.json.tmp" "$ROOT_DIR/src-tauri/tauri.conf.json"
 
-# Update src-tauri/Cargo.toml — the [package] version is the only line at column 0
-# starting with "version = " (dependency version specs are all nested inside braces
-# or on their own "name = { version = ... }" lines, so this anchor is safe).
-sed -i.tmp "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" "$ROOT_DIR/src-tauri/Cargo.toml" && rm -f "$ROOT_DIR/src-tauri/Cargo.toml.tmp"
+# Update src-tauri/Cargo.toml — ONLY the version inside [package].
+#
+# This used to be a bare `s/^version = ...` with a comment claiming [package]'s was the only such
+# line at column 0. It was not: a `[dependencies.<name>]` table puts its own `version = "…"` at
+# column 0 too, and on 2026-08-04 this rewrote git2's `version = "0.19"` to the app's version —
+# a dependency spec that resolves to nothing, so the next build fails with an error naming git2
+# rather than anything to do with a version bump. Restrict the substitution to the [package]
+# table by only editing between that header and the next one.
+sed -i.tmp "/^\s*\[package\]/,/^\s*\[[^]]*\]\s*$/{ s/^version = \".*\"/version = \"${NEW_VERSION}\"/; }" \
+  "$ROOT_DIR/src-tauri/Cargo.toml" && rm -f "$ROOT_DIR/src-tauri/Cargo.toml.tmp"
 
 # Refresh Cargo.lock's own package entry to match, if cargo is available.
 if command -v cargo >/dev/null 2>&1; then
