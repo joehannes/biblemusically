@@ -12,8 +12,10 @@ import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import KaggleDiagnostics from "../components/KaggleDiagnostics";
+import ComputeProviders from "../components/ComputeProviders";
 import VoicePicker from "../components/VoicePicker";
-import { PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
+import {
+  Server, PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { setLinkPreference } from "../lib/splitScreen";
 import { visibleMusicEngines, visibleImageEngines, fallbackMusicEngines, musicEngine, imageEngine, isPaid, priceLine, IMAGE_ENGINES, MUSIC_ENGINES } from "../lib/engineCapabilities";
@@ -844,6 +846,11 @@ const SettingsComponent = () => {
             not offered by default; an official Suno API is reportedly on the way.</span>
           </span>
         </label>
+      </Card>
+
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Server className="w-4 h-4 text-primary" /><h2 className="font-semibold">Where the engines run</h2></div>
+        <ComputeProviders settings={s} onChange={updateS} />
       </Card>
 
       <Card className="p-6 mb-5">

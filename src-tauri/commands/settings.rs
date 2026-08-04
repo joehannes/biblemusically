@@ -1199,6 +1199,42 @@ pub async fn resolve_image_style(id: String) -> Res<Value> {
     }
 }
 
+/// Where an engine can run, what it costs, and how to get set up on it.
+///
+/// Reports whether each provider looks configured, so the picker can show "ready" rather than making
+/// somebody remember which of six accounts they already made.
+#[tauri::command]
+pub async fn compute_providers(state: State<'_, AppState>) -> Res<Value> {
+    use crate::compute_providers as cp;
+    let doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.ok().flatten();
+    let has = |k: &str| doc.as_ref()
+        .and_then(|d| d.get_str(k).ok()).map(|v| !v.trim().is_empty()).unwrap_or(false);
+    let kaggle_ready = kaggle_cli_username().await.is_some();
+
+    Ok(serde_json::json!({
+        "providers": cp::PROVIDERS.iter().map(|p| {
+            // "Configured" is per-provider because each needs a different thing: Kaggle a token
+            // file, fal a key, everything else just a URL somebody pasted.
+            let ready = match p.id {
+                "kaggle" => kaggle_ready,
+                "fal" => has("fal_api_key"),
+                "replicate" => has("replicate_api_key"),
+                // A URL provider is ready when any engine points somewhere that is not Kaggle's
+                // own tunnel — which is the only honest signal available without probing.
+                _ => false,
+            };
+            serde_json::json!({
+                "id": p.id, "label": p.label, "shape": p.shape, "cost": p.cost,
+                "price": p.price, "free_allowance": p.free_allowance,
+                "automated": p.automated, "engines": p.engines,
+                "signup_url": p.signup_url, "setup": p.setup, "needs": p.needs, "note": p.note,
+                "ready": ready,
+            })
+        }).collect::<Vec<_>>(),
+    }))
+}
+
 /// Activate a stored account: write its kaggle.json and mark it active.
 #[tauri::command]
 pub async fn activate_kaggle_account(state: State<'_, AppState>, username: String) -> Res<Value> {

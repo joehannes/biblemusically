@@ -95,6 +95,13 @@ export const api = {
   testMj: () => invokeCommand("test_mj"),
   testFlux: () => invokeCommand("test_flux"),
   testComfy: () => invokeCommand("test_comfy"),
+  // ============ Where engines run: providers, and the serverless one ============
+  computeProviders: () => invokeCommand("compute_providers"),
+  falCatalogue: () => invokeCommand("fal_catalogue"),
+  testFal: () => invokeCommand("test_fal"),
+  falGenerate: ({ model, prompt, seconds, imageUrl, aspect }) =>
+    invokeCommand("fal_generate", { model, prompt, seconds: seconds || null,
+                                    imageUrl: imageUrl || null, aspect: aspect || null }),
   // ============ Image styles & mixes ============
   imageStyleCatalogue: () => invokeCommand("image_style_catalogue"),
   resolveImageStyle: (id) => invokeCommand("resolve_image_style", { id }),
