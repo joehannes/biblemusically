@@ -130,6 +130,24 @@ export default function GraphicNovels() {
     finally { setBusy(""); }
   };
 
+  // Editions could be written and built but never removed, so a first attempt at a book stayed in
+  // the picker forever. The generated page art lives in the image pipeline under its own sections
+  // and is not swept up here — say so, rather than implying a tidier delete than this is.
+  const deleteActiveEdition = async () => {
+    if (!active) return;
+    if (!window.confirm(`Delete the edition “${active.title || "Untitled"}”?\n\nIts ${active.pages?.length || 0} page(s) of text go with it. Any art already generated stays in the image library.`)) return;
+    setBusy("delete");
+    try {
+      await api.deleteEdition(active.id);
+      const fresh = await api.listEditions(activeProjectId || null, null);
+      const rest = fresh?.editions || [];
+      setEditions(rest);
+      setActive(rest.length ? rest[rest.length - 1] : null);
+      toast.success("Edition deleted.");
+    } catch (err) { toast.error(`Could not delete it: ${err}`); }
+    finally { setBusy(""); }
+  };
+
   const reg = styles.registers.find((r) => r.id === register);
   const fmt = styles.formats.find((f) => f.id === format);
 
@@ -266,6 +284,10 @@ export default function GraphicNovels() {
               </span>
             </div>
             <div className="flex gap-1.5">
+              <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-red-400"
+                      onClick={deleteActiveEdition} disabled={busy === "delete"}>
+                {busy === "delete" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              </Button>
               <Button size="sm" variant="secondary" onClick={savePages} disabled={busy === "save"}>Save text</Button>
               <Button size="sm" variant="secondary" onClick={queueArt} disabled={busy === "art"}>
                 {busy === "art" ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Img className="w-3.5 h-3.5 mr-1.5" />}

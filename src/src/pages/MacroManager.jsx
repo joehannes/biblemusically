@@ -251,6 +251,16 @@ export default function MacroManager() {
   const [authored, setAuthored] = useState([]);
   useEffect(() => { api.listAuthoredMacros().then(setAuthored).catch(() => {}); }, []);
 
+  const deleteAuthored = async (a) => {
+    try {
+      await api.deleteAuthoredMacro(a.id);
+      setAuthored((prev) => prev.filter((x) => x.id !== a.id));
+      toast.success(`Forgot "${a.name}".`);
+    } catch (err) {
+      toast.error(`Could not remove it: ${err}`);
+    }
+  };
+
   const authorFromOpenPage = async () => {
     if (!authorGoal.trim()) return toast.error("Say what the macro should do.");
     setAuthoring(true);
@@ -475,9 +485,28 @@ export default function MacroManager() {
           written from that page's real elements — anything the player could not execute is dropped
           rather than saved, and fields meant to change per run become playback parameters.
         </div>
+        {/* Was a truncated sentence of the first four names, which could neither be acted on nor
+            fully read. The server-side record is what `delete_authored_macro` removes — the playable
+            copy in the local library is a separate thing, deleted from the list on the left. */}
         {authored.length > 0 && (
-          <div className="text-[11px] text-muted-foreground">
-            Previously written: {authored.slice(0, 4).map((a) => a.name).join(" · ")}
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Previously written ({authored.length})
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {authored.map((a) => (
+                <Badge key={a.id} variant="secondary" className="text-[11px] gap-1 pr-1">
+                  {a.name}
+                  <button
+                    title={`Forget "${a.name}" — the playable copy in the macro list stays`}
+                    onClick={() => deleteAuthored(a)}
+                    className="ml-0.5 rounded hover:text-red-400"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
           </div>
         )}
       </div>

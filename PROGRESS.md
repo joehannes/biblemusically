@@ -26,7 +26,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | 1.3 | Style sample delete + clear-all | ✅ 2026-08-04 |
 | 1.4 | Learnings inspection panel | ✅ 2026-08-04 — new `forget_learnings` command + panel on Account |
 | 1.5 | Remote render — resolve mid-build vs abandoned | ⬜ |
-| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota`, `build_short`, publish-time pair, `channels_connect_all_urls` done; channel-creation pair **removed as superseded**; four to go |
+| 1.6 | Ten smaller orphans | 🔄 `kaggle_quota`, `build_short`, publish-time pair, `channels_connect_all_urls` done; channel-creation pair **removed as superseded**, `delete_edition` + `delete_authored_macro` done; two to go |
 
 ### Wishlist Part 2 — pipeline coherence
 
@@ -71,7 +71,6 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 Pick the top unfinished one. Each is bounded; none needs a decision from the owner.
 
-5. **`delete_edition` / `delete_authored_macro`** — two missing deletes beside existing creates.
 6. **`autosave_status`** — show whether the git autosave is healthy, next to the Save control.
 7. **Print safety** — `imagery_text_allowed` / `imagery_print_check` on Print-on-Demand.
 8. **Workflow stage `requires`** (WISHLIST 2.2) — declared dependencies so an empty stage stops the
@@ -81,6 +80,11 @@ Pick the top unfinished one. Each is bounded; none needs a decision from the own
     endpoint shape (JSON body, notebook base64 in `text`, *not* multipart).
 
 ## Session log
+
+- **2026-08-04 · session 1 (iter 5)** — The two missing deletes. Editions could be written and built
+  but never removed, so a first attempt stayed in the picker forever; the confirm says page art is
+  *not* swept up with it rather than implying a tidier delete than it is. Authored macros were a
+  truncated sentence of the first four names — now a full list, each removable.
 
 - **2026-08-04 · session 1 (iter 4)** — Channel-creation flow: **removed, not wired**.
   `start_channel_creation_watcher` waits on a POST to `127.0.0.1:3340` that YouTube's own page can
