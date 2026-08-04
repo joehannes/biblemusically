@@ -901,17 +901,54 @@ async fn pull_kernel_for_push(
     Ok(PulledKernel { from_upstream, slug: own.to_string() })
 }
 
-/// Locate the `kaggle` CLI. A desktop-launched app inherits a minimal PATH that
-/// usually misses ~/.local/bin (pipx shim) and linuxbrew, so probe those first.
-pub(crate) fn locate_kaggle() -> String {
+/// Locate the `kaggle` CLI, or `None` when there genuinely isn't one.
+///
+/// A desktop-launched app inherits a minimal PATH that usually misses ~/.local/bin (pipx shim) and
+/// linuxbrew, so probe those first, then fall back to a real PATH lookup.
+///
+/// This returns an `Option` on purpose. The old version returned the bare string `"kaggle"` when it
+/// found nothing, so "no CLI" and "a CLI on PATH" were the same answer — which is how a phone, where
+/// a CLI *cannot* exist (Android forbids `exec()` from an app's data directory), ended up producing
+/// a spawn error that reads like a missing install rather than an impossible one.
+pub(crate) fn locate_kaggle_opt() -> Option<String> {
     if let Ok(home) = env::var("HOME") {
         let p = PathBuf::from(&home).join(".local/bin/kaggle");
-        if p.is_file() { return p.to_string_lossy().into_owned(); }
+        if p.is_file() { return Some(p.to_string_lossy().into_owned()); }
     }
     for p in ["/home/linuxbrew/.linuxbrew/bin/kaggle", "/usr/local/bin/kaggle"] {
-        if PathBuf::from(p).is_file() { return p.to_string(); }
+        if PathBuf::from(p).is_file() { return Some(p.to_string()); }
     }
-    "kaggle".to_string() // last resort: let the OS resolve it on PATH
+    which::which("kaggle").ok().map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Locate the `kaggle` CLI, falling back to the bare name for the OS to resolve.
+///
+/// Kept for the call sites that are only ever reached once the CLI is known to be usable. Anything
+/// that a phone can reach should call [`require_kaggle_cli`] instead, so the refusal is a sentence
+/// rather than a spawn error.
+pub(crate) fn locate_kaggle() -> String {
+    locate_kaggle_opt().unwrap_or_else(|| "kaggle".to_string())
+}
+
+/// The CLI path, or an explanation of why there will never be one here.
+///
+/// Two different failures wear the same clothes without this: a desktop that simply has not installed
+/// the CLI (fixable in a minute) and a phone that cannot run one at all (not fixable, and the four
+/// operations that still need it are listed in TODOS.md with the REST calls that would replace them).
+/// Saying which is which is the whole point.
+pub(crate) fn require_kaggle_cli() -> Result<String, String> {
+    if let Some(p) = locate_kaggle_opt() { return Ok(p); }
+    if cfg!(mobile) {
+        Err("This step needs the Kaggle command-line tool, which cannot run on a phone — Android \
+             does not allow an app to execute a program from its own storage. Start and stop servers \
+             from the desktop app; reading their status works here."
+            .to_string())
+    } else {
+        Err("The Kaggle command-line tool isn't installed. Install it with `pipx install kaggle` \
+             (or `pip install --user kaggle`), then try again — the app looks in ~/.local/bin, \
+             linuxbrew, /usr/local/bin and on PATH."
+            .to_string())
+    }
 }
 
 /// Scan every file in a directory for the last-printed public tunnel URL.
@@ -1146,9 +1183,12 @@ pub async fn reconcile_kaggle_identity(db: &crate::store::Db) -> Option<String> 
 /// one with no side effects — a wrong answer costs a re-poll, not a lost session. Push and pull stay
 /// on the CLI for now: they upload a multipart blob, which is real work rather than a query.
 pub(crate) async fn kernel_status_any(slug: &str) -> Res<String> {
-    let kaggle = locate_kaggle();
-    let cli_present = PathBuf::from(&kaggle).is_file() || kaggle == "kaggle";
-    match crate::kaggle_api::transport(cli_present) {
+    // `|| kaggle == "kaggle"` used to be here, which made the *fallback* count as a present CLI —
+    // so a machine with no CLI at all still chose the CLI transport and failed on spawn instead of
+    // taking the HTTP path that would have worked.
+    let found = locate_kaggle_opt();
+    let kaggle = found.clone().unwrap_or_else(|| "kaggle".to_string());
+    match crate::kaggle_api::transport(found.is_some()) {
         crate::kaggle_api::Transport::Cli => {
             let out = tokio::process::Command::new(&kaggle)
                 .args(["kernels", "status", slug]).output().await
@@ -1169,8 +1209,9 @@ pub(crate) async fn kernel_status_any(slug: &str) -> Res<String> {
 /// carry, so the UI can offer it as one copyable block.
 #[tauri::command]
 pub async fn kaggle_diagnostics(state: State<'_, AppState>, engine: Option<String>) -> Res<Value> {
-    let kaggle = locate_kaggle();
-    let cli_present = PathBuf::from(&kaggle).is_file() || kaggle == "kaggle";
+    let found = locate_kaggle_opt();
+    let kaggle = found.clone().unwrap_or_else(|| "kaggle".to_string());
+    let cli_present = found.is_some();
     let identity = kaggle_cli_identity().await;
     let cli_user = match &identity { Some((u, _)) => Some(u.clone()), None => kaggle_json_username().await };
     let auth_method = identity.as_ref().map(|(_, m)| m.clone()).unwrap_or_default();
@@ -1502,7 +1543,9 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
-    let kaggle = locate_kaggle();
+    // A phone can reach this, and a desktop may simply not have the CLI. Say which, in a
+    // sentence, rather than letting it surface as a spawn error. See require_kaggle_cli.
+    let kaggle = require_kaggle_cli()?;
 
     // Pull the kernel (code + metadata) from Kaggle so this works from the installed app, which
     // doesn't ship the notebook sources — own copy if there is one, else the published template,
@@ -1623,7 +1666,9 @@ pub async fn supersede_session(db: &crate::store::Db, engine: &str) -> Res<Value
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
-    let kaggle = locate_kaggle();
+    // A phone can reach this, and a desktop may simply not have the CLI. Say which, in a
+    // sentence, rather than letting it surface as a spawn error. See require_kaggle_cli.
+    let kaggle = require_kaggle_cli()?;
     let tmp = env::temp_dir().join(format!("bm-kaggle-stop-{}", engine));
     let _ = fs::remove_dir_all(&tmp).await;
     let _ = fs::create_dir_all(&tmp).await;
@@ -1703,7 +1748,9 @@ pub async fn fetch_kaggle_url(state: State<'_, AppState>, engine: String) -> Res
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
     let slug = own.as_str();
-    let kaggle = locate_kaggle();
+    // A phone can reach this, and a desktop may simply not have the CLI. Say which, in a
+    // sentence, rather than letting it surface as a spawn error. See require_kaggle_cli.
+    let kaggle = require_kaggle_cli()?;
 
     // 1) Kernel status — so we can give an actionable message when there's no URL.
     let status_str = match tokio::process::Command::new(&kaggle)

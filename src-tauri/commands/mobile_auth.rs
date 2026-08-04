@@ -88,6 +88,18 @@ pub async fn platform_capabilities(state: State<'_, AppState>) -> Res<Value> {
             "A phone gives the app one webview: its own. So Suno cannot be driven by automation here — \
              it goes through your captured session instead, which needs no browser at all."
         },
+        // Asked of the filesystem rather than assumed from the platform: a desktop without the CLI
+        // installed is in the same position as a phone for these four operations, and saying
+        // "desktop, therefore fine" is how that turned into a spawn error nobody could act on.
+        // Reading Kaggle state works either way — `kernels status` goes over HTTP.
+        "kaggle_cli": crate::commands::settings::locate_kaggle_opt().is_some(),
+        "kaggle_cli_note": match (is_desktop, crate::commands::settings::locate_kaggle_opt().is_some()) {
+            (_, true) => "",
+            (true, false) => "Starting and stopping Kaggle servers needs the Kaggle command-line tool. \
+                             Install it with `pipx install kaggle`. Reading their status works without it.",
+            (false, false) => "Starting and stopping Kaggle servers needs a desktop — Android does not let \
+                               an app run a program from its own storage. Reading their status works here.",
+        },
         // Everything that does work, stated because "mobile-lite" undersells it.
         "voice_out": true,
         "voice_in": true,

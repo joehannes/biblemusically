@@ -46,7 +46,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | Mobile: `kernels pull` over REST | ⬜ |
 | Mobile: `kernels output` over REST | ⬜ |
 | Mobile: `kernels logs -f` — decide whether a phone needs the live boot log at all | ⬜ |
-| Mobile: `locate_kaggle()` returns `"kaggle"` when absent → say "needs a desktop" instead of a spawn error | ⬜ |
+| Mobile: `locate_kaggle()` honesty → `locate_kaggle_opt()` + `require_kaggle_cli()`; `platform_capabilities` now reports `kaggle_cli` | ✅ 2026-08-04 |
 | Finish the catalogues (§8) | ⬜ |
 | i18n inventory stale by 77 strings; gate passes vacuously | ⬜ |
 
