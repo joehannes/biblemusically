@@ -61,6 +61,8 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 
 | Item | Status |
 |---|---|
+| **GitHub release workflow** | ✅ 2026-08-05 — was failing at `i18n:check` on a stale inventory; v0.112.0 and v0.113.0 both died there in <40s. Fixed by the catalogue work; v0.114.0's `checks` job passes. |
+| ⚠️ Two asset-less **published** releases | ⬜ v0.112.0 and v0.113.0 exist as *published* (not draft) releases with **zero assets**, because the workflow creates the release before the builds run. The update endpoint only ignores *drafts*. Worth deleting. |
 | Subscription Worker live | ✅ verified 2026-08-04 — `/` and `/health` 200, `/get` 302 |
 | Marketing site exists + deployed to Cloudflare | ✅ verified 2026-08-04 — served by the same Worker from `server/site/index.html` |
 | Subscription flow works end-to-end (sign-in → entitlement → verify) | ⬜ needs a real test |
