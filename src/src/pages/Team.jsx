@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
 import { Card } from "../components/ui/card";
@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import {
   Users, UserPlus, Share2, GitMerge, History, Loader2, Trash2, AlertTriangle,
-  RotateCcw, Copy, LogIn, LogOut, ShieldAlert,
+  RotateCcw, Copy, LogIn, LogOut, GitBranch, Gavel, ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -149,6 +149,18 @@ export default function Team() {
   const [incoming, setIncoming] = useState("");
   const [folder, setFolder] = useState("");
   const [conflicts, setConflicts] = useState([]);
+  // The record of who settled which disagreement. Read from the project repo, so it is whatever the
+  // last pull brought in rather than anything this machine invented.
+  const [arbitrations, setArbitrations] = useState([]);
+  const pendingRulings = arbitrations.filter((a) => !a.settled).length;
+  const loadArbitrations = useCallback(async () => {
+    if (!activeProjectId) { setArbitrations([]); return; }
+    try {
+      const r = await api.listArbitrations(activeProjectId);
+      setArbitrations(r?.arbitrations || []);
+    } catch { setArbitrations([]); }
+  }, [activeProjectId]);
+  useEffect(() => { loadArbitrations(); }, [loadArbitrations]);
   const [history, setHistory] = useState([]);
   const [busy, setBusy] = useState("");
 
@@ -353,11 +365,18 @@ export default function Team() {
                             className="h-6 px-2 text-[10px]"
                             onClick={() => act(`res-${f}-${how}`,
                               () => api.resolveConflict({ project_id: activeProjectId, file: f, how }),
-                              (r) => {
+                              async (r) => {
                                 setConflicts((c) => c.filter((x) => x !== f));
                                 if (r.field_conflicts?.length) {
                                   toast.warning(`${r.note} Fields: ${r.field_conflicts.join(", ")}`, { duration: 12000 });
                                 } else toast.success(r.note || "Settled.");
+                                // Who decided is a separate fact from what was decided. The owner's
+                                // resolution stands; anyone else's is a proposal they can rule on.
+                                try {
+                                  const a = await api.proposeResolution({ project_id: activeProjectId, file: f, how });
+                                  toast.message(a.note, { duration: 11000 });
+                                  loadArbitrations();
+                                } catch { /* the file is settled either way; the record is a bonus */ }
                               })}>
                       {label}
                     </Button>
@@ -372,7 +391,72 @@ export default function Team() {
                 Finish the merge
               </Button>
             )}
+
+            {/* The half that keeps "the owner decides" from meaning "the owner can block you".
+                Offered beside the conflicts rather than buried, because the moment you need it is
+                the moment you are stuck. */}
+            <div className="pt-2 mt-1 border-t border-border/50 space-y-1.5">
+              <div className="text-[11px] text-muted-foreground">
+                Waiting on the owner to rule? You do not have to wait idle — take your work onto your
+                own branch and carry on. Nothing is pushed and nothing is lost.
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={busy === "fork"}
+                        onClick={() => act("fork", () => api.workOnFork(activeProjectId),
+                          (r) => toast.success(r.note, { duration: 12000 }))}>
+                  <GitBranch className="w-3 h-3 mr-1" />Work on a fork
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-[11px]" disabled={busy === "rejoin"}
+                        onClick={() => act("rejoin", () => api.rejoinMain(activeProjectId, null),
+                          (r) => {
+                            if (r.ok) toast.success(r.note);
+                            else { setConflicts(r.conflicts || []); toast.warning(r.note, { duration: 14000 }); }
+                          })}>
+                  Rejoin the shared branch
+                </Button>
+              </div>
+            </div>
           </Card>
+
+          {/* ── Who decided what ─────────────────────────────────────────── */}
+          {arbitrations.length > 0 && (
+            <Card className="p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h2 className="font-medium flex items-center gap-2">
+                  <Gavel className="w-4 h-4 text-primary" />Who decided what
+                </h2>
+                {pendingRulings > 0 && (
+                  <Badge variant="secondary" className="text-[10px]">{pendingRulings} awaiting a ruling</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Recorded in the project itself, so it travels with a clone. Roles here are advisory —
+                anyone with push access can push anything — so this is a record of who settled a
+                disagreement, not a lock that stops them.
+              </p>
+              <div className="space-y-1.5">
+                {arbitrations.map((a) => (
+                  <div key={a.file} className="rounded border border-border/60 p-2 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-mono break-all flex-1 min-w-0" data-no-i18n>{a.file}</span>
+                      <Badge variant={a.settled ? "secondary" : "outline"} className="text-[10px]">
+                        {a.settled ? "ruled" : "awaiting the owner"}
+                      </Badge>
+                    </div>
+                    {(a.entries || []).map((x, i) => (
+                      <div key={i} className="text-[11px] text-muted-foreground flex gap-1.5 flex-wrap">
+                        <span className={x.kind === "ruling" ? "text-primary font-medium" : ""}>
+                          {x.kind === "ruling" ? "ruling" : "proposal"}
+                        </span>
+                        <span data-no-i18n>· {x.by} ({x.role}) · {x.how}</span>
+                        {x.reason ? <span>— {x.reason}</span> : null}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* ── History and rewind ───────────────────────────────────────── */}
           <Card className="p-4 space-y-2">

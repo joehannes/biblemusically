@@ -578,9 +578,236 @@ pub async fn rewind_project(state: State<'_, AppState>, project_id: String, comm
     }))
 }
 
+// ────────────────────────────────────────────────────────────────
+// Arbitration, and the fork that keeps somebody working while they wait
+//
+// The merge above settles *what the files say*. It does not settle *who decides*, and on a shared
+// repo those are different questions: two people can each resolve the same conflict honestly and
+// still disagree about which resolution should stand. The owner decides. That is the whole rule.
+//
+// It is recorded rather than enforced, for the reason the module header already gives — anyone with
+// push access can push anything, and pretending otherwise would be a guarantee this app cannot keep.
+// So a non-owner's resolution is written down as a **proposal**, the owner's as a **ruling**, and the
+// app shows which is which. What that buys is not security; it is that nobody has to guess whether a
+// disagreement was settled or merely overwritten.
+//
+// The second half matters more in practice: **an unanswered owner must not stop anybody working.**
+// A contributor waiting on a ruling can take their work onto a fork branch and carry on, and rejoin
+// when the ruling lands. Without that, "the owner decides" quietly means "the owner can block you by
+// going on holiday", which is a worse property than the conflict it was meant to fix.
+// ────────────────────────────────────────────────────────────────
+
+/// Where proposals and rulings live inside the project repo.
+///
+/// Inside the repo on purpose: it travels with the project, survives a clone, and is visible to
+/// everybody who can see the conflict it is about.
+const ARBITRATION_DIR: &str = ".bm-arbitration";
+
+/// Whether this user's resolution stands on its own, or is a proposal for the owner.
+///
+/// The one rule, in one function, so the UI and the backend cannot disagree about it.
+pub fn resolution_authority(role: &str) -> &'static str {
+    if role == "owner" { "ruling" } else { "proposal" }
+}
+
+/// A branch name for somebody who needs to keep working while a ruling is outstanding.
+///
+/// Slugged hard because this becomes a git ref: a username with a slash or a space in it would
+/// produce a branch that git either refuses or silently nests somewhere surprising.
+pub fn fork_branch_name(username: &str) -> String {
+    let slug: String = username.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let slug = slug.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    let slug = if slug.is_empty() { "someone".to_string() } else { slug.chars().take(40).collect() };
+    format!("fork/{slug}")
+}
+
+fn arbitration_path(folder: &std::path::Path, file: &str) -> std::path::PathBuf {
+    let slug: String = file.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    folder.join(ARBITRATION_DIR).join(format!("{slug}.json"))
+}
+
+#[derive(serde::Deserialize)]
+pub struct ProposeRequest {
+    pub project_id: String,
+    /// The conflicted file this is about.
+    pub file: String,
+    /// How it was resolved: "merge" | "mine" | "theirs".
+    pub how: String,
+    /// Why, in the proposer's words. Optional, and worth asking for — a ruling made without one is
+    /// a decision nobody can review later.
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Record how a conflict was settled, and by whose authority.
+///
+/// Called after `resolve_conflict` has already put the chosen content in the working tree. An owner's
+/// entry is a ruling and is final; anyone else's is a proposal the owner can accept or replace.
+#[tauri::command]
+pub async fn propose_resolution(state: State<'_, AppState>, payload: ProposeRequest) -> Res<Value> {
+    let folder = crate::project_sync::project_folder(&state.db, &payload.project_id).await
+        .ok_or("This project has no folder on disk.")?;
+    let file = payload.file.trim();
+    if file.is_empty() || file.contains("..") {
+        return Err("That is not a file in this project.".into());
+    }
+
+    let me = current_user(state.clone()).await.unwrap_or(Value::Null);
+    let who = me["username"].as_str().unwrap_or("someone").to_string();
+    let role = my_project_role(state.clone(), payload.project_id.clone()).await
+        .ok().and_then(|v| v["role"].as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "editor".into());
+    let kind = resolution_authority(&role);
+
+    let path = arbitration_path(&folder, file);
+    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir).map_err(e)?; }
+
+    // Keep every entry rather than overwriting: the argument is the useful record, not just its
+    // conclusion. A ruling that replaces three proposals should still show what it replaced.
+    let mut entries: Vec<Value> = std::fs::read_to_string(&path).ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v["entries"].as_array().cloned())
+        .unwrap_or_default();
+    entries.push(json!({
+        "by": who, "role": role, "kind": kind, "how": payload.how,
+        "reason": payload.reason.unwrap_or_default(),
+        "at": crate::models::now_iso(),
+    }));
+    let settled = entries.iter().any(|x| x["kind"] == "ruling");
+    std::fs::write(&path, serde_json::to_string_pretty(&json!({
+        "file": file, "settled": settled, "entries": entries,
+    })).map_err(e)?).map_err(e)?;
+    let rel = format!("{ARBITRATION_DIR}/{}", path.file_name().unwrap_or_default().to_string_lossy());
+    let _ = crate::project_sync::git(&folder, &["add", "--", &rel]);
+
+    Ok(json!({
+        "kind": kind, "settled": settled, "file": file,
+        "note": if kind == "ruling" {
+            "Recorded as your ruling. As the owner, yours is the one that stands."
+        } else {
+            "Recorded as a proposal. The project owner decides which resolution is kept — and you do \
+             not have to wait idle for that: “Work on a fork” keeps you moving until they rule."
+        },
+    }))
+}
+
+/// Every conflict this project has had to arbitrate, and whether it is settled.
+#[tauri::command]
+pub async fn list_arbitrations(state: State<'_, AppState>, project_id: String) -> Res<Value> {
+    let folder = crate::project_sync::project_folder(&state.db, &project_id).await
+        .ok_or("This project has no folder on disk.")?;
+    let dir = folder.join(ARBITRATION_DIR);
+    let mut out = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for entry in rd.flatten() {
+            if let Ok(txt) = std::fs::read_to_string(entry.path()) {
+                if let Ok(v) = serde_json::from_str::<Value>(&txt) { out.push(v); }
+            }
+        }
+    }
+    out.sort_by_key(|v| v["file"].as_str().unwrap_or("").to_string());
+    let pending = out.iter().filter(|v| v["settled"] != json!(true)).count();
+    Ok(json!({ "arbitrations": out, "pending": pending }))
+}
+
+/// Take this project's work onto a personal branch and keep going.
+///
+/// The escape hatch that makes "the owner decides" safe to adopt. Nothing is pushed and nothing is
+/// lost: the fork is an ordinary branch off wherever you are, so the work continues to be committed,
+/// autosaved and backed up exactly as before — it simply stops competing for the same branch tip
+/// while a ruling is outstanding.
+#[tauri::command]
+pub async fn work_on_fork(state: State<'_, AppState>, project_id: String) -> Res<Value> {
+    let folder = crate::project_sync::project_folder(&state.db, &project_id).await
+        .ok_or("This project has no folder on disk.")?;
+    let me = current_user(state.clone()).await.unwrap_or(Value::Null);
+    let branch = fork_branch_name(me["username"].as_str().unwrap_or("someone"));
+
+    let was = crate::project_sync::git(&folder, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .unwrap_or_default().trim().to_string();
+    // Switch if it already exists, create if it does not — re-forking must be idempotent rather than
+    // an error, because the honest reason to press it twice is "am I still on my fork?".
+    if crate::project_sync::git(&folder, &["rev-parse", "--verify", &branch]).is_ok() {
+        crate::project_sync::git(&folder, &["checkout", &branch])?;
+    } else {
+        crate::project_sync::git(&folder, &["checkout", "-b", &branch])?;
+    }
+    state.db.invalidate_cache().await;
+    Ok(json!({
+        "branch": branch, "from": was,
+        "note": format!("You are on {branch}. Your work continues here and is committed as usual; \
+                         when the owner rules, “Rejoin the shared branch” brings it back to {was}."),
+    }))
+}
+
+/// Come back from a fork once the ruling has landed.
+///
+/// Merges the shared branch into the fork first, deliberately: that way any conflict surfaces here,
+/// on the fork, where only this person is affected — rather than on the branch everybody shares.
+#[tauri::command]
+pub async fn rejoin_main(state: State<'_, AppState>, project_id: String, onto: Option<String>) -> Res<Value> {
+    let folder = crate::project_sync::project_folder(&state.db, &project_id).await
+        .ok_or("This project has no folder on disk.")?;
+    let target = onto.filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "main".to_string());
+    let here = crate::project_sync::git(&folder, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .unwrap_or_default().trim().to_string();
+    if !here.starts_with("fork/") {
+        return Err(format!("You are on “{here}”, which is not a fork branch — there is nothing to rejoin."));
+    }
+    if crate::project_sync::git(&folder, &["merge", "--no-edit", &target]).is_err() {
+        let files = conflicted_files(
+            &crate::project_sync::git(&folder, &["status", "--porcelain"]).unwrap_or_default());
+        return Ok(json!({
+            "ok": false, "conflicts": files, "branch": here,
+            "note": "The shared branch has changes that clash with your fork. They are conflicts on \
+                     *your* branch, so nobody else is blocked while you settle them — resolve them \
+                     here, then rejoin again.",
+        }));
+    }
+    crate::project_sync::git(&folder, &["checkout", &target])?;
+    let merged = crate::project_sync::git(&folder, &["merge", "--no-edit", &here]).is_ok();
+    state.db.invalidate_cache().await;
+    Ok(json!({
+        "ok": merged, "branch": target, "from": here,
+        "note": if merged { "Your fork is back on the shared branch." }
+                else { "Merged the shared branch into your fork, but bringing it back needs a hand." },
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_owner_rules_and_everyone_else_proposes() {
+        // The whole decision, in one assertion. An unknown role proposes rather than rules, which is
+        // the same fail-closed default `role_allows` uses for a value off somebody else's repo.
+        assert_eq!(resolution_authority("owner"), "ruling");
+        assert_eq!(resolution_authority("editor"), "proposal");
+        assert_eq!(resolution_authority("viewer"), "proposal");
+        assert_eq!(resolution_authority("nonsense-from-a-shared-repo"), "proposal");
+    }
+
+    #[test]
+    fn a_fork_branch_is_always_a_usable_git_ref() {
+        // These become refs. A space or a slash in a username would make git refuse the branch, or
+        // nest it somewhere the user never looks.
+        assert_eq!(fork_branch_name("johannes"), "fork/johannes");
+        assert_eq!(fork_branch_name("Anna Maria"), "fork/anna-maria");
+        assert_eq!(fork_branch_name("a/b/c"), "fork/a-b-c");
+        assert_eq!(fork_branch_name("...--..."), "fork/someone");
+        assert_eq!(fork_branch_name(""), "fork/someone");
+        // Long names are cut rather than rejected: a branch is not the place to enforce a name policy.
+        assert!(fork_branch_name(&"x".repeat(200)).len() <= 46);
+        for name in ["johannes", "Anna Maria", "a/b/c", "", "Ünicode Ünicode"] {
+            let b = fork_branch_name(name);
+            assert!(!b.contains(' ') && !b.ends_with('/') && !b.contains(".."), "{b}");
+            assert_eq!(b.matches('/').count(), 1, "{b}");
+        }
+    }
 
     #[test]
     fn only_fields_both_sides_changed_become_conflicts() {

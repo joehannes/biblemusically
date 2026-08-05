@@ -67,7 +67,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | Marketing site exists + deployed to Cloudflare | ✅ verified 2026-08-04 — served by the same Worker from `server/site/index.html` |
 | Subscription flow works end-to-end (sign-in → entitlement → verify) | ⬜ needs a real test |
 | **Rotate the Ed25519 signing key** | ⬜ ⚠️ the private key was committed to git history up to v0.91.0; anyone with repo access can mint a lifetime entitlement |
-| Android build | ⛔ **blocked on toolchain** — needs `NDK_HOME` and JDK 17 (JDK is 26); an environment change, not a code change |
+| Android build | ✅ 2026-08-05 — **the entry was stale.** `scripts/android-env.sh` already discovers the NDK, forces JDK 17 and repoints `RUSTC` at rustup; all four Android targets are installed and CI built `lightkid_studio_0.114.0.apk` |
 
 ## Next up, in order
 
@@ -81,7 +81,6 @@ These are the ones a coding session should *not* decide by itself:
 - **Suno admin switch** — the engine stays disconnected until there is one.
 - **Rotate the Ed25519 signing key** — a production credential operation. ⚠️ still outstanding.
 - **Subscription flow end-to-end** — needs a real account to test against.
-- **Android build** — `NDK_HOME` and JDK 17; an environment change.
 - **Multi-user / team**, **mobile parity** — product questions with no obvious right answer.
 
 

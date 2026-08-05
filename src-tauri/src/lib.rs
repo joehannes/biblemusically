@@ -866,6 +866,12 @@ pub fn run() {
             commands::team_pull,
             commands::resolve_conflict,
             commands::finish_merge,
+            commands::propose_resolution,
+            commands::list_arbitrations,
+            commands::work_on_fork,
+            commands::rejoin_main,
+            commands::set_admin_engines,
+            commands::admin_engines_status,
             commands::project_history,
             commands::rewind_project,
             // Suno without a browser: cookie → JWT over plain HTTP, wrapper as the fallback

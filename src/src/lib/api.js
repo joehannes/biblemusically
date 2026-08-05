@@ -254,6 +254,17 @@ export const api = {
   teamPull: (projectId) => invokeCommand("team_pull", { projectId }),
   resolveConflict: (payload) => invokeCommand("resolve_conflict", { payload }),
   finishMerge: (projectId) => invokeCommand("finish_merge", { projectId }),
+  // Who decides a conflict: the owner rules, everyone else proposes. Recorded in the project repo
+  // rather than enforced — see the arbitration note in commands/team.rs.
+  proposeResolution: (payload) => invokeCommand("propose_resolution", { payload }),
+  listArbitrations: (projectId) => invokeCommand("list_arbitrations", { projectId }),
+  // The escape hatch: keep working on your own branch while a ruling is outstanding.
+  workOnFork: (projectId) => invokeCommand("work_on_fork", { projectId }),
+  rejoinMain: (projectId, onto) => invokeCommand("rejoin_main", { projectId, onto: onto || null }),
+  // Engines that are off by default because they carry an account risk, not because they are broken.
+  // Unlocking takes a typed phrase — see ADMIN_ONLY_ENGINES in commands/settings.rs.
+  adminEnginesStatus: () => invokeCommand("admin_engines_status"),
+  setAdminEngines: (enabled, phrase) => invokeCommand("set_admin_engines", { enabled, phrase: phrase || null }),
   projectHistory: (projectId, limit) => invokeCommand("project_history", { projectId, limit: limit || null }),
   rewindProject: (projectId, commit) => invokeCommand("rewind_project", { projectId, commit }),
   // ============ Account, trial, subscription ============
