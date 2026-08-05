@@ -1451,20 +1451,64 @@ pub async fn kaggle_quota() -> Res<Value> {
     }
 }
 
+/// Move the cached OAuth token aside so the API key in `kaggle.json` is what authenticates.
+///
+/// This is the whole reason switching accounts appeared not to work. The modern Kaggle client
+/// prefers `~/.kaggle/access_token` over `kaggle.json` and reports `auth_method: ACCESS_TOKEN` when
+/// it does — so writing another account's key changed the file and nothing else. `reconcile_kaggle_
+/// identity` then asked the CLI who it was, got the *old* account, and dutifully flipped the app's
+/// record back. The switch reported success, the label reverted, and every push afterwards ran as
+/// somebody the user had not chosen.
+///
+/// Renamed rather than deleted: it is a credential the user may want back, and a `.disabled` file is
+/// recoverable in a way an `unlink` is not.
+async fn park_access_token() -> Option<std::path::PathBuf> {
+    let home = env::var("HOME").ok()?;
+    let token = PathBuf::from(home).join(".kaggle/access_token");
+    if !token.is_file() { return None; }
+    let parked = token.with_extension("disabled");
+    let _ = fs::remove_file(&parked).await;
+    fs::rename(&token, &parked).await.ok()?;
+    Some(parked)
+}
+
 /// Activate a stored account: write its kaggle.json and mark it active.
+///
+/// Verifies afterwards rather than assuming. A switch that did not take is worth saying out loud —
+/// the previous version reported success unconditionally, which is how the label could disagree with
+/// the toast that had just claimed it changed.
 #[tauri::command]
 pub async fn activate_kaggle_account(state: State<'_, AppState>, username: String) -> Res<Value> {
     let accts = stored_kaggle_accounts(&state.db).await;
     let acct = accts.iter().find(|a| a.get_str("username").ok() == Some(username.as_str()))
         .ok_or_else(|| format!("No stored account '{}'.", username))?;
     let key = acct.get_str("key").map_err(|_| "Stored account is missing its key.".to_string())?;
+
+    let parked = park_access_token().await;
     write_kaggle_json(&username, key).await?;
-    let (verified, _) = verify_kaggle_auth().await;
+    let (verified, detail) = verify_kaggle_auth().await;
+
+    // Ask the CLI who it is *now*. If it still disagrees, the settings record must not claim
+    // otherwise: the CLI is what every push and poll actually runs as.
+    let actual = kaggle_cli_username().await.unwrap_or_else(|| username.clone());
+    let switched = actual == username;
+
     state.db.collection::<Document>("settings").update_one(
         doc! { "_id": "singleton" },
-        doc! { "$set": { "kaggle_active": &username, "kaggle_username": &username, "kaggle_connected": true } },
+        doc! { "$set": { "kaggle_active": &actual, "kaggle_username": &actual, "kaggle_connected": true } },
     ).await.map_err(e)?;
-    Ok(serde_json::json!({ "ok": true, "username": username, "verified": verified }))
+
+    Ok(serde_json::json!({
+        "ok": switched, "username": actual, "asked_for": username, "verified": verified,
+        "parked_access_token": parked.map(|p| p.to_string_lossy().to_string()),
+        "detail": if switched {
+            format!("Now running as {actual}.")
+        } else {
+            format!("Asked for {username}, but the Kaggle CLI still authenticates as {actual}. \
+                     {detail} Sign out of the CLI (`kaggle auth logout`) and try again — until then \
+                     every push and poll runs as {actual}.")
+        },
+    }))
 }
 
 /// Remove a stored account. If it was active, the first remaining account becomes active.
@@ -1615,6 +1659,22 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
+    // Ask the quota before spending eight minutes finding out. A GPU-less run is not a failure the
+    // notebook can do anything about: Kaggle simply declines the accelerator, the notebook prints
+    // "NO GPU ON THIS RUN — not serving", and the person watching has already waited three minutes
+    // for an answer that was knowable in one request. Observed exactly this way in a real log.
+    //
+    // Advisory, not blocking: the number can be stale, and a wrong refusal would be worse than a
+    // wasted run. It goes in the reply so the interface can say it up front.
+    let quota_note = match crate::kaggle_api::quota().await {
+        Ok(q) if q.left_minutes <= 0 => Some(format!(
+            "This account's weekly GPU quota looks used up ({} of {} minutes). Kaggle will most \
+             likely run this on CPU, and the notebook does not serve without a GPU. It resets {}.",
+            q.used_minutes, q.allowed_minutes,
+            if q.resets_at.is_empty() { "weekly (Saturdays UTC)".into() } else { q.resets_at.clone() })),
+        _ => None,
+    };
+
     // A phone has no CLI to spawn, and a desktop may simply not have installed one. Both now take
     // the HTTP path rather than dead-ending: `kernels push` was the last operation on the critical
     // path that only the CLI could do, which is what made a phone able to watch a server but never
@@ -1660,6 +1720,7 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
         } else { String::new() };
         Ok(serde_json::json!({
             "ok": true, "status": "starting", "slug": pulled.slug, "created": pulled.from_upstream,
+            "quota_warning": quota_note,
             "detail": format!("{} server starting on Kaggle (GPU batch run).{} It needs ~8-10 min to install, download models and open the tunnel.", engine, created),
             "next_step": "Watch the live log below. The run serves until Kaggle's ~9-12 h batch limit."
         }))
@@ -1994,17 +2055,19 @@ pub async fn fetch_kaggle_url(state: State<'_, AppState>, engine: String) -> Res
     // 2) Pull the kernel's latest output/log and grep for the tunnel URL.
     //    `kernels output` only has data for COMPLETED runs; a RUNNING server (the case
     //    that matters) is only visible by streaming `kernels logs -f` for a bit.
-    let mut url = if http {
-        // `kernels/output` carries the run's log in the response, so the RUNNING case the comment
-        // above worries about is covered without streaming anything.
-        crate::kaggle_api::tunnel_url(slug).await.ok().flatten()
-    } else {
+    // HTTP first even when a CLI exists. `kernels output` on the CLI *downloads every output file*
+    // to find a URL that is sitting in the log — measured at 22 s and 4.8 MB on a real heartmula
+    // kernel, before a possible 25 s of log streaming on top. That is most of the minute somebody
+    // spends watching "Checking whether a server is already live…" and concluding it does nothing.
+    // The REST call returns the log in the response body: one request, no downloads.
+    let mut url = crate::kaggle_api::tunnel_url(slug).await.ok().flatten();
+    if url.is_none() && !http {
         let tmp = env::temp_dir().join(format!("bm-kaggle-{}", engine));
         let _ = fs::create_dir_all(&tmp).await;
         let _ = tokio::process::Command::new(&kaggle)
             .args(["kernels", "output", slug, "-p"]).arg(&tmp).output().await;
-        scan_dir_for_tunnel_url(&tmp).await
-    };
+        url = scan_dir_for_tunnel_url(&tmp).await;
+    }
 
     if !http && url.is_none() && matches!(kstatus, "running" | "queued" | "unknown") {
         url = stream_logs_for_tunnel_url(&kaggle, slug, 25).await;

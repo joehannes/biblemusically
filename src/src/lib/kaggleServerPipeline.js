@@ -100,6 +100,14 @@ export async function autoStartKaggleServer(engine) {
   let start = await api.startKaggleServer(engine);
   if (!stillCurrent()) return;
 
+  // Said before the eight-minute wait rather than after it. A GPU-less run is not something the
+  // notebook can recover from — Kaggle declines the accelerator and it refuses to serve — so the
+  // one useful moment to mention an exhausted quota is now.
+  if (start?.quota_warning) {
+    pushLog(engine, start.quota_warning, "error");
+    patch(engine, { hint: "gpu_denied", next_step: HINT_NEXT_STEP.gpu_denied });
+  }
+
   // ── Auto-recover the "own zombie" deadlock ─────────────────────────────
   // If the push failed because this engine's own run is stuck RUNNING with a dead tunnel, don't
   // dead-end asking the user to manually Stop Session (the Kaggle CLI has no stop). Instead push a

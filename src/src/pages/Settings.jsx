@@ -15,7 +15,8 @@ import KaggleDiagnostics from "../components/KaggleDiagnostics";
 import ComputeProviders from "../components/ComputeProviders";
 import VoicePicker from "../components/VoicePicker";
 import {
-  Server, PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2 } from "lucide-react";
+  Server, PowerOff, UserCog, Cookie, KeyRound, Music2, Image as Img, Film, ShieldCheck, CheckCircle2, XCircle, Save, Bot, HelpCircle, ExternalLink, DownloadCloud, Sparkles, Gauge, Loader2, Copy, RotateCcw,
+} from "lucide-react";
 import { getStepForPath } from "../lib/pageSteps";
 import { setLinkPreference } from "../lib/splitScreen";
 import { visibleMusicEngines, visibleImageEngines, fallbackMusicEngines, musicEngine, imageEngine, isPaid, priceLine, IMAGE_ENGINES, MUSIC_ENGINES } from "../lib/engineCapabilities";
@@ -528,8 +529,15 @@ const SettingsComponent = () => {
 
   useEffect(() => { loadKaggleAccounts(); }, [loadKaggleAccounts]);
   const activateAccount = async (username) => {
-    try { await api.activateKaggleAccount(username); toast.success(`Now using ${username}.`); loadKaggleAccounts(); }
-    catch (e) { toast.error(String(e)); }
+    try {
+      // The backend now verifies the switch against the CLI rather than assuming it. Reporting its
+      // answer instead of a fixed success message is the difference between the toast and the label
+      // agreeing — they used to disagree whenever a cached OAuth token outranked the key file.
+      const r = await api.activateKaggleAccount(username);
+      if (r?.ok) toast.success(r.detail || `Now using ${username}.`);
+      else toast.error(r?.detail || `Could not switch to ${username}.`, { duration: 16000 });
+      loadKaggleAccounts();
+    } catch (e) { toast.error(String(e)); }
   };
   const removeAccount = async (username) => {
     try { await api.removeKaggleAccount(username); loadKaggleAccounts(); }
@@ -710,7 +718,27 @@ const SettingsComponent = () => {
     // Prefer the rich streaming log from the Rust monitor; fall back to the orchestrator log lines.
     const monLog = st.monitor?.log || [];
     const orchLog = (st.log || []).map((l) => ({ level: l.level, text: l.message }));
-    const lines = (monLog.length ? monLog : orchLog).slice(-8);
+    const allLines = monLog.length ? monLog : orchLog;
+    const lines = allLines.slice(-8);
+    // The whole log, not the eight visible lines. What somebody pastes into a bug report has to
+    // contain the traceback, and the traceback is never in the last eight lines.
+    const copyLog = async () => {
+      const header = [
+        `engine: ${engine}`,
+        `status: ${st.status}${st.phase ? ` (${st.phase})` : ""}`,
+        st.monitor?.kernel_status ? `kernel: ${st.monitor.kernel_status}` : null,
+        st.url ? `url: ${st.url}` : null,
+        st.detail ? `detail: ${st.detail}` : null,
+        st.hint ? `hint: ${st.hint}` : null,
+        `app: ${appVersion || "?"}`,
+        "",
+      ].filter(Boolean).join("\n");
+      const body = allLines.map((l) => `[${l.level || "info"}] ${l.text}`).join("\n");
+      try {
+        await navigator.clipboard.writeText(`${header}${body}`);
+        toast.success(`Copied ${allLines.length} log line(s) — paste it into a bug report.`);
+      } catch { toast.error("Could not copy. Select the log text and copy it by hand."); }
+    };
     const variant = isReady ? "default" : isError ? "destructive" : "secondary";
     const canFix = isError || busy;
 
@@ -742,6 +770,29 @@ const SettingsComponent = () => {
         </div>
 
         {/* streaming log tail */}
+        {allLines.length > 0 && (
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <span className="text-[10px] text-muted-foreground">
+              {allLines.length} line(s){allLines.length > lines.length ? ` · showing the last ${lines.length}` : ""}
+            </span>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] ml-auto" onClick={copyLog}>
+              <Copy className="w-3 h-3 mr-1" />Copy the whole log
+            </Button>
+            {/* "Start over quickly": end whatever session is holding the slot, forget the stored URL,
+                and push a fresh run — the three things somebody otherwise does by hand, in order. */}
+            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]"
+                    onClick={async () => {
+                      try {
+                        toast.message(`Clearing ${engine}'s session…`);
+                        await api.supersedeKaggleSession(engine).catch(() => {});
+                        await api.saveSettings({ [`${engine}_api_url`]: "" }).catch(() => {});
+                        autoStartKaggleServer(engine);
+                      } catch (err) { toast.error(String(err)); }
+                    }}>
+              <RotateCcw className="w-3 h-3 mr-1" />Start over
+            </Button>
+          </div>
+        )}
         {lines.length > 0 && (
           <pre className="mt-2 max-h-28 overflow-y-auto scroll-thin whitespace-pre-wrap break-words font-mono text-[10px] leading-snug bg-background/60 rounded p-2">
             {lines.map((l, i) => (
