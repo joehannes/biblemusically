@@ -101,6 +101,16 @@ function eligible(raw) {
   // A path, a sample credential, a placeholder address, a model file: things a user reads literally
   // and nobody translates. Every one of these reached a translator's list before this filter.
   if (/^(?:scripts|src|\.github)\//.test(s) || /\/$/.test(s)) return false;
+  // A home-relative path. The host rule below anchors on [a-z], so `~/.kaggle/kaggle.json`
+  // walked straight past it and was handed to fifteen translators as though it were a
+  // sentence — a path that is translated stops being the path the user has to type.
+  if (/^~\//.test(s)) return false;
+  // The innards of a template literal. `${…}` interpolations are masked upstream, which can leave a
+  // crumb ("h $") or a whole statement ("m`; const resets = quota.resets_at ? …") looking like prose.
+  // Neither is interface copy, and both reached the inventory from one `${h}h ${m}m` in a banner.
+  if (s.includes("`")) return false;
+  if (/\$\s*$|^\s*\$/.test(s)) return false;
+  if (/\b(?:const|let|var|new)\s+[A-Za-z_$]/.test(s)) return false;
   if (/\.(?:safetensors|ya?ml|ttf|otf)$/i.test(s)) return false;
   if (/^[\w.+-]+@[\w.-]+\.\w+$/.test(s)) return false;              // yourname@gmail.com
   if (/^[a-z][\w-]*(?:\.[a-z][\w-]*){1,}(?:\/\S*)?$/i.test(s) && !/\s/.test(s)) return false; // hosts
@@ -127,6 +137,8 @@ const NEVER_TRANSLATED = new Set([
   "ElevenLabs", "ElevenLabs Music", "Leonardo", "Ideogram", "Recraft", "fal.ai", "Gemini",
   "OpenRouter", "Anthropic", "OpenAI", "Kaggle", "Colab", "Printify", "Google", "Gmail", "YouTube",
   "Instagram", "TikTok", "Facebook", "GitHub", "GitLab", "Codeberg", "Hugging Face", "Modal",
+  // Short-form products. Named features, not descriptions — nobody localises "YouTube Shorts".
+  "YouTube Shorts", "Instagram Reels", "Facebook Reels", "Snapchat Spotlight", "Pinterest",
   "Hotjar", "Obsidian", "Qwen-Image", "Juggernaut XL", "Krea 2 RAW", "Krea 2 Turbo", "SD 3.5",
   "API", "CFG", "DPI", "SVG", "PNG", "JPEG", "EPUB", "MP3", "MP4", "URL", "JSON", "LoRA", "GPU",
   "IP-Adapter", "ControlNet", "SAF", "OAuth", "LFS", "SIL OFL", "Apache 2.0",
@@ -161,6 +173,8 @@ const NEVER_TRANSLATED = new Set([
   "src-tauri/comfy_workflows/animate_sdxl.json.example",
   "…apps.googleusercontent.com",
   "…apps.googleusercontent.com — type Android, package com.studio.lightkid",
+  "pipx install kaggle", "kaggle auth login",
+  "slow drift over still water at dawn, mist, low sun, cinematic",
 
   // Abbreviated units and field prefixes rendered next to a value. "img ·" and "med ·" are column
   // separators, not words; "id:", "kernel:", "format:" label a literal that follows.
