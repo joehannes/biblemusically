@@ -69,6 +69,27 @@ const DEFAULT_CONFIG = {
   // A lifetime licence covers the major version it was bought in. A later major version is a new
   // purchase, and the entitlement says which version it covers so the app can be honest about it.
   lifetime_major: 1,
+
+  // Accounts that always hold a full licence, without paying and without a code.
+  //
+  // The author's own account is here because every alternative is worse: a lifetime record in KV can
+  // be wiped by a bad migration, and a promo code can be spent by accident. Checked before any dated
+  // state, so it survives an expired trial and a lapsed subscription alike.
+  //
+  // Compared case-insensitively — an email address is not case-sensitive in its domain, and people
+  // type their own address inconsistently.
+  permanent_free: ["johannes.neugschwentner@gmail.com"],
+
+  // A reusable promo code granting the lifetime licence for the current major version.
+  //
+  // Unlike a `gift:` record, which is minted per recipient and dies on first use, this one is a
+  // constant — so it can be handed out deliberately, and used on a fresh machine without minting
+  // anything first. One redemption per account, tracked at `promo:<code>:<email>`, so a leak costs
+  // one licence per address rather than unlimited licences.
+  //
+  // Override it in production with the PROMO_CODE secret (`wrangler secret put PROMO_CODE`); the
+  // constant is the fallback so a self-hosted deploy works out of the box.
+  promo_code: "BM1-ZR6JN-QE4FD-P7DAB",
   hotjar_site_id: "",
   signups_open: true,
   message: "",
@@ -150,6 +171,15 @@ function entitlementState(user, cfg) {
   };
 
   if (user.blocked) return { status: "blocked", features: { ...none, read: false } };
+
+  // Named accounts hold a full licence unconditionally. Deliberately ahead of every dated check, so
+  // an expired trial or a lapsed card cannot lock the author out of their own app. `blocked` still
+  // wins, because an account being on this list is not a reason to keep serving a compromised one.
+  const freeList = (cfg.permanent_free || []).map((a) => String(a).trim().toLowerCase());
+  if (user.email && freeList.includes(String(user.email).trim().toLowerCase())) {
+    return { status: "lifetime", features: full };
+  }
+
   if (user.lifetime_major && user.lifetime_major >= (cfg.lifetime_major || 1)) {
     return { status: "lifetime", features: full };
   }
@@ -488,6 +518,29 @@ export default {
       if (path === "/v1/redeem" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const code = String(body.code || "").trim().toUpperCase();
+        const cfgEarly = await config(env);
+
+        // The reusable promo code, tried before the single-use gift records. It grants the same
+        // lifetime licence a purchase does, once per account: the guard is a marker keyed by code
+        // *and* email, so the same person cannot mint themselves a second one, and a leaked code
+        // costs one licence per address rather than an unlimited number.
+        const promo = String(env.PROMO_CODE || cfgEarly.promo_code || "").trim().toUpperCase();
+        if (promo && code === promo) {
+          const user = await getUser(env, body.email || "");
+          if (!user) return bad("Sign in first, then redeem.", 404);
+          const seen = `promo:${promo}:${String(user.email).toLowerCase()}`;
+          if (await env.LICENCES.get(seen)) {
+            return bad("You have already used that code on this account.", 409);
+          }
+          user.lifetime_major = cfgEarly.lifetime_major || 1;
+          user.plan = "lifetime";
+          await env.LICENCES.put(seen, nowIso());
+          await putUser(env, user);
+          await bump(env, "promo_redeemed");
+          const ent = await mintEntitlement(env, user, cfgEarly);
+          return json({ ok: true, entitlement: ent.token, state: ent.payload });
+        }
+
         const licence = await env.LICENCES.get(`gift:${code}`, { type: "json" });
         if (!licence) return bad("That code is not one of ours.", 404);
         if (licence.redeemed_by) return bad("That gift has already been redeemed.", 409);
