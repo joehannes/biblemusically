@@ -133,6 +133,9 @@ export const api = {
   fetchKaggleUrl: (engine) => invokeCommand("fetch_kaggle_url", { engine }),
   startKaggleServer: (engine) => invokeCommand("start_kaggle_server", { engine }),
   supersedeKaggleSession: (engine) => invokeCommand("supersede_kaggle_session", { engine }),
+  // Clear every blocker before a start: a stored URL that no longer answers, a session holding the
+  // GPU slot without serving, and the previous attempt's log monitor. Safe when nothing is wrong.
+  resetKaggleEngine: (engine) => invokeCommand("reset_kaggle_engine", { engine }),
   stopKaggleServer: (engine) => invokeCommand("stop_kaggle_server", { engine }),
   kaggleStartMonitor: (engine, fresh = false) => invokeCommand("kaggle_start_monitor", { engine, fresh }),
   kaggleProgress: (engine) => invokeCommand("kaggle_progress", { engine }),

@@ -2725,7 +2725,8 @@
     "Start over": "Recomeçar",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "Estás à espera da decisão do proprietário? Não precisas de ficar parado: leva o teu trabalho para um ramo teu e continua. Nada é enviado e nada se perde.",
     "Who decided what": "Quem decidiu o quê",
-    "Work on a fork": "Trabalhar num fork"
+    "Work on a fork": "Trabalhar num fork",
+    "Clearing anything in the way…": "A limpar o que estiver a bloquear…"
   },
   "same_as_english": [
     "DPI —",

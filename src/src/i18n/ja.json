@@ -2739,7 +2739,8 @@
     "Start over": "やり直す",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "オーナーの判断を待っていますか。何もせずに待つ必要はありません。自分のブランチに作業を移して続けてください。push はされず、失われるものもありません。",
     "Who decided what": "誰が何を決めたか",
-    "Work on a fork": "フォークで作業する"
+    "Work on a fork": "フォークで作業する",
+    "Clearing anything in the way…": "妨げになっているものを片付けています…"
   },
   "same_as_english": [
     "DPI —",

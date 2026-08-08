@@ -2744,7 +2744,8 @@
     "Start over": "फिर से शुरू करें",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "मालिक के निर्णय की प्रतीक्षा कर रहे हैं? खाली बैठने की ज़रूरत नहीं — अपना काम अपनी ब्रांच पर ले जाएँ और आगे बढ़ें। न कुछ पुश होता है, न कुछ खोता है।",
     "Who decided what": "किसने क्या तय किया",
-    "Work on a fork": "फ़ोर्क पर काम करें"
+    "Work on a fork": "फ़ोर्क पर काम करें",
+    "Clearing anything in the way…": "रुकावट डालने वाली चीज़ें हटाई जा रही हैं…"
   },
   "same_as_english": [
     "DPI —",

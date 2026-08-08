@@ -95,8 +95,33 @@ export async function autoStartKaggleServer(engine) {
   // that so a gpu_slots_full failure right after can point at the actual culprit.
   const ownZombieSession = r.status === "stale_url";
   pushLog(engine, r.detail || "No live server found — starting a fresh run…");
-  patch(engine, { status: "starting", phase: "starting" });
 
+  // ── Clear the blockers before pushing, not after a push fails ──────────
+  // Nothing is serving, so anything still holding this engine's slot is dead weight: a run whose
+  // tunnel died but that Kaggle still lists as RUNNING keeps that slot for the full ~9-12 h batch
+  // limit, and a stored URL that no longer answers makes every later check "succeed" against a
+  // tunnel that is gone. Waiting for a `gpu_slots_full` reply to discover that is the wrong shape —
+  // by then somebody has already watched a progress bar do nothing.
+  //
+  // Safe to run unconditionally: the backend leaves a genuinely live server alone and says so.
+  patch(engine, { status: "starting", phase: "starting", detail: "Clearing anything in the way…" });
+  try {
+    const reset = await api.resetKaggleEngine(engine);
+    if (!stillCurrent()) return;
+    if (reset?.already_live) {
+      // It came up between the check and now — take it rather than tearing it down.
+      pushLog(engine, "A server answered while clearing — connecting to it instead.");
+      await finishWithTest(engine, reset.url, stillCurrent);
+      return;
+    }
+    if (reset?.cleared?.length) pushLog(engine, reset.detail);
+  } catch (err) {
+    // A failed clean-up must not stop the start; the push may well succeed anyway.
+    pushLog(engine, `Could not fully clear the previous run (${err}) — starting anyway.`, "error");
+  }
+  if (!stillCurrent()) return;
+
+  patch(engine, { status: "starting", phase: "starting", detail: null });
   let start = await api.startKaggleServer(engine);
   if (!stillCurrent()) return;
 

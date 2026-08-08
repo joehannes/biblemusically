@@ -2743,7 +2743,8 @@
     "Start over": "البدء من جديد",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "أتنتظر قرار المالك؟ لا داعي للانتظار دون عمل — انقل عملك إلى فرع خاص بك وتابع. لا شيء يُدفع ولا شيء يضيع.",
     "Who decided what": "من قرّر ماذا",
-    "Work on a fork": "العمل على نسخة مفرَّعة"
+    "Work on a fork": "العمل على نسخة مفرَّعة",
+    "Clearing anything in the way…": "جارٍ إزالة ما يعيق البدء…"
   },
   "same_as_english": [
     "Video Gen"

@@ -1899,6 +1899,106 @@ pub async fn stop_kaggle_session(db: &crate::store::Db, engine: &str) -> Res<Val
     }))
 }
 
+/// Does this URL still answer? A tunnel that is gone is the difference between "already serving"
+/// and "sitting behind a dead blocker", and every other decision here depends on getting it right.
+/// Under 500 counts: a 404 from a served path still proves something is listening.
+async fn url_answers(url: &str) -> bool {
+    matches!(reqwest::Client::new().get(url).timeout(std::time::Duration::from_secs(8)).send().await,
+             Ok(res) if res.status().as_u16() < 500)
+}
+
+/// Clear everything that can block a fresh start, then report what was actually in the way.
+///
+/// The reactive recovery this replaces only fired *after* a push came back `gpu_slots_full`, which
+/// meant the common case never reached it: a run whose tunnel died but that Kaggle still lists as
+/// RUNNING holds its GPU slot for the full ~9-12 h batch limit, and the app would sit in "checking
+/// whether a server is already live" against a kernel that was never going to serve. Waiting for a
+/// specific failure code to arrive is the wrong shape — by then the person has already watched a
+/// progress bar do nothing.
+///
+/// So this runs *before* the push, and clears three separate things that each look identical from
+/// the outside:
+///
+/// 1. **A stored URL that no longer answers.** Kept, it makes every later check "succeed" against a
+///    tunnel that is gone.
+/// 2. **A session holding the GPU slot without serving.** Ended with the GPU-off supersede, since
+///    Kaggle has no stop-session call.
+/// 3. **A monitor still streaming logs from the previous attempt**, which would otherwise narrate
+///    the old run over the new one.
+///
+/// Deliberately safe to call when nothing is wrong: a kernel that is genuinely serving is left
+/// alone, and the reply says so. That is what makes it callable unconditionally on every start.
+#[tauri::command]
+pub async fn reset_kaggle_engine(
+    state: State<'_, AppState>,
+    monitors: State<'_, crate::commands::kaggle_monitor::KaggleMonitors>,
+    engine: String,
+) -> Res<Value> {
+    // Silence the previous attempt's log stream first, or its lines arrive interleaved with the new
+    // run's and the panel reads as one confused story. Done here rather than in the shared helper
+    // because only a command has the monitor registry.
+    if let Some(stop) = monitors.stops.lock().unwrap().get(&engine) {
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    reset_engine_blockers(&state.db, &engine).await
+}
+
+/// The reset itself, on a raw store handle so any caller can use it.
+pub async fn reset_engine_blockers(db: &crate::store::Db, engine: &str) -> Res<Value> {
+    if engine_hidden(engine) { return Ok(hidden_engine_reply(engine)); }
+    let mut cleared: Vec<String> = Vec::new();
+
+    let url_key = format!("{engine}_api_url");
+    let stored = db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
+        .and_then(|d| d.get_str(&url_key).ok().map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    // Is anything actually serving? A live URL means there is nothing to clean up, and tearing down
+    // a working server because the user pressed start twice would be its own bug.
+    if !stored.trim().is_empty() && url_answers(&stored).await {
+        return Ok(serde_json::json!({
+            "ok": true, "engine": engine, "already_live": true, "url": stored, "cleared": cleared,
+            "detail": "That engine is already serving — nothing needed clearing.",
+        }));
+    }
+    if !stored.trim().is_empty() {
+        db.collection::<Document>("settings").update_one(
+            doc! { "_id": "singleton" }, doc! { "$set": { &url_key: "" } },
+        ).await.map_err(e)?;
+        cleared.push(format!("a stored URL that no longer answers ({stored})"));
+    }
+
+    // A kernel Kaggle still calls running, with no reachable tunnel, is the zombie holding the slot.
+    let kstatus = match kaggle_slugs(db, engine).await {
+        Some((own, _, _)) => kernel_status_any(&own).await.unwrap_or_else(|_| "unknown".into()),
+        None => "unknown".to_string(),
+    };
+    let mut freed_slot = false;
+    if matches!(kstatus.as_str(), "running" | "queued") {
+        match supersede_session(db, engine).await {
+            Ok(r) if r["ok"].as_bool().unwrap_or(false) => {
+                freed_slot = true;
+                cleared.push(format!("a {kstatus} session that was holding its GPU slot"));
+            }
+            Ok(r) => cleared.push(format!(
+                "could not end the {kstatus} session: {}",
+                r["detail"].as_str().unwrap_or("no detail"))),
+            Err(err) => cleared.push(format!("could not end the {kstatus} session: {err}")),
+        }
+    }
+
+    Ok(serde_json::json!({
+        "ok": true, "engine": engine, "already_live": false,
+        "kernel_status": kstatus, "freed_slot": freed_slot, "cleared": cleared,
+        "detail": if cleared.is_empty() {
+            "Nothing was blocking a start.".to_string()
+        } else {
+            format!("Cleared {}.", cleared.join("; "))
+        },
+    }))
+}
+
 /// Auto-recover a stuck/zombie session for `engine` by pushing a GPU-OFF version of its kernel.
 ///
 /// The Kaggle CLI/API has no "stop session" — but pushing a new kernel version SUPERSEDES the one
@@ -2665,5 +2765,30 @@ mod kaggle_slug_tests {
         // ship an account risk on by default, or make an unlockable engine unreachable.
         for e in ADMIN_ONLY_ENGINES {
             assert!(!engine_hidden(e), "{e} is unlockable, so it must not also be build-hidden");
+        }
+    }
+
+    #[test]
+    fn only_a_stuck_kernel_state_is_worth_clearing() {
+        // The reset supersedes on "running" and "queued" — the two states that hold a slot without
+        // necessarily serving. Clearing on "complete" would push a pointless GPU-off run every time
+        // somebody pressed start after a finished session, and "unknown" (the answer when Kaggle
+        // cannot be reached) must not be treated as a zombie either.
+        for stuck in ["running", "queued"] {
+            assert!(matches!(stuck, "running" | "queued"), "{stuck} should be cleared");
+        }
+        for leave in ["complete", "error", "cancelled", "unknown", ""] {
+            assert!(!matches!(leave, "running" | "queued"), "{leave} must be left alone");
+        }
+    }
+
+    #[test]
+    fn a_hidden_engine_is_refused_before_anything_is_torn_down() {
+        // reset_engine_blockers ends sessions and clears settings. A hidden engine must bounce off
+        // the same guard every other spending entry point uses, before any of that happens.
+        for e in HIDDEN_ENGINES {
+            let reply = hidden_engine_reply(e);
+            assert_eq!(reply["ok"], serde_json::json!(false));
+            assert_eq!(reply["status"], serde_json::json!("engine_hidden"));
         }
     }

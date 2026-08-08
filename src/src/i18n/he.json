@@ -2737,7 +2737,8 @@
     "Start over": "להתחיל מחדש",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "ממתין להכרעת הבעלים? אין צורך להמתין ללא מעש — קח את העבודה שלך לענף משלך והמשך. שום דבר לא נדחף ושום דבר לא הולך לאיבוד.",
     "Who decided what": "מי הכריע במה",
-    "Work on a fork": "עבודה על פיצול"
+    "Work on a fork": "עבודה על פיצול",
+    "Clearing anything in the way…": "מנקה כל מה שחוסם…"
   },
   "same_as_english": [
     "DPI —",

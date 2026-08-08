@@ -2743,7 +2743,8 @@
     "Start over": "Начать заново",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "Ждёте решения владельца? Ждать без дела не нужно — перенесите работу в свою ветку и продолжайте. Ничего не отправляется и ничего не теряется.",
     "Who decided what": "Кто что решил",
-    "Work on a fork": "Работать в форке"
+    "Work on a fork": "Работать в форке",
+    "Clearing anything in the way…": "Убираем всё, что мешает…"
   },
   "same_as_english": [
     "DPI —",

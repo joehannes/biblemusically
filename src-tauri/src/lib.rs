@@ -628,6 +628,7 @@ pub fn run() {
             commands::fetch_kaggle_url,
             commands::start_kaggle_server,
             commands::supersede_kaggle_session,
+            commands::reset_kaggle_engine,
             commands::stop_kaggle_server,
             commands::kaggle_start_monitor,
             commands::kaggle_progress,

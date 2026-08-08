@@ -2728,7 +2728,8 @@
     "Start over": "Recommencer",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "Tu attends la décision du propriétaire ? Inutile d’attendre sans rien faire : emporte ton travail sur ta propre branche et continue. Rien n’est poussé et rien n’est perdu.",
     "Who decided what": "Qui a décidé quoi",
-    "Work on a fork": "Travailler sur une bifurcation"
+    "Work on a fork": "Travailler sur une bifurcation",
+    "Clearing anything in the way…": "Suppression de ce qui bloque…"
   },
   "same_as_english": [
     "Clips",

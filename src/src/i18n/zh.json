@@ -2739,7 +2739,8 @@
     "Start over": "重新开始",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "在等待所有者裁定吗？你不必干等——把工作放到自己的分支上继续做。不会推送任何东西，也不会丢失任何东西。",
     "Who decided what": "谁决定了什么",
-    "Work on a fork": "在复刻上工作"
+    "Work on a fork": "在复刻上工作",
+    "Clearing anything in the way…": "正在清除阻碍…"
   },
   "same_as_english": [
     "DPI —",

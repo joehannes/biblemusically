@@ -2728,7 +2728,8 @@
     "Start over": "Empezar de nuevo",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "¿Esperando la decisión del propietario? No hace falta esperar sin hacer nada: lleva tu trabajo a tu propia rama y continúa. No se sube nada y no se pierde nada.",
     "Who decided what": "Quién decidió qué",
-    "Work on a fork": "Trabajar en una bifurcación"
+    "Work on a fork": "Trabajar en una bifurcación",
+    "Clearing anything in the way…": "Despejando lo que estorbe…"
   },
   "same_as_english": [
     "Clips",

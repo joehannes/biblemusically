@@ -2740,7 +2740,8 @@
     "Start over": "다시 시작",
     "Waiting on the owner to rule? You do not have to wait idle — take your work onto your own branch and carry on. Nothing is pushed and nothing is lost.": "소유자의 결정을 기다리고 있나요? 가만히 기다릴 필요는 없습니다. 작업을 자신의 브랜치로 옮겨 계속하세요. push되는 것도, 잃는 것도 없습니다.",
     "Who decided what": "누가 무엇을 결정했는지",
-    "Work on a fork": "포크에서 작업하기"
+    "Work on a fork": "포크에서 작업하기",
+    "Clearing anything in the way…": "가로막고 있는 것을 정리하는 중…"
   },
   "same_as_english": [
     "DPI —",
