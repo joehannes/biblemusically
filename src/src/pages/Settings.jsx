@@ -117,6 +117,99 @@ const IMAGE_QUALITY_PRESETS = [
   { id: "quality", label: "Quality (slow)", comfyui_steps: 45, comfyui_cfg: 7.5, hint: "More steps, higher CFG — best detail, noticeably slower per image." },
 ];
 
+// Whole looks, not knobs.
+//
+// The quality row above trades render time for detail and nothing else. That is useful once you
+// already know what you want the pictures to look like — and useless before then, which is the
+// state most people are in when they first open this panel. Steps, CFG, IP-Adapter weight and a
+// negative prompt do not describe an outcome; "candlelit and painterly" does.
+//
+// So each pack is a complete, coherent set of the fields that decide the look, with a sentence
+// saying what it is for. Picking one writes all of them at once. Everything stays editable
+// afterwards — a pack is a starting point, not a mode.
+//
+// Sizes are SDXL-native aspect buckets (1024², 1152×896, 1344×768): off-bucket dimensions are what
+// produce the stretched faces and duplicated limbs people blame on the prompt.
+const IMAGE_PACKS = [
+  {
+    id: "cinematic_photo",
+    label: "Cinematic photo",
+    blurb: "Filmic, shallow depth of field, dramatic light. The safe default for scripture narration over real-looking scenes.",
+    settings: {
+      comfyui_style: "photoreal", comfyui_steps: 32, comfyui_cfg: 6.0,
+      comfyui_width: 1344, comfyui_height: 768, comfyui_ip_weight: 0.65,
+      comfyui_prompt_prefix: "cinematic film still, 35mm, shallow depth of field, volumetric light, natural skin texture",
+      comfyui_negative: "cartoon, illustration, 3d render, plastic skin, extra fingers, watermark, text, lowres",
+    },
+  },
+  {
+    id: "candlelit_painterly",
+    label: "Candlelit painterly",
+    blurb: "Old-master warmth — deep shadow, gold highlights, visible brushwork. Suits psalms, lament and night scenes.",
+    settings: {
+      comfyui_style: "oil_painting", comfyui_steps: 40, comfyui_cfg: 7.0,
+      comfyui_width: 1152, comfyui_height: 896, comfyui_ip_weight: 0.6,
+      comfyui_prompt_prefix: "oil on canvas, chiaroscuro, candlelit, warm gold and umber palette, visible brushwork",
+      comfyui_negative: "photograph, neon, modern clothing, text, watermark, lowres, flat lighting",
+    },
+  },
+  {
+    id: "radiant_worship",
+    label: "Radiant worship",
+    blurb: "Bright, airy and hopeful — soft rim light and pale skies. For praise, resurrection and children's material.",
+    settings: {
+      comfyui_style: "photoreal", comfyui_steps: 30, comfyui_cfg: 6.0,
+      comfyui_width: 1344, comfyui_height: 768, comfyui_ip_weight: 0.65,
+      comfyui_prompt_prefix: "soft diffused daylight, rim light, pastel sky, airy atmosphere, hopeful mood",
+      comfyui_negative: "dark, grim, horror, harsh shadows, text, watermark, lowres",
+    },
+  },
+  {
+    id: "graphic_novel",
+    label: "Graphic novel",
+    blurb: "Bold ink, flat colour, strong silhouettes. Reads clearly at phone size, which matters for Shorts.",
+    settings: {
+      comfyui_style: "graphic_novel", comfyui_steps: 28, comfyui_cfg: 7.0,
+      comfyui_width: 1024, comfyui_height: 1024, comfyui_ip_weight: 0.75,
+      comfyui_prompt_prefix: "bold ink linework, flat colour fills, high contrast, strong silhouette, comic panel",
+      comfyui_negative: "photorealistic, muddy colours, soft focus, text, watermark, lowres",
+    },
+  },
+  {
+    id: "stained_glass",
+    label: "Stained glass",
+    blurb: "Leaded outlines and jewel colour, lit from behind. Distinctive, and very hard to mistake for anyone else's channel.",
+    settings: {
+      comfyui_style: "watercolor", comfyui_steps: 34, comfyui_cfg: 7.5,
+      comfyui_width: 1024, comfyui_height: 1024, comfyui_ip_weight: 0.55,
+      comfyui_prompt_prefix: "stained glass window, heavy black leading, jewel tones, backlit, symmetrical composition",
+      comfyui_negative: "photograph, gradient shading, depth of field, text, watermark, lowres",
+    },
+  },
+  {
+    id: "anime_devotional",
+    label: "Anime devotional",
+    blurb: "Clean cel shading and expressive faces. The look younger audiences already watch — good for teaching series.",
+    settings: {
+      comfyui_style: "anime", comfyui_steps: 28, comfyui_cfg: 6.5,
+      comfyui_width: 1152, comfyui_height: 896, comfyui_ip_weight: 0.8,
+      comfyui_prompt_prefix: "clean cel shading, expressive eyes, crisp lineart, soft gradient background",
+      comfyui_negative: "photorealistic, grainy, harsh shadows, extra fingers, text, watermark, lowres",
+    },
+  },
+  {
+    id: "draft_fast",
+    label: "Fast drafts",
+    blurb: "Deliberately cheap. Use it to settle composition and prompts, then switch to a real pack and regenerate.",
+    settings: {
+      comfyui_style: "photoreal", comfyui_steps: 14, comfyui_cfg: 5.5,
+      comfyui_width: 1024, comfyui_height: 1024, comfyui_ip_weight: 0.65,
+      comfyui_prompt_prefix: "",
+      comfyui_negative: "text, watermark, lowres",
+    },
+  },
+];
+
 // Field component moved OUTSIDE of SettingsComponent to prevent focus-loss on re-render.
 const Field = memo(({ k, label, placeholder, type="text", testid, value, onValueChange }) => {
   const handleChange = useCallback((e) => {
@@ -245,8 +338,18 @@ const SettingsComponent = () => {
   const [s, setS] = useState(initialSettings);
   const appVersion = appPkg.version || "0.6.1";
   
-  const updateS = useCallback((updates) => {
-    setS(prev => ({ ...prev, ...updates }));
+  // Accepts either `updateS({ key: value })` or `updateS("key", value)`.
+  //
+  // Eleven call sites used the second form against a function that only understood the first, and
+  // the failure was silent in the worst way: spreading a *string* into an object spreads it by
+  // character, so `updateS("remote_render_provider", "modal")` wrote `{0:"r", 1:"e", 2:"m", …}`
+  // and never touched the setting. The tile could not be changed off its default — the remote
+  // rendering target, the remote command runner, the Printify and Suno fields — and the saved
+  // settings quietly accumulated keys "0".."21" holding the letters of the key name. Supporting
+  // both shapes here fixes every one of them at once, and stops the next such call being a bug.
+  const updateS = useCallback((updates, maybeValue) => {
+    const patch = typeof updates === "string" ? { [updates]: maybeValue } : updates;
+    setS(prev => ({ ...prev, ...patch }));
   }, []);
   // Suno and Midjourney are hidden unless asked for — or unless one of them is already the engine
   // in use, since a panel that vanishes under somebody mid-project is worse than one they can see
@@ -1327,6 +1430,33 @@ const SettingsComponent = () => {
             <span className="text-muted-foreground"> — detect installed checkpoints and pick the best one with ideal settings. When on, the manual Quality preset / Steps / CFG below are overridden per model.</span>
           </span>
         </label>
+        {/* Whole looks first, individual knobs below. Somebody opening this panel for the first time
+            can pick an outcome they recognise instead of guessing at CFG. */}
+        <div className="mb-4">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+            Look packs — one click sets style, size, steps, CFG, prefix and negative
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {IMAGE_PACKS.map((p) => {
+              const active = Object.entries(p.settings)
+                .every(([k, v]) => typeof v === "number" ? Number(s[k]) === v : (s[k] || "") === v);
+              return (
+                <button
+                  key={p.id}
+                  data-testid={`image-pack-${p.id}`}
+                  onClick={() => { updateS(p.settings); toast.success(`Images set to “${p.label}”.`); }}
+                  className={`text-left rounded-lg border p-2.5 transition-all hover:border-primary/60 ${active ? "border-primary/60 bg-primary/5" : "border-border"}`}
+                >
+                  <div className="text-sm font-medium">{p.label}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{p.blurb}</div>
+                  <div className="text-[10px] text-muted-foreground/70 mt-1">
+                    {p.settings.comfyui_steps} steps · CFG {p.settings.comfyui_cfg} · {p.settings.comfyui_width}×{p.settings.comfyui_height}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className={`flex items-center gap-2 mb-4 flex-wrap ${s.comfyui_auto_config !== false ? "opacity-50 pointer-events-none" : ""}`}>
           <Gauge className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           <span className="text-[10px] uppercase tracking-widest text-muted-foreground shrink-0">Quality preset</span>

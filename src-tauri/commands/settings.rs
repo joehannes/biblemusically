@@ -245,6 +245,19 @@ fn strip_discovered_urls(pdoc: &mut Document) {
     for k in keys { pdoc.remove(&k); }
 }
 
+/// Drop digit-only keys — settings has no numeric fields, so these are debris.
+///
+/// They came from a UI helper that took `updateS(key, value)` but only understood
+/// `updateS({key: value})`: spreading a string into an object spreads it per character, so a click
+/// wrote `{0:"r", 1:"e", …}` instead of the setting. The UI bug is fixed, but the store already
+/// holds the wreckage on every settings document, and it would otherwise be copied forward by each
+/// save forever. Cheaper and safer to refuse them here than to migrate once and hope.
+fn strip_debris(doc: &mut Document) {
+    let keys: Vec<String> = doc.keys().filter(|k| !k.is_empty() && k.chars().all(|c| c.is_ascii_digit()))
+        .cloned().collect();
+    for k in keys { doc.remove(&k); }
+}
+
 #[tauri::command]
 pub async fn update_settings(state: State<'_, AppState>, payload: Value, project_id: Option<String>) -> Res<Value> {
     let coll = state.db.collection::<Document>("settings");
@@ -252,6 +265,7 @@ pub async fn update_settings(state: State<'_, AppState>, payload: Value, project
     // job runners, uploads, test_* probes) reads `_id: "singleton"` directly, so a
     // project-only save would leave e.g. freshly-entered API keys invisible to them.
     let mut bson = bson::to_document(&payload).map_err(e)?;
+    strip_debris(&mut bson);
     bson.insert("_id", "singleton");
     coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": &bson })
         .upsert(true)
@@ -267,6 +281,7 @@ pub async fn update_settings(state: State<'_, AppState>, payload: Value, project
         // it is why `persist_engine_url` clearing the override was not enough on its own: the very
         // next autosave of the Settings form put the dead address straight back.
         strip_discovered_urls(&mut pdoc);
+        strip_debris(&mut pdoc);
         pdoc.insert("_id", &pid);
         coll.update_one(doc! { "_id": &pid }, doc! { "$set": &pdoc })
             .upsert(true)
@@ -2842,6 +2857,31 @@ mod kaggle_slug_tests {
         // wholesale would throw away the per-project settings it exists to hold.
         assert_eq!(pdoc.get_str("music_engine").unwrap(), "heartmula");
         assert_eq!(pdoc.get_i32("comfyui_steps").unwrap(), 30);
+    }
+
+    /// Digit-only keys are debris and must never be written back.
+    ///
+    /// A UI helper accepted `updateS(key, value)` while only understanding `updateS({key: value})`,
+    /// and spreading a string into an object spreads it per character — so clicking the remote
+    /// rendering tile wrote `{0:"r", 1:"e", 2:"m", …}` and left the setting untouched. Found on a
+    /// real store: 22 numeric keys spelling "remote_render_provider" on all three settings
+    /// documents, with the provider still on its default. The UI is fixed; this keeps the wreckage
+    /// from being copied forward by every subsequent save.
+    #[test]
+    fn digit_only_keys_are_refused_and_real_settings_survive() {
+        let mut d = bson::doc! {
+            "0": "r", "1": "e", "12": "p", "21": "r",
+            "remote_render_provider": "modal",
+            "video_fps": 30,
+            "comfyui_steps": 30,
+        };
+        strip_debris(&mut d);
+        for k in ["0", "1", "12", "21"] {
+            assert!(!d.contains_key(k), "debris key {k} survived");
+        }
+        assert_eq!(d.get_str("remote_render_provider").unwrap(), "modal");
+        assert_eq!(d.get_i32("video_fps").unwrap(), 30);
+        assert_eq!(d.get_i32("comfyui_steps").unwrap(), 30);
     }
 
     /// A teardown push must ask for no accelerator, and a serving push must ask for one by name.
