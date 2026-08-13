@@ -1844,7 +1844,8 @@ async fn gen_images(
 
 /// Resolve the ffmpeg binary: configured path → system which → bundled resource.
 fn resolve_ffmpeg(settings: &Value) -> Option<String> {
-    let ff = settings.get("ffmpeg_path").and_then(|v| v.as_str()).unwrap_or("ffmpeg");
+    let ff_owned = crate::helpers::ffmpeg_from_value(settings);
+    let ff = ff_owned.as_str();
     let mut ff_path = ff.to_string();
     if which::which(&ff_path).is_err() {
         if let Ok(exe_path) = env::current_exe() {
@@ -2022,7 +2023,8 @@ async fn real_ffmpeg(
     job_id: &str,
     db: &crate::store::Db,
 ) -> Option<Value> {
-    let ff = settings.get("ffmpeg_path").and_then(|v|v.as_str()).unwrap_or("ffmpeg");
+    let ff_owned = crate::helpers::ffmpeg_from_value(settings);
+    let ff = ff_owned.as_str();
     // Resolve ffmpeg: prefer configured path, then system `which`, then bundled resource
     let mut ff_path = ff.to_string();
     if which::which(&ff_path).is_err() {
@@ -2991,8 +2993,59 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 let lyrics      = song["lyrics"].as_str().unwrap_or("");
                 let pairs = parse_annotations(annotations, lyrics);
                 let n = pairs.len().max(1);
-                let duration = song["duration"].as_f64().unwrap_or(110.0);
+
+                // Listen to the audio rather than trusting `song.duration`.
+                //
+                // That field is whatever the engine echoed back from the *request*: the HeartMuLa
+                // notebook reports `dur_ms/1000.0` without ever measuring what it produced, so a
+                // 500-second request that yielded a 120-second track left every section stretched
+                // across four times its real length, and the images and video with it.
+                //
+                // Beats matter for the same reason a cut on the beat looks deliberate and a cut
+                // 200 ms off it looks like a mistake. Where there is no usable pulse — spoken word,
+                // ambient, a failed decode — the even split is still the answer, so this narrows the
+                // timing rather than gating it.
+                let ff = crate::helpers::ffmpeg_from_value(&settings_doc);
+                let audio_src = song["audio_url"].as_str().unwrap_or("").trim().to_string();
+                let beats = if audio_src.is_empty() {
+                    db_log(db, job_id, "analysis: the song has no audio yet — timing sections evenly.").await;
+                    None
+                } else {
+                    match crate::audio_analysis::analyze(&ff, &audio_src).await {
+                        Ok(b) => {
+                            db_log(db, job_id, &format!(
+                                "analysis: {:.1}s of audio, {} BPM, {} beats (confidence {:.2})",
+                                b.duration, b.tempo_bpm, b.beats.len(), b.confidence)).await;
+                            let claimed = song["duration"].as_f64().unwrap_or(0.0);
+                            if claimed > 0.0 && (claimed - b.duration).abs() > 5.0 {
+                                db_log(db, job_id, &format!(
+                                    "analysis: the song record claimed {claimed:.0}s but the audio is \
+                                     {:.1}s — using the audio and correcting the record.", b.duration)).await;
+                            }
+                            Some(b)
+                        }
+                        Err(why) => {
+                            db_log(db, job_id, &format!(
+                                "analysis: could not analyse the audio ({why}) — timing sections evenly.")).await;
+                            None
+                        }
+                    }
+                };
+
+                let duration = beats.as_ref().map(|b| b.duration)
+                    .filter(|d| *d > 1.0)
+                    .or_else(|| song["duration"].as_f64())
+                    .unwrap_or(110.0);
                 let seg = duration / n as f64;
+                // A boundary may move by up to a third of a section to find its beat. Beyond that
+                // the beat is not the one this line belongs to, and snapping would reorder sections.
+                let max_shift = (seg / 3.0).min(1.0);
+                let beat_times: &[f64] = beats.as_ref().map(|b| b.beats.as_slice()).unwrap_or(&[]);
+                let at = |i: usize| -> f64 {
+                    let raw = i as f64 * seg;
+                    if i == 0 || i == n { return raw; } // the ends are the audio's ends, not a beat's
+                    crate::audio_analysis::snap_to_beat(raw, beat_times, max_shift)
+                };
 
                 db.collection::<Document>("sections").delete_many(doc! { "song_id": tgt }).await?;
                 let moods: Vec<&'static str> = pairs.iter()
@@ -3005,8 +3058,8 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                         id: Uuid::new_v4().to_string(),
                         song_id: tgt.to_string(),
                         index: i as i32,
-                        start: (i as f64 * seg * 100.0).round() / 100.0,
-                        end: ((i + 1) as f64 * seg * 100.0).round() / 100.0,
+                        start: (at(i) * 100.0).round() / 100.0,
+                        end: (at(i + 1) * 100.0).round() / 100.0,
                         line: p.line.clone(),
                         image_prompt: p.image_prompt.clone(),
                         mood: moods[i].to_string(),
@@ -3023,10 +3076,25 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                 if !secs.is_empty() {
                     db.collection::<Document>("sections").insert_many(secs).await?;
                 }
+                // Write the measured facts back onto the song. The duration especially: leaving the
+                // engine's echoed request in place would let every later stage — overlay length,
+                // video assembly, upload metadata — go on believing a number the audio disagrees
+                // with, and they do not all re-analyse.
+                let mut set = doc! { "status": "analyzed" };
+                if let Some(b) = &beats {
+                    set.insert("duration", b.duration);
+                    set.insert("tempo_bpm", b.tempo_bpm);
+                    set.insert("beat_confidence", b.confidence);
+                }
                 db.collection::<Document>("songs").update_one(
-                    doc! { "id": tgt }, doc! { "$set": { "status": "analyzed" } },
+                    doc! { "id": tgt }, doc! { "$set": set },
                 ).await?;
-                serde_json::json!({ "sections": count })
+                serde_json::json!({
+                    "sections": count,
+                    "duration": beats.as_ref().map(|b| b.duration),
+                    "tempo_bpm": beats.as_ref().map(|b| b.tempo_bpm),
+                    "beat_confidence": beats.as_ref().map(|b| b.confidence),
+                })
             }
 
             // ── CHARACTER IMAGE ────────────────────────────────────────

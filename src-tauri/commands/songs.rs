@@ -8,8 +8,10 @@ use tauri::State;
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
 
+// Resolved centrally: an unset `ffmpeg_path` is stored as "" by the Settings form, and the old
+// `unwrap_or("ffmpeg")` here could never fire against it. See helpers::resolve_media_binary.
 fn ffmpeg_path_from(settings_doc: &Document) -> String {
-    settings_doc.get("ffmpeg_path").and_then(|v| v.as_str()).unwrap_or("ffmpeg").to_string()
+    crate::helpers::ffmpeg_from(settings_doc)
 }
 
 /// Fetch `audio_url`, convert it with ffmpeg straight to `dest` (creating its parent folder if

@@ -602,7 +602,7 @@ pub async fn test_ffmpeg(state: State<'_, AppState>) -> Res<Value> {
     let doc = state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or_default();
-    let path = doc["ffmpeg_path"].as_str().unwrap_or("ffmpeg").to_string();
+    let path = crate::helpers::resolve_media_binary(doc["ffmpeg_path"].as_str(), "ffmpeg");
     // Prefer configured path, then system which, then bundled resource
     let mut resolved: Option<String> = which::which(&path).ok().map(|p| p.to_string_lossy().to_string());
     if resolved.is_none() {

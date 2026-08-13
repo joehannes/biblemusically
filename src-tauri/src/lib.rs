@@ -45,6 +45,8 @@ pub mod paths;
 pub mod apk_install;
 #[path = "../ai_budget.rs"]
 pub mod ai_budget;
+#[path = "../audio_analysis.rs"]
+pub mod audio_analysis;
 #[path = "../idle_guard.rs"]
 pub mod idle_guard;
 #[path = "../mongo_import.rs"]

@@ -412,3 +412,70 @@ pub fn open_external<R: tauri::Runtime>(app: &tauri::AppHandle<R>, url: &str) ->
         .open_url(url, None::<&str>)
         .map_err(|err| format!("Could not open {url}: {err}"))
 }
+
+/// The ffmpeg (or ffprobe) binary to run, given whatever the settings hold.
+///
+/// The bug this replaces was a one-liner repeated in five places:
+///
+/// ```ignore
+/// settings.get("ffmpeg_path").and_then(|v| v.as_str()).unwrap_or("ffmpeg")
+/// ```
+///
+/// `ffmpeg_path` is not absent when nobody has set it — it is the empty string, because the
+/// Settings form writes every field it renders. `as_str()` on `""` is `Some("")`, so `unwrap_or`
+/// never fires, and the app tries to spawn a program named `""`. Every download, every conversion
+/// and every render failed with an error about ffmpeg not starting, on machines with a perfectly
+/// good ffmpeg on PATH.
+///
+/// So an empty or whitespace-only setting is treated as "not set", and PATH is consulted properly
+/// rather than by handing a bare name to the OS and hoping the process inherited a useful PATH —
+/// a desktop-launched app frequently has not.
+pub fn resolve_media_binary(configured: Option<&str>, name: &str) -> String {
+    if let Some(p) = configured.map(str::trim).filter(|p| !p.is_empty()) {
+        return p.to_string();
+    }
+    which::which(name)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| name.to_string())
+}
+
+/// `resolve_media_binary` for a settings document, which is how every call site holds it.
+pub fn ffmpeg_from(settings: &bson::Document) -> String {
+    resolve_media_binary(settings.get("ffmpeg_path").and_then(|v| v.as_str()), "ffmpeg")
+}
+
+/// The ffprobe beside it. Same empty-string trap, same answer.
+pub fn ffprobe_from(settings: &bson::Document) -> String {
+    resolve_media_binary(settings.get("ffprobe_path").and_then(|v| v.as_str()), "ffprobe")
+}
+
+/// The same, for the merged settings the job runner carries as JSON rather than BSON.
+pub fn ffmpeg_from_value(settings: &serde_json::Value) -> String {
+    resolve_media_binary(settings.get("ffmpeg_path").and_then(|v| v.as_str()), "ffmpeg")
+}
+
+#[cfg(test)]
+mod media_binary_tests {
+    use super::resolve_media_binary;
+
+    /// The empty string is what the Settings form actually stores, and it must not become the
+    /// program name. This is the whole bug: `Some("")` beat `unwrap_or("ffmpeg")` and the app
+    /// spawned `""`.
+    #[test]
+    fn an_empty_setting_is_not_a_program_name() {
+        for configured in [Some(""), Some("   "), None] {
+            let got = resolve_media_binary(configured, "ffmpeg");
+            assert!(!got.trim().is_empty(),
+                    "resolved to {got:?} for {configured:?} — spawning that fails with ENOENT");
+            assert!(got.ends_with("ffmpeg"), "expected an ffmpeg path, got {got:?}");
+        }
+    }
+
+    /// An explicit path is still obeyed — people do point this at a custom build.
+    #[test]
+    fn an_explicit_path_wins() {
+        assert_eq!(resolve_media_binary(Some("/opt/ffmpeg/bin/ffmpeg"), "ffmpeg"),
+                   "/opt/ffmpeg/bin/ffmpeg");
+        assert_eq!(resolve_media_binary(Some("  /opt/ff  "), "ffmpeg"), "/opt/ff");
+    }
+}
