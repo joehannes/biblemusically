@@ -33,7 +33,14 @@ const MONITOR_MAX_SECS: u64 = 20 * 60; // stop streaming after this even if the 
 const DOWNLOAD_THROTTLE_MS: u128 = 4000; // collapse the checkpoint-download line spam
 const PROBE_EVERY_SECS: u64 = 4; // re-probe cadence for a printed-but-not-yet-routable tunnel
 const TUNNEL_WARN_SECS: u64 = 45; // say something in the log if the tunnel is slow to answer
-const TUNNEL_FAIL_SECS: u64 = 210; // give up on a URL the Cloudflare edge never routes
+/// How long to keep probing a printed tunnel before we stop waiting on it in the foreground.
+///
+/// Was 210s, which declared a perfectly healthy run dead. A trycloudflare hostname is brand new,
+/// and how long it takes to become resolvable and routable *from a particular machine* has nothing
+/// to do with the run: measured 2026-08-13, a URL that this laptop could not reach at 210s — TLS
+/// connected, HTTP/2 stream opened, no response — answered 404 (alive) about ten minutes after it
+/// was printed, on both address families, with the notebook serving perfectly the whole time.
+const TUNNEL_FAIL_SECS: u64 = 12 * 60;
 const STALE_STATUS_GRACE_SECS: u64 = 45; // ignore a terminal status this early (it's the *previous* session's)
 
 #[derive(Clone, Serialize)]
@@ -516,14 +523,52 @@ async fn run_monitor(
                             );
                         }
                         if waited >= TUNNEL_FAIL_SECS {
+                            // Whether this is a failure depends entirely on whether the run is
+                            // still alive, and the previous version never asked. It reported a
+                            // dead tunnel, and the interface told the user to press Start & connect
+                            // again — which supersedes a serving GPU run, spends another eight
+                            // minutes and more of the weekly quota, and arrives at a brand-new
+                            // hostname with exactly the same propagation problem. That advice was
+                            // worse than doing nothing.
+                            //
+                            // A run that is still RUNNING has a server on it: cloudflared
+                            // registered an edge connection and the notebook's own probe reached
+                            // the origin through the tunnel before it printed the URL. What has not
+                            // happened is this machine being able to route the hostname yet, and
+                            // that resolves itself. So the URL is saved (Test connection, and any
+                            // job's own retry, can pick it up the moment routing catches up) and
+                            // this ends as a distinct `tunnel_slow` outcome rather than an error.
+                            let ks = match tokio::process::Command::new(&kaggle)
+                                .args(["kernels", "status", slug]).output().await
+                            {
+                                Ok(out) => kstatus_from(&format!("{}{}",
+                                    String::from_utf8_lossy(&out.stdout),
+                                    String::from_utf8_lossy(&out.stderr))),
+                                Err(_) => "unknown",
+                            };
+                            let still_serving = matches!(ks, "running" | "queued");
+                            if still_serving {
+                                crate::commands::settings::persist_engine_url(&db, settings_key, &u).await;
+                            }
                             {
                                 let mut p = progress.lock().unwrap();
-                                p.phase = "error".into();
-                                p.error = Some(format!(
-                                    "The notebook opened {} but it never started answering ({}s). The Cloudflare quick tunnel did not come up.",
-                                    u, waited
-                                ));
-                                p.hint = Some("tunnel_dead".into());
+                                p.done = true;
+                                if still_serving {
+                                    p.phase = "tunneling".into();
+                                    p.hint = Some("tunnel_slow".into());
+                                    p.error = Some(format!(
+                                        "The server is running and its tunnel is open, but {} is not reachable from this \
+                                         computer yet ({}s). A new trycloudflare address can take several minutes to \
+                                         route. The address has been saved — do NOT restart the run; press Test \
+                                         connection in a few minutes instead.",
+                                        u, waited));
+                                } else {
+                                    p.phase = "error".into();
+                                    p.hint = Some("tunnel_dead".into());
+                                    p.error = Some(format!(
+                                        "The notebook opened {} but it never started answering ({}s), and the run has \
+                                         since ended ({}).", u, waited, ks));
+                                }
                             }
                             let _ = child.kill().await;
                             break 'outer;

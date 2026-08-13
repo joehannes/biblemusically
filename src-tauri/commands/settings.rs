@@ -235,6 +235,16 @@ pub async fn get_settings(state: State<'_, AppState>, project_id: Option<String>
     Ok(merged)
 }
 
+/// Drop the engine server URLs from a per-project settings override.
+///
+/// See the call site in `update_settings` for why: these addresses are discovered by the app, only
+/// ever written to the singleton, and merged project-over-singleton — so a project copy is a stale
+/// address that outranks the live one.
+fn strip_discovered_urls(pdoc: &mut Document) {
+    let keys: Vec<String> = pdoc.keys().filter(|k| k.ends_with("_api_url")).cloned().collect();
+    for k in keys { pdoc.remove(&k); }
+}
+
 #[tauri::command]
 pub async fn update_settings(state: State<'_, AppState>, payload: Value, project_id: Option<String>) -> Res<Value> {
     let coll = state.db.collection::<Document>("settings");
@@ -249,6 +259,14 @@ pub async fn update_settings(state: State<'_, AppState>, payload: Value, project
     // Additionally keep the per-project override doc (get_settings merges it on top).
     if let Some(pid) = project_id.filter(|s| !s.is_empty()) {
         let mut pdoc = bson::to_document(&payload).map_err(e)?;
+        // Engine server URLs are deliberately NOT mirrored here. They are discovered, not chosen:
+        // the monitor, `fetch_kaggle_url` and `refresh_kaggle_url` all write the singleton, so a
+        // copy in a project document can only ever go stale — and because the merge puts the
+        // project on top, that stale copy wins over the address the app just verified. Mirroring
+        // them is what made "a trycloudflare URL that doesn't exist" survive every rediscovery, and
+        // it is why `persist_engine_url` clearing the override was not enough on its own: the very
+        // next autosave of the Settings form put the dead address straight back.
+        strip_discovered_urls(&mut pdoc);
         pdoc.insert("_id", &pid);
         coll.update_one(doc! { "_id": &pid }, doc! { "$set": &pdoc })
             .upsert(true)
@@ -2741,6 +2759,31 @@ mod kaggle_slug_tests {
         // since dropping that would trade one no-GPU cause for another.
         assert_eq!(meta["machine_shape"], "NvidiaTeslaT4");
         assert_eq!(meta["id"], "someone/biblemusically-heartmula-server");
+    }
+
+    /// Saving Settings must not stamp a copy of the engine addresses onto the project.
+    ///
+    /// The per-project document is merged ON TOP of the singleton, while every piece of URL
+    /// discovery writes the singleton — so a project copy is a snapshot of whatever the tunnel was
+    /// when somebody last pressed Save, outranking the address the app just verified. Clearing the
+    /// override on discovery was not enough by itself: the Settings form autosaves, and the next
+    /// autosave wrote the dead address straight back. Observed twice on 2026-08-13, both times as
+    /// an engine pinned to a trycloudflare hostname that had stopped existing.
+    #[test]
+    fn saving_settings_does_not_pin_a_project_to_an_engine_address() {
+        let mut pdoc = bson::doc! {
+            "heartmula_api_url": "https://a-dead-tunnel.trycloudflare.com",
+            "comfyui_api_url": "https://another-dead-one.trycloudflare.com",
+            "music_engine": "heartmula",
+            "comfyui_steps": 30,
+        };
+        strip_discovered_urls(&mut pdoc);
+        assert!(!pdoc.contains_key("heartmula_api_url"));
+        assert!(!pdoc.contains_key("comfyui_api_url"));
+        // Genuine per-project choices must survive — this is an override document, and stripping it
+        // wholesale would throw away the per-project settings it exists to hold.
+        assert_eq!(pdoc.get_str("music_engine").unwrap(), "heartmula");
+        assert_eq!(pdoc.get_i32("comfyui_steps").unwrap(), 30);
     }
 
     /// Every engine must ship a notebook, or it can never start on an account that has not run it

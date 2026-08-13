@@ -32,7 +32,8 @@ const HINT_NEXT_STEP = {
   hf_token: "FLUX needs a Hugging Face token. Open the notebook (button above), add a secret named HF_TOKEN (Add-ons → Secrets) with a read token from huggingface.co/settings/tokens, accept the FLUX.1-schnell license, then Start & connect again.",
   oom: "The GPU ran out of memory. Lower the model/resolution in the notebook, or retry — a fresh T4 sometimes has more free VRAM.",
   cli: "The kaggle CLI couldn't run. Install it (pipx install kaggle) and save your token at ~/.kaggle/kaggle.json.",
-  tunnel_dead: "The notebook is running and printed a tunnel URL, but Cloudflare never routed it — usually a flaky quick tunnel. Press Start & connect again; the run itself is fine.",
+  tunnel_dead: "The notebook printed a tunnel URL that never answered, and the run has since ended. Press Start & connect to launch a fresh one.",
+  tunnel_slow: "The server is up and its tunnel is open — this computer just cannot route the brand-new trycloudflare address yet, which can take several minutes. The address is already saved, so press Test connection in a few minutes. Do not press Start & connect: that would throw away a working GPU run and the replacement address would be just as new.",
   gpu_denied:
     "Kaggle ran the notebook on CPU instead of a GPU, so it could not serve. Your weekly Kaggle GPU quota (30 h) is most likely used up — it resets Saturdays UTC. Check kaggle.com/settings → Accelerator usage. Until it resets, either wait, or run the engine on another free GPU host (Colab / Lightning.ai) and paste its URL into this engine's server-URL field.",
   gpu_unavailable:
@@ -45,6 +46,12 @@ const HINT_NEXT_STEP = {
 // tier is genuinely saturated.
 const GPU_UNAVAILABLE_RETRIES = 2;
 const GPU_RETRY_WAIT_MS = 60_000;
+
+// How patiently to keep testing a server whose tunnel address this machine cannot route yet.
+// Ten minutes on top of the monitor's own twelve: the one measured case became reachable about ten
+// minutes after the address was printed, and none of this costs anything — the run is already up.
+const TUNNEL_SLOW_CHECKS = 10;
+const TUNNEL_SLOW_CHECK_MS = 60_000;
 
 let state = {}; // engine -> { status, phase, url, detail, next_step, hint, log: [], monitor }
 const listeners = new Set();
@@ -242,6 +249,39 @@ export async function autoStartKaggleServer(engine, { gpuRetries = 0 } = {}) {
           next_step: HINT_NEXT_STEP.gpu_denied });
         pushLog(engine, "Out of GPU quota — connect another free Kaggle account to keep going.", "error");
         try { window.dispatchEvent(new CustomEvent("bm:kaggle-needs-account", { detail: { engine } })); } catch { /* non-browser */ }
+        return;
+      }
+
+      // A server that is up behind an address this machine cannot route yet is not a failed start,
+      // and must not be dressed as one — the red panel is what talked people into pressing Start &
+      // connect again, discarding a healthy GPU run for a replacement address that would be exactly
+      // as new. The URL is already saved by the monitor, so the only thing left to do is wait.
+      if (m.hint === "tunnel_slow") {
+        patch(engine, { status: "waiting", phase: "tunneling", url: m.url || null, hint: "tunnel_slow",
+          detail: m.error, next_step: HINT_NEXT_STEP.tunnel_slow });
+        pushLog(engine, m.error || "The tunnel is open but not routable from here yet.", "info");
+        // And keep checking, instead of leaving somebody to remember to come back and press a
+        // button. The run is already paid for and the address usually starts routing within a few
+        // minutes, so the honest end to this is "ready", reached on its own.
+        for (let i = 0; i < TUNNEL_SLOW_CHECKS; i++) {
+          await sleep(TUNNEL_SLOW_CHECK_MS);
+          if (!stillCurrent()) return;
+          // Re-discover rather than only re-testing the address we already have. The notebook keeps
+          // its own tunnel attempt chain running, so the run may by now be answering on a different
+          // hostname entirely; fetchKaggleUrl reads the current one out of the log and only reports
+          // ok once it has actually answered, which covers both "the old address started routing"
+          // and "the notebook moved to a new one".
+          let found = null;
+          try { found = await api.fetchKaggleUrl(engine); } catch { /* keep waiting */ }
+          if (!stillCurrent()) return;
+          if (found?.ok && found.url) {
+            pushLog(engine, `Reachable now at ${found.url} — testing…`);
+            await finishWithTest(engine, found.url, stillCurrent);
+            return;
+          }
+          pushLog(engine, `Still not routable from here (check ${i + 1}/${TUNNEL_SLOW_CHECKS})…`);
+        }
+        pushLog(engine, "Still not routable after waiting. The run is up regardless — press Test connection later.", "error");
         return;
       }
 
