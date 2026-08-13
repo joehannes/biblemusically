@@ -1706,6 +1706,7 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
     let mut meta: Value = serde_json::from_str(&meta_raw).map_err(e)?;
     meta["enable_gpu"] = Value::Bool(true);
     meta["enable_internet"] = Value::Bool(true);
+    strip_pinned_image(&mut meta);
     fs::write(&meta_path, serde_json::to_string_pretty(&meta).map_err(e)?).await.map_err(e)?;
 
     let push = tokio::process::Command::new(&kaggle)
@@ -1760,6 +1761,30 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
             "next_step": "Open the notebook (Open notebook) and check the kernel there. If it looks fine, retry Start & connect."
         }))
     }
+}
+
+/// Drop a pinned `docker_image` from kernel metadata before pushing a run that needs a GPU.
+///
+/// Kaggle builds two different images — one with the CUDA stack, one without — and `docker_image`
+/// pins an exact digest of one of them. The metadata this app pushes is not written from scratch:
+/// `pull_kernel_for_push` fetches whatever Kaggle currently holds for the kernel, and that record
+/// includes the digest of the image the kernel *last ran on*. So the moment a kernel runs once
+/// without a GPU — a source-update push, a `supersede_kaggle_session` teardown, or a run Kaggle
+/// declined an accelerator for — Kaggle stores the CPU digest, and every later push re-pins it.
+/// The kernel is then permanently stuck: Kaggle honours the pin, boots the CPU image, and the
+/// notebook finds no GPU however much weekly quota is left.
+///
+/// Verified 2026-08-13 rather than reasoned about. Two runs of the same one-cell probe kernel with
+/// identical `enable_gpu`/`machine_shape`: with no `docker_image`, two Tesla T4s and
+/// `torch 2.10.0+cu128`; with this digest pinned, `nvidia-smi` exit 12 and `torch 2.10.0+cpu`.
+/// That is also what the heartmula engine had been doing — reported as "the server never starts",
+/// and diagnosed by the app as an exhausted quota on an account with 29.8 of 30 hours left.
+///
+/// Removing the key rather than choosing a digest is deliberate: Kaggle then picks its own current
+/// default for the accelerator being requested, which is right by construction and does not rot the
+/// way a hard-coded digest in this file would.
+fn strip_pinned_image(meta: &mut Value) {
+    if let Some(obj) = meta.as_object_mut() { obj.remove("docker_image"); }
 }
 
 /// Turn whatever Kaggle said about a refused push into the app's own outcome codes.
@@ -1858,6 +1883,7 @@ async fn start_kaggle_server_http(engine: &str, own: &str, upstream: &str) -> Re
     // A serving run needs the GPU: the notebook only opens its tunnel when one is present.
     meta["enable_gpu"] = Value::Bool(true);
     meta["enable_internet"] = Value::Bool(true);
+    strip_pinned_image(&mut meta);
 
     match kapi::kernel_push(&meta, &source).await {
         Ok(_) => {
@@ -2055,6 +2081,33 @@ pub async fn supersede_session(db: &crate::store::Db, engine: &str) -> Res<Value
     }
 }
 
+/// Record a tunnel URL the app just discovered and verified, so that everything reading settings
+/// actually sees it.
+///
+/// Writing the singleton is not enough on its own, and that was a real bug. `get_settings` and
+/// jobs.rs's `get_job_settings` both merge the per-project settings document ON TOP of the
+/// singleton, and `update_settings` mirrors every save into that project document — so a project
+/// carried its own copy of `heartmula_api_url`, frozen at whatever the tunnel was the last time
+/// somebody pressed Save. Discovering a fresh URL then changed the singleton underneath a project
+/// override that still shadowed it: Settings kept displaying the dead address, and a music job for
+/// a song in that project kept resolving to it. Observed with a project pinned to
+/// `angela-craft-icon-humidity.trycloudflare.com`, a tunnel that had not existed for weeks.
+///
+/// So the override is removed rather than rewritten. An engine's tunnel address is a machine
+/// discovered fact about one running server, not a per-project preference — there is no coherent
+/// meaning for "this project uses a different tunnel to the same notebook", and leaving a copy in
+/// every project doc only recreates the same staleness on the next rotation.
+pub(crate) async fn persist_engine_url(db: &crate::store::Db, settings_key: &str, url: &str) {
+    let mut set = Document::new();
+    set.insert(settings_key, url);
+    let _ = db.collection::<Document>("settings")
+        .update_one(doc! { "_id": "singleton" }, doc! { "$set": set }).await;
+    let mut unset = Document::new();
+    unset.insert(settings_key, "");
+    let _ = db.collection::<Document>("settings")
+        .update_many(doc! { "_id": { "$ne": "singleton" } }, doc! { "$unset": unset }).await;
+}
+
 /// Re-discover and persist `engine`'s live tunnel URL with no UI-facing diagnostics — the same
 /// discover-then-verify steps as `fetch_kaggle_url` below, minus the kernel-status messaging,
 /// so a job runner can call this mid-run when the cached URL turns out to be a dead tunnel
@@ -2094,10 +2147,7 @@ pub async fn refresh_kaggle_url(db: &crate::store::Db, engine: &str) -> Option<S
         return None;
     }
 
-    let mut set = Document::new();
-    set.insert(settings_key, u.clone());
-    let _ = db.collection::<Document>("settings")
-        .update_one(doc! { "_id": "singleton" }, doc! { "$set": set }).await;
+    persist_engine_url(db, settings_key, &u).await;
     Some(u)
 }
 
@@ -2194,11 +2244,7 @@ pub async fn fetch_kaggle_url(state: State<'_, AppState>, engine: String) -> Res
 
     match url {
         Some(u) => {
-            // Persist it into the engine's URL setting (dynamic key → build the doc by hand).
-            let mut set = Document::new();
-            set.insert(settings_key, u.clone());
-            let _ = state.db.collection::<Document>("settings")
-                .update_one(doc! { "_id": "singleton" }, doc! { "$set": set }).await;
+            persist_engine_url(&state.db, settings_key, &u).await;
             Ok(serde_json::json!({
                 "ok": true, "url": u, "kernel_status": kstatus,
                 "detail": format!("Live URL pulled from the {} kernel — saved. Now click Test connection.", engine)
@@ -2669,6 +2715,32 @@ mod kaggle_slug_tests {
                      the signed-in account, not from this table");
             assert!(key.ends_with("_api_url"), "'{engine}' stores its URL under '{key}'");
         }
+    }
+
+    /// A GPU start must never carry the image digest Kaggle recorded from an earlier run.
+    ///
+    /// The metadata pushed for a start is whatever `pull_kernel_for_push` fetched from Kaggle, which
+    /// names the image the kernel last ran on. One GPU-less run — a source update, an idle teardown,
+    /// a run Kaggle declined an accelerator for — writes the CPU image's digest there, and pushing it
+    /// back pins the next run to the CPU image too. The engine can then never serve again, at any
+    /// quota, and the app reads the result as an exhausted GPU allowance. Measured on 2026-08-13:
+    /// the same probe kernel got two T4s unpinned and `torch 2.10.0+cpu` with this digest pinned.
+    #[test]
+    fn a_gpu_start_does_not_inherit_the_last_runs_image() {
+        let mut meta = serde_json::json!({
+            "id": "someone/biblemusically-heartmula-server",
+            "enable_gpu": false,
+            "machine_shape": "NvidiaTeslaT4",
+            "docker_image": "gcr.io/kaggle-images/python@sha256:dafd4ce5668bbf1ad422e4c109e0f18c9623c3a7c7f48b0235f13142755c40b9",
+        });
+        strip_pinned_image(&mut meta);
+        assert!(meta.get("docker_image").is_none(),
+                "a pinned image survived the start push, which is what pins the run to Kaggle's \
+                 CPU container and makes the engine unable to serve at any quota");
+        // Everything else the push depends on must survive: the accelerator request in particular,
+        // since dropping that would trade one no-GPU cause for another.
+        assert_eq!(meta["machine_shape"], "NvidiaTeslaT4");
+        assert_eq!(meta["id"], "someone/biblemusically-heartmula-server");
     }
 
     /// Every engine must ship a notebook, or it can never start on an account that has not run it

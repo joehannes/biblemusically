@@ -18,7 +18,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bson::{doc, Document};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::State;
@@ -335,10 +334,7 @@ async fn run_monitor_http(
                     p.done = true;
                     p.push("info", "Server is answering.".into());
                 }
-                let mut set = Document::new();
-                set.insert(settings_key, u);
-                let _ = db.collection::<Document>("settings")
-                    .update_one(doc! { "_id": "singleton" }, doc! { "$set": set }).await;
+                crate::commands::settings::persist_engine_url(&db, settings_key, &u).await;
                 return;
             }
             let waited = ((now_ms().saturating_sub(url_seen_ms)) / 1000) as u64;
@@ -504,10 +500,9 @@ async fn run_monitor(
                                 p.push("milestone", "Tunnel is answering — server is up.".into());
                             }
                             // Persist the verified URL so job code picks it up without a manual Fetch.
-                            let mut set = Document::new();
-                            set.insert(settings_key, u.clone());
-                            let _ = db.collection::<Document>("settings")
-                                .update_one(doc! { "_id": "singleton" }, doc! { "$set": set }).await;
+                            // Via the shared helper because writing the singleton alone leaves any
+                            // per-project override shadowing it — see `persist_engine_url`.
+                            crate::commands::settings::persist_engine_url(&db, settings_key, &u).await;
                             // A verified live tunnel is the goal — nothing more to watch here.
                             let _ = child.kill().await;
                             break 'outer;
@@ -548,6 +543,27 @@ async fn run_monitor(
 
                             // Fatal error?
                             if let Some((summary, hint)) = detect_error(&line) {
+                                // "Kaggle gave this run no GPU" is one symptom with two very
+                                // different causes, and the app used to assume the worse one: it
+                                // announced that the weekly quota was spent and asked the user to
+                                // connect a second account. It said exactly that to an account
+                                // holding 29.8 of its 30 hours, on a run where Kaggle had simply
+                                // had no free T4 that minute — a probe kernel pushed six minutes
+                                // later was given two. So ask Kaggle what the quota really is
+                                // before naming a cause. `gpu_unavailable` is the same denial with
+                                // hours still on the clock, and the answer to it is to try again,
+                                // not to go and find another account.
+                                let (summary, hint) = match (hint.as_deref(), crate::kaggle_api::quota().await) {
+                                    (Some("gpu_denied"), Ok(q)) if q.left_minutes > 0 => (
+                                        format!(
+                                            "Kaggle gave this run no GPU, so the server never started — but this \
+                                             account still has {} of its {} GPU minutes left this week, so the \
+                                             quota is not the reason. Kaggle just had none free for this session.",
+                                            q.left_minutes, q.allowed_minutes),
+                                        Some("gpu_unavailable".to_string()),
+                                    ),
+                                    _ => (summary, hint),
+                                };
                                 let mut p = progress.lock().unwrap();
                                 if p.error.is_none() { p.error = Some(summary); }
                                 if hint.is_some() { p.hint = hint; }

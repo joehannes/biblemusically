@@ -35,7 +35,16 @@ const HINT_NEXT_STEP = {
   tunnel_dead: "The notebook is running and printed a tunnel URL, but Cloudflare never routed it — usually a flaky quick tunnel. Press Start & connect again; the run itself is fine.",
   gpu_denied:
     "Kaggle ran the notebook on CPU instead of a GPU, so it could not serve. Your weekly Kaggle GPU quota (30 h) is most likely used up — it resets Saturdays UTC. Check kaggle.com/settings → Accelerator usage. Until it resets, either wait, or run the engine on another free GPU host (Colab / Lightning.ai) and paste its URL into this engine's server-URL field.",
+  gpu_unavailable:
+    "Kaggle had no free GPU for this run, so the notebook ran on CPU and could not serve. This is not your quota — that still has hours on it — and connecting another account would not help, because the shortage is Kaggle's. Free T4s come and go through the day; press Start & connect again in a few minutes.",
 };
+
+// How many times to re-push by ourselves when Kaggle has no free GPU but the quota is fine, and
+// how long to wait before the first retry (it backs off from there). Two is deliberate: it covers
+// the usual case of one busy moment without quietly burning an afternoon of pushes if the free
+// tier is genuinely saturated.
+const GPU_UNAVAILABLE_RETRIES = 2;
+const GPU_RETRY_WAIT_MS = 60_000;
 
 let state = {}; // engine -> { status, phase, url, detail, next_step, hint, log: [], monitor }
 const listeners = new Set();
@@ -65,7 +74,7 @@ let runSeq = 0;
 // Runs the whole chain for one engine. Safe to call on an already-running server — it checks the
 // live status first and skips straight to testing instead of pushing (and disrupting) a server
 // that's already serving.
-export async function autoStartKaggleServer(engine) {
+export async function autoStartKaggleServer(engine, { gpuRetries = 0 } = {}) {
   const seq = ++runSeq;
   const stillCurrent = () => runSeq === seq;
 
@@ -195,6 +204,27 @@ export async function autoStartKaggleServer(engine) {
 
     if (m.phase === "error" || (m.done && !m.url_live)) {
       api.kaggleStopMonitor(engine).catch(() => {});
+
+      // Kaggle declined a GPU while this account still has hours left, so the quota is not the
+      // problem and neither rotating accounts nor asking the user to connect one would help — the
+      // free T4s were simply all taken for that minute. Waiting a little and pushing again is the
+      // only thing that actually works, so do it here instead of ending the run with advice the
+      // user cannot act on. Bounded, because if Kaggle stays full this has to stop and say so.
+      if (m.hint === "gpu_unavailable") {
+        if (gpuRetries < GPU_UNAVAILABLE_RETRIES) {
+          const wait = GPU_RETRY_WAIT_MS * (gpuRetries + 1); // back off: 60s, then 120s
+          pushLog(engine, `${m.error || "Kaggle had no free GPU for this run."} Waiting ${Math.round(wait / 1000)}s and trying again (${gpuRetries + 1}/${GPU_UNAVAILABLE_RETRIES})…`, "error");
+          patch(engine, { status: "waiting", phase: "queued", detail: "Kaggle had no free GPU — waiting to try again…" });
+          await sleep(wait);
+          if (!stillCurrent()) return;
+          return autoStartKaggleServer(engine, { gpuRetries: gpuRetries + 1 });
+        }
+        patch(engine, { status: "error", phase: "error", hint: "gpu_unavailable",
+          detail: m.error || "Kaggle had no free GPU for this run.",
+          next_step: HINT_NEXT_STEP.gpu_unavailable });
+        pushLog(engine, `Kaggle had no free GPU on ${GPU_UNAVAILABLE_RETRIES + 1} attempts — the quota is fine, the machines are busy. Try again in a while.`, "error");
+        return;
+      }
 
       // GPU quota is per-account: when Kaggle denies this account a GPU, automatically rotate to the
       // next connected account and retry. Only if none is left do we stop and prompt the user to
