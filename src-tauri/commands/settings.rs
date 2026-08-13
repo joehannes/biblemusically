@@ -1752,7 +1752,7 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
     let meta_path = tmp.join("kernel-metadata.json");
     let meta_raw = fs::read_to_string(&meta_path).await.map_err(e)?;
     let mut meta: Value = serde_json::from_str(&meta_raw).map_err(e)?;
-    meta["enable_gpu"] = Value::Bool(true);
+    request_gpu(&mut meta);
     meta["enable_internet"] = Value::Bool(true);
     strip_pinned_image(&mut meta);
     fs::write(&meta_path, serde_json::to_string_pretty(&meta).map_err(e)?).await.map_err(e)?;
@@ -1833,6 +1833,34 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
 /// way a hard-coded digest in this file would.
 fn strip_pinned_image(meta: &mut Value) {
     if let Some(obj) = meta.as_object_mut() { obj.remove("docker_image"); }
+}
+
+/// The accelerator a serving run asks for, stated rather than inherited.
+///
+/// `machine_shape` is the field Kaggle actually honours, and it OUTRANKS `enable_gpu`: a push
+/// carrying `enable_gpu: false` alongside `machine_shape: "Gpu"` was handed a Tesla P100, measured
+/// 2026-08-13. Since the metadata pushed here is whatever the account's kernel already held, both
+/// halves of that pair have to be set on purpose — leaving either to whatever Kaggle last stored is
+/// how a run ends up on hardware nobody asked it for.
+const SERVING_ACCELERATOR: &str = "NvidiaTeslaT4";
+
+fn request_gpu(meta: &mut Value) {
+    meta["enable_gpu"] = Value::Bool(true);
+    meta["enable_tpu"] = Value::Bool(false);
+    meta["machine_shape"] = Value::String(SERVING_ACCELERATOR.to_string());
+}
+
+/// Ask for no accelerator at all — the metadata for a push whose only purpose is to end a session.
+///
+/// This is what `enable_gpu = false` was believed to do, and did not. `stop_kaggle_server`, the idle
+/// watchdog and the stuck-session recovery all push a GPU-off version precisely so the teardown
+/// needs no GPU slot and costs no quota. With `machine_shape` left in place they were each starting
+/// a *fresh accelerated session* instead — the idle watchdog, whose entire job is to stop a run that
+/// is quietly billing GPU hours, was billing another one to do it.
+fn request_no_accelerator(meta: &mut Value) {
+    meta["enable_gpu"] = Value::Bool(false);
+    meta["enable_tpu"] = Value::Bool(false);
+    if let Some(obj) = meta.as_object_mut() { obj.remove("machine_shape"); }
 }
 
 /// Turn whatever Kaggle said about a refused push into the app's own outcome codes.
@@ -2111,7 +2139,7 @@ pub async fn supersede_session(db: &crate::store::Db, engine: &str) -> Res<Value
     let meta_path = tmp.join("kernel-metadata.json");
     if let Ok(raw) = fs::read_to_string(&meta_path).await {
         if let Ok(mut meta) = serde_json::from_str::<Value>(&raw) {
-            meta["enable_gpu"] = Value::Bool(false); // GPU-off: supersede without needing a slot
+            request_no_accelerator(&mut meta); // supersede without taking a slot or spending quota
             let pretty = serde_json::to_string_pretty(&meta).unwrap_or(raw);
             let _ = fs::write(&meta_path, pretty).await;
         }
@@ -2814,6 +2842,37 @@ mod kaggle_slug_tests {
         // wholesale would throw away the per-project settings it exists to hold.
         assert_eq!(pdoc.get_str("music_engine").unwrap(), "heartmula");
         assert_eq!(pdoc.get_i32("comfyui_steps").unwrap(), 30);
+    }
+
+    /// A teardown push must ask for no accelerator, and a serving push must ask for one by name.
+    ///
+    /// `machine_shape` outranks `enable_gpu`, which is not what the code assumed. Measured
+    /// 2026-08-13 on a real kernel: `enable_gpu: false` with `machine_shape: "Gpu"` still came up on
+    /// a Tesla P100, and removing the field brought back `CUDA Available: False` and the notebook's
+    /// own "NO GPU ON THIS RUN". Since every teardown here — the Stop button, the idle watchdog, the
+    /// stuck-session recovery — works by pushing a GPU-off version, each of them had been starting a
+    /// fresh accelerated session to end one, billing the quota it existed to protect.
+    #[test]
+    fn a_teardown_asks_for_no_accelerator_and_a_start_names_one() {
+        let pulled = || serde_json::json!({
+            "id": "someone/biblemusically-heartmula-server",
+            "enable_gpu": true, "enable_tpu": false, "machine_shape": "Gpu",
+        });
+
+        let mut stop = pulled();
+        request_no_accelerator(&mut stop);
+        assert_eq!(stop["enable_gpu"], false);
+        assert_eq!(stop["enable_tpu"], false);
+        assert!(stop.get("machine_shape").is_none(),
+                "a teardown that leaves machine_shape set is handed a GPU anyway, which is the whole bug");
+
+        let mut start = serde_json::json!({ "id": "someone/x", "enable_gpu": false });
+        request_gpu(&mut start);
+        assert_eq!(start["enable_gpu"], true);
+        assert_eq!(start["enable_tpu"], false);
+        // Named rather than inherited: a kernel whose last push was a teardown has no machine_shape
+        // left to inherit, and a serving run that quietly gets no accelerator cannot serve at all.
+        assert_eq!(start["machine_shape"], SERVING_ACCELERATOR);
     }
 
     /// Every bundled notebook must carry a revision stamp, or it can never replace a stale copy.
