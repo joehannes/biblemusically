@@ -988,7 +988,37 @@ async fn pull_kernel_for_push(
     if let Some(obj) = meta.as_object_mut() { obj.remove("id_no"); }
     fs::write(&meta_path, serde_json::to_string_pretty(&meta).map_err(e)?).await.map_err(e)?;
 
+    // Replace the account's notebook when the app is carrying a newer one.
+    //
+    // Until now a start pushed back whatever Kaggle already held, and the bundled notebook was only
+    // ever used by an account that had no copy at all. That meant every notebook fix this app ships
+    // reached precisely nobody who had run the engine before — the people it was written for. The
+    // riffusion engine is what exposed it: the repo's notebook had been rewritten to embed its
+    // source package, the version on Kaggle was still the 7.5 KB original whose
+    // `from preset_engine import ...` cannot resolve, and so every start faithfully re-pushed a
+    // notebook that had been unable to import for months, one release after the fix was written.
+    if let Some(bundled) = bundled_notebook(engine_of_slug(own)) {
+        let code_file = meta["code_file"].as_str().unwrap_or("setup_and_serve.ipynb").to_string();
+        let nb_path = dir.join(&code_file);
+        let theirs = fs::read_to_string(&nb_path).await.ok().and_then(|s| notebook_revision(&s));
+        let ours = notebook_revision(bundled);
+        // Only ever forward. An account whose copy is stamped newer than the app's is running a
+        // notebook from a later release, and overwriting it would be a downgrade.
+        if ours.unwrap_or(0) > theirs.unwrap_or(0) {
+            let _ = fs::write(&nb_path, bundled).await;
+        }
+    }
+
     Ok(PulledKernel { from_upstream, slug: own.to_string() })
+}
+
+/// The `bm_notebook_revision` stamp in a notebook's metadata, if it carries one.
+///
+/// Absent means "older than every stamped release" — the notebooks predate this scheme, so an
+/// unstamped copy is exactly the case that needs replacing.
+fn notebook_revision(source: &str) -> Option<u64> {
+    serde_json::from_str::<Value>(source).ok()?
+        .get("metadata")?.get("bm_notebook_revision")?.as_u64()
 }
 
 /// Locate the `kaggle` CLI, or `None` when there genuinely isn't one.
@@ -2784,6 +2814,35 @@ mod kaggle_slug_tests {
         // wholesale would throw away the per-project settings it exists to hold.
         assert_eq!(pdoc.get_str("music_engine").unwrap(), "heartmula");
         assert_eq!(pdoc.get_i32("comfyui_steps").unwrap(), 30);
+    }
+
+    /// Every bundled notebook must carry a revision stamp, or it can never replace a stale copy.
+    ///
+    /// This is the mechanism that decides whether a notebook fix ever reaches somebody who has run
+    /// the engine before. An unstamped bundled notebook reads as revision 0, never beats the copy on
+    /// Kaggle, and the fix silently ships to nobody — which is precisely what happened to riffusion:
+    /// its notebook was rewritten to embed its source package, and every start went on re-pushing
+    /// the original from Kaggle, whose `from preset_engine import ...` could not resolve.
+    #[test]
+    fn every_bundled_notebook_is_stamped_and_can_supersede_an_unstamped_copy() {
+        for engine in ["acestep", "heartmula", "comfyui", "flux", "riffusion", "video"] {
+            let nb = bundled_notebook(engine)
+                .unwrap_or_else(|| panic!("'{engine}' ships no notebook"));
+            let rev = notebook_revision(nb)
+                .unwrap_or_else(|| panic!("'{engine}' notebook carries no bm_notebook_revision"));
+            assert!(rev >= 1, "'{engine}' is stamped {rev}, which can never supersede anything");
+            // The copy already on an account predates the stamp, so it reads as 0 and must lose.
+            assert!(rev > 0, "'{engine}' would not replace an unstamped Kaggle copy");
+        }
+    }
+
+    /// An unstamped notebook must read as older than any stamped one, and junk must not panic.
+    #[test]
+    fn an_unstamped_or_unreadable_notebook_reads_as_oldest() {
+        assert_eq!(notebook_revision(r#"{"metadata":{"bm_notebook_revision":7},"cells":[]}"#), Some(7));
+        assert_eq!(notebook_revision(r#"{"metadata":{},"cells":[]}"#), None);
+        assert_eq!(notebook_revision("not json at all"), None);
+        assert_eq!(notebook_revision(""), None);
     }
 
     /// Every engine must ship a notebook, or it can never start on an account that has not run it
