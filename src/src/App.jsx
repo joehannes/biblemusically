@@ -222,7 +222,18 @@ export default function App() {
             event, because a link rendered deep in a Markdown block should not thread a callback up
             through six components. */}
         <SplitLink />
-        <Toaster position="bottom-right" theme="dark" richColors />
+        {/* Lifted clear of the fixed bottom navigation on phones.
+          A bottom-right toast sits exactly on top of that bar, so an error message — the moment you
+          most want to navigate away — covers the only way to do it. The tour card already offsets
+          itself the same way; this matches it. `mobileOffset` applies below sonner's own breakpoint,
+          `offset` above it. */}
+        <Toaster
+          position="bottom-right"
+          theme="dark"
+          richColors
+          mobileOffset={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))", left: "0.75rem", right: "0.75rem" }}
+          offset={{ bottom: "1rem", right: "1rem" }}
+        />
       </BrowserRouter>
     </StudioProvider>
   );

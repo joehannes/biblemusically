@@ -1267,13 +1267,20 @@ export default function Shell({ children }) {
                   /
                 </span>
               )}
-              <BreadcrumbDropdown currentPath={loc.pathname} />
+              {/* Hidden on a phone. The header cannot fit the breadcrumb and the action icons at
+                  390px: the dropdown does not shrink, so it ran underneath the lightbulb and the
+                  chevron collided with the graduation cap — the two were drawn on top of each other.
+                  Nothing is lost by dropping it there, because the page title sits directly below
+                  saying the same thing, and the hamburger opens the full navigation. */}
+              <span className="hidden sm:inline-flex items-center">
+                <BreadcrumbDropdown currentPath={loc.pathname} />
+              </span>
               {project && (
                 <>
-                  <span className="text-muted-foreground/40">/</span>
+                  <span className="hidden sm:inline text-muted-foreground/40">/</span>
                   <span
                     data-testid="active-project-name"
-                    className="text-sm font-medium truncate max-w-[200px]"
+                    className="text-sm font-medium truncate max-w-[120px] sm:max-w-[200px]"
                   >
                     {project.name}
                   </span>
