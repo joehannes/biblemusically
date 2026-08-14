@@ -292,6 +292,66 @@ const MUSIC_PACKS = {
   ],
 };
 
+
+// Motion packs — the video half of the look packs above.
+//
+// The image packs decide what a frame looks like; nothing decided how it *moves*, so video settings
+// were four unrelated fields (size, transition, transition length, overlay) with no notion of a
+// house style. These set the motion side as one decision, and deliberately do not touch the image
+// settings: the same look pack should be able to run under any of these, which is the point of
+// having master images and re-styling per channel rather than regenerating them.
+//
+// `inheritsImages` is stated on every pack because it is the question people actually ask — the
+// frames come from whichever ComfyUI look pack is selected, and these only change the movement,
+// pacing and framing around them.
+const MOTION_PACKS = [
+  {
+    id: "still_reverent",
+    label: "Still and reverent",
+    blurb: "Barely moves. Long holds, slow crossfades — lets the words carry it. For scripture reading, lament and meditation.",
+    settings: {
+      video_width: 1920, video_height: 1080,
+      video_transitions_enabled: true, video_transition: "fade", video_transition_dur: 1.4,
+    },
+  },
+  {
+    id: "cinematic_drift",
+    label: "Cinematic drift",
+    blurb: "Slow push and dissolve between scenes — the default film feel. Suits most worship and narrative songs.",
+    settings: {
+      video_width: 1920, video_height: 1080,
+      video_transitions_enabled: true, video_transition: "dissolve", video_transition_dur: 0.9,
+    },
+  },
+  {
+    id: "energetic_cuts",
+    label: "Energetic cuts",
+    blurb: "Short holds and quick wipes that sit with an up-tempo track. Praise, gospel, afrobeats, anything with a beat to cut on.",
+    settings: {
+      video_width: 1920, video_height: 1080,
+      video_transitions_enabled: true, video_transition: "slideleft", video_transition_dur: 0.35,
+    },
+  },
+  {
+    id: "shorts_vertical",
+    label: "Shorts / Reels (vertical)",
+    blurb: "1080×1920 with fast cuts. The only pack that changes the aspect — check your image pack is on a portrait size too, or the frames get letterboxed.",
+    settings: {
+      video_width: 1080, video_height: 1920,
+      video_transitions_enabled: true, video_transition: "zoomin", video_transition_dur: 0.3,
+    },
+  },
+  {
+    id: "hard_cuts",
+    label: "Hard cuts (no transitions)",
+    blurb: "No crossfades at all. Cheapest to render and the clearest for teaching material, where a dissolve reads as decoration.",
+    settings: {
+      video_width: 1920, video_height: 1080,
+      video_transitions_enabled: false, video_transition: "fade", video_transition_dur: 0.5,
+    },
+  },
+];
+
 // Field component moved OUTSIDE of SettingsComponent to prevent focus-loss on re-render.
 // A row of preset tiles that write a whole settings object. Shared by the two music engines so
 // their packs look and behave identically; the caller supplies the list and the current settings.
@@ -2126,6 +2186,38 @@ const SettingsComponent = () => {
             </Select>
           </div>
           <Field k="video_overlay_opacity" label="Overlay opacity (0–1)" type="number" testid="settings-overlay-opacity" value={s.video_overlay_opacity} onValueChange={updateS} />
+        </div>
+        {/* Motion packs sit above the individual controls for the same reason the look packs do:
+            "energetic cuts" is a decision somebody can make, and "transition length 0.35s" is not. */}
+        <div className="mt-4 mb-1">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+            Motion packs — one click sets size, transition and pacing
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {MOTION_PACKS.map((p) => {
+              const active = Object.entries(p.settings)
+                .every(([k, v]) => (typeof v === "boolean" ? !!s[k] === v : Number(s[k]) === Number(v) || String(s[k]) === String(v)));
+              return (
+                <button
+                  key={p.id}
+                  data-testid={`motion-pack-${p.id}`}
+                  onClick={() => { updateS(p.settings); toast.success(`Video motion set to “${p.label}”.`); }}
+                  className={`text-left rounded-lg border p-2.5 transition-all hover:border-primary/60 ${active ? "border-primary/60 bg-primary/5" : "border-border"}`}
+                >
+                  <div className="text-sm font-medium">{p.label}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{p.blurb}</div>
+                  <div className="text-[10px] text-muted-foreground/70 mt-1">
+                    {p.settings.video_width}×{p.settings.video_height} · {p.settings.video_transitions_enabled ? `${p.settings.video_transition} ${p.settings.video_transition_dur}s` : "no transitions"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-2">
+            These set movement only. The frames themselves come from whichever <b>look pack</b> you picked
+            under ComfyUI — so one set of master images can run under any motion pack, and be restyled
+            per channel without regenerating them.
+          </div>
         </div>
         <div className="mt-3 flex items-center gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
           <Switch checked={s.overlay_auto_use !== false} onCheckedChange={(v) => updateS({ overlay_auto_use: v })} data-testid="settings-overlay-auto-use" />

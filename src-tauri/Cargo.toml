@@ -1,6 +1,6 @@
     [package]
 name = "ai-music-video-studio"
-version = "0.132.0"
+version = "0.133.0"
 edition = "2021"
 
 [lib]
@@ -119,3 +119,8 @@ mobile-git       = ["dep:git2"]
 [profile.release]
 panic            = "abort"
 codegen-units    = 1
+# Release builds do not benefit from incremental compilation — `codegen-units = 1` already forces a
+# whole-crate codegen pass — but they were still writing the cache for it, and it reached 7.9 GB on
+# this machine. That is the whole reason builds kept failing for disk on a 98 GB disk: the cache grew
+# faster than every other artifact combined, and clearing bundles bought only a build or two back.
+incremental      = false
