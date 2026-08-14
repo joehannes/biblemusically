@@ -90,6 +90,15 @@ const DEFAULT_CONFIG = {
   // Override it in production with the PROMO_CODE secret (`wrangler secret put PROMO_CODE`); the
   // constant is the fallback so a self-hosted deploy works out of the box.
   promo_code: "BM1-ZR6JN-QE4FD-P7DAB",
+  // Additional reusable codes, each behaving exactly like `promo_code` above. A list rather than a
+  // second constant because handing out a new code must not retire the one already in circulation:
+  // replacing `promo_code` would silently break every copy of it that has been sent out.
+  //
+  // Redemption is still one per account per code (`promo:<code>:<email>`), so a code that leaks
+  // costs one licence per address, not an unlimited number. Retire a code by deleting its entry.
+  promo_codes: [
+    "BM1-8Q8KV-RN8FY-XRW5T", // gift code, minted 2026-08-14
+  ],
   hotjar_site_id: "",
   signups_open: true,
   message: "",
@@ -524,8 +533,14 @@ export default {
         // lifetime licence a purchase does, once per account: the guard is a marker keyed by code
         // *and* email, so the same person cannot mint themselves a second one, and a leaked code
         // costs one licence per address rather than an unlimited number.
-        const promo = String(env.PROMO_CODE || cfgEarly.promo_code || "").trim().toUpperCase();
-        if (promo && code === promo) {
+        // Every reusable code: the deploy-time secret, the built-in constant, and any listed in
+        // `promo_codes`. Matching against the set rather than one string is what lets a new code be
+        // handed out without retiring the codes already in people's inboxes.
+        const promoSet = [env.PROMO_CODE, cfgEarly.promo_code, ...(cfgEarly.promo_codes || [])]
+          .map((c) => String(c || "").trim().toUpperCase())
+          .filter(Boolean);
+        const promo = promoSet.find((c) => c === code);
+        if (promo) {
           const user = await getUser(env, body.email || "");
           if (!user) return bad("Sign in first, then redeem.", 404);
           const seen = `promo:${promo}:${String(user.email).toLowerCase()}`;
