@@ -257,7 +257,70 @@ const WORK_PACKS = [
   },
 ];
 
+// Sampler packs for the two free music engines.
+//
+// Both engines' knobs were hardcoded in the job runner, so the numbers below did not previously
+// reach the model at all — and they are not the same knobs. ACE-Step is a diffusion model: a step
+// count and a batch. HeartMuLa is autoregressive: top-k, temperature and a guidance scale. Nobody
+// should have to know that to get a good track, so each engine gets packs described by what they
+// do to the *output*, with the raw fields underneath for anyone who does.
+//
+// They also no longer share a song length. `acestep_duration` used to drive both, so setting a
+// length for one moved the other.
+const MUSIC_PACKS = {
+  heartmula: [
+    { id: "hm_faithful", label: "Faithful to the prompt",
+      blurb: "Sticks closely to the style and lyrics you wrote. Least surprising, best for a series that has to sound consistent.",
+      settings: { heartmula_topk: 30, heartmula_temperature: 0.8, heartmula_cfg_scale: 2.5 } },
+    { id: "hm_balanced", label: "Balanced (default)",
+      blurb: "The tuning the engine ships with. A good place to start and to come back to.",
+      settings: { heartmula_topk: 50, heartmula_temperature: 1.0, heartmula_cfg_scale: 1.5 } },
+    { id: "hm_adventurous", label: "Adventurous",
+      blurb: "Looser sampling — more variation between takes, more chance of something you would not have asked for, and of a dud.",
+      settings: { heartmula_topk: 90, heartmula_temperature: 1.2, heartmula_cfg_scale: 1.2 } },
+  ],
+  acestep: [
+    { id: "as_fast", label: "Fast draft",
+      blurb: "Few steps, one take. Use it to hear whether the style and lyrics are right before spending real time.",
+      settings: { acestep_steps: 6, acestep_batch: 1, acestep_guidance: 6.0 } },
+    { id: "as_balanced", label: "Balanced (default)",
+      blurb: "Two takes at a moderate step count, so there is something to choose between.",
+      settings: { acestep_steps: 8, acestep_batch: 2, acestep_guidance: 7.5 } },
+    { id: "as_quality", label: "Best quality",
+      blurb: "More steps and stronger guidance. Noticeably slower per track, and the one to use for anything you will publish.",
+      settings: { acestep_steps: 20, acestep_batch: 2, acestep_guidance: 9.0 } },
+  ],
+};
+
 // Field component moved OUTSIDE of SettingsComponent to prevent focus-loss on re-render.
+// A row of preset tiles that write a whole settings object. Shared by the two music engines so
+// their packs look and behave identically; the caller supplies the list and the current settings.
+const PackRow = memo(({ title, packs, s, onPick }) => (
+  <div className="mb-4">
+    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">{title}</div>
+    <div className="grid sm:grid-cols-3 gap-2">
+      {packs.map((p) => {
+        const active = Object.entries(p.settings)
+          .every(([k, v]) => Number(s[k]) === Number(v));
+        return (
+          <button
+            key={p.id}
+            data-testid={`pack-${p.id}`}
+            onClick={() => onPick(p)}
+            className={`text-left rounded-lg border p-2.5 transition-all hover:border-primary/60 ${active ? "border-primary/60 bg-primary/5" : "border-border"}`}
+          >
+            <div className="text-sm font-medium">{p.label}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{p.blurb}</div>
+            <div className="text-[10px] text-muted-foreground/70 mt-1">
+              {Object.entries(p.settings).map(([k, v]) => `${k.split("_").slice(1).join(" ")} ${v}`).join(" · ")}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+));
+
 const Field = memo(({ k, label, placeholder, type="text", testid, value, onValueChange }) => {
   const handleChange = useCallback((e) => {
     onValueChange({ [k]: e.target.value });
@@ -294,6 +357,14 @@ const initialSettings = {
   acestep_api_url: "",
   acestep_api_key: "",
   acestep_duration: 240,
+  acestep_steps: 8,
+  acestep_batch: 2,
+  acestep_guidance: 7.5,
+  // HeartMuLa keeps its own length: the two engines shared acestep_duration until 0.127.0.
+  heartmula_duration: 240,
+  heartmula_topk: 50,
+  heartmula_temperature: 1.0,
+  heartmula_cfg_scale: 1.5,
   heartmula_api_url: "",
   heartmula_api_key: "",
   ai_provider: "openrouter",
@@ -1132,7 +1203,12 @@ const SettingsComponent = () => {
           <Field k="acestep_api_url" label="ACE-Step server URL" placeholder="https://xxxx.gradio.live or http://localhost:8001" testid="settings-acestep-url" value={s.acestep_api_url} onValueChange={updateS} />
           <Field k="acestep_api_key" label="API key (optional)" placeholder="only if the server sets ACESTEP_API_KEY" type="password" testid="settings-acestep-key" value={s.acestep_api_key} onValueChange={updateS} />
           <Field k="acestep_duration" label="Song length in seconds (10–600)" placeholder="240" type="number" testid="settings-acestep-duration" value={s.acestep_duration} onValueChange={updateS} />
+          <Field k="acestep_steps" label="Diffusion steps (1–200)" placeholder="8" type="number" testid="settings-acestep-steps" value={s.acestep_steps} onValueChange={updateS} />
+          <Field k="acestep_batch" label="Takes per run (1–4)" placeholder="2" type="number" testid="settings-acestep-batch" value={s.acestep_batch} onValueChange={updateS} />
+          <Field k="acestep_guidance" label="Guidance scale (1–20)" placeholder="7.5" type="number" testid="settings-acestep-guidance" value={s.acestep_guidance} onValueChange={updateS} />
         </div>
+        <PackRow title="Quality packs — one click sets steps, takes and guidance" packs={MUSIC_PACKS.acestep} s={s}
+          onPick={(p) => { updateS(p.settings); toast.success(`ACE-Step set to “${p.label}”.`); }} />
         <div className="flex flex-wrap gap-2 mt-3">
           <Button size="sm" data-testid="settings-kaggle-auto-acestep" onClick={()=>autoStartServer("acestep")} disabled={kaggleState.acestep && ["checking","starting","waiting","testing"].includes(kaggleState.acestep.status)}><Bot className="w-3 h-3 mr-2" />Start & connect</Button>
           <Button size="sm" variant="outline" data-testid="settings-kaggle-open-acestep" onClick={()=>openKaggleNb("acestep")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>
@@ -1153,7 +1229,13 @@ const SettingsComponent = () => {
         <div className="grid md:grid-cols-2 gap-4">
           <Field k="heartmula_api_url" label="HeartMuLa server URL" placeholder="https://xxxx.trycloudflare.com or http://localhost:8003" testid="settings-heartmula-url" value={s.heartmula_api_url} onValueChange={updateS} />
           <Field k="heartmula_api_key" label="API key (optional)" placeholder="only if the server sets API_KEY" type="password" testid="settings-heartmula-key" value={s.heartmula_api_key} onValueChange={updateS} />
+          <Field k="heartmula_duration" label="Song length in seconds (10–600)" placeholder="240" type="number" testid="settings-heartmula-duration" value={s.heartmula_duration} onValueChange={updateS} />
+          <Field k="heartmula_topk" label="Top-k (1–200)" placeholder="50" type="number" testid="settings-heartmula-topk" value={s.heartmula_topk} onValueChange={updateS} />
+          <Field k="heartmula_temperature" label="Temperature (0.1–2.0)" placeholder="1.0" type="number" testid="settings-heartmula-temperature" value={s.heartmula_temperature} onValueChange={updateS} />
+          <Field k="heartmula_cfg_scale" label="Guidance scale (1–10)" placeholder="1.5" type="number" testid="settings-heartmula-cfg" value={s.heartmula_cfg_scale} onValueChange={updateS} />
         </div>
+        <PackRow title="Sampler packs — one click sets top-k, temperature and guidance" packs={MUSIC_PACKS.heartmula} s={s}
+          onPick={(p) => { updateS(p.settings); toast.success(`HeartMuLa set to “${p.label}”.`); }} />
         <div className="flex flex-wrap gap-2 mt-3">
           <Button size="sm" data-testid="settings-kaggle-auto-heartmula" onClick={()=>autoStartServer("heartmula")} disabled={kaggleState.heartmula && ["checking","starting","waiting","testing"].includes(kaggleState.heartmula.status)}><Bot className="w-3 h-3 mr-2" />Start & connect</Button>
           <Button size="sm" variant="outline" data-testid="settings-kaggle-open-heartmula" onClick={()=>openKaggleNb("heartmula")}><ExternalLink className="w-3 h-3 mr-2" />Open notebook</Button>

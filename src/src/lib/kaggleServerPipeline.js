@@ -105,6 +105,29 @@ export async function autoStartKaggleServer(engine, { gpuRetries = 0 } = {}) {
     return;
   }
 
+  // ── Already booting? Wait for it instead of replacing it. ──────────────
+  //
+  // A run that is still installing has no tunnel URL yet, and "no URL" was treated as "no run" —
+  // so this pushed a fresh version, which supersedes the session Kaggle allows per kernel and
+  // kills the boot that was half-way through. The replacement then starts from zero, takes another
+  // eight minutes, and can be superseded exactly the same way by the next press. That is the
+  // "stuck in the queue forever" this fixes: observed with the kernel RUNNING, the model loaded
+  // and a tunnel answering, while the app still showed Queue and a dead address.
+  //
+  // The kernel's own status is the thing that distinguishes the two cases, and the backend has
+  // been returning it all along.
+  if (["running", "queued"].includes(r.kernel_status)) {
+    pushLog(engine, `A run is already ${r.kernel_status} on Kaggle — watching it rather than starting another (that would cancel it).`);
+    patch(engine, { status: "waiting", phase: r.kernel_status === "queued" ? "queued" : "installing" });
+    try {
+      await api.kaggleStartMonitor(engine, true);
+    } catch (err) {
+      pushLog(engine, `Could not start the log monitor: ${err}`, "error");
+    }
+    if (!stillCurrent()) return;
+    return watchBoot(engine, stillCurrent, gpuRetries);
+  }
+
   // ── Not live: push a fresh GPU batch run. ──────────────────────────────
   // A kernel whose tunnel died but that Kaggle still lists as RUNNING keeps holding a GPU slot
   // until the ~9-12 h batch limit; pushing a fresh run for this SAME engine won't free it. Remember
@@ -195,6 +218,13 @@ export async function autoStartKaggleServer(engine, { gpuRetries = 0 } = {}) {
     pushLog(engine, `Could not start the log monitor: ${err} — falling back to plain polling.`, "error");
   }
 
+  return watchBoot(engine, stillCurrent, gpuRetries);
+}
+
+// Watch a boot through to ready — shared by a run this app just pushed and one that was already
+// under way when it was asked to start. Splitting it out is what lets the caller adopt an
+// in-progress run instead of superseding it.
+async function watchBoot(engine, stillCurrent, gpuRetries = 0) {
   const started = Date.now();
   while (Date.now() - started < POLL_MAX_MS) {
     await sleep(PROGRESS_POLL_MS);

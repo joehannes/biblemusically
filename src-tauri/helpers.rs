@@ -479,3 +479,71 @@ mod media_binary_tests {
         assert_eq!(resolve_media_binary(Some("  /opt/ff  "), "ffmpeg"), "/opt/ff");
     }
 }
+
+/// Read a settings number that may have been stored as a string.
+///
+/// The Settings form's number inputs hand back `e.target.value`, which is a *string*, and that is
+/// what reaches the store: `comfyui_steps: "40"`, not `40`. Every reader used `as_i64()` / `as_f64()`,
+/// which return `None` for a string and therefore fell through to the default — so typing 45 steps
+/// or a 1344-wide image changed the form, was saved correctly, and then generated at 30 steps and
+/// 1024 wide with nothing reported anywhere. Observed after a look pack wrote 40 steps and the
+/// stored document came back holding `'40'`.
+///
+/// Parsing here rather than coercing on save, deliberately: the store already contains years of
+/// string-shaped numbers, so the reader has to tolerate them regardless.
+pub fn setting_i64(settings: &serde_json::Value, key: &str, default: i64) -> i64 {
+    match settings.get(key) {
+        Some(v) if v.is_i64() || v.is_u64() => v.as_i64().unwrap_or(default),
+        Some(v) if v.is_f64() => v.as_f64().map(|f| f.round() as i64).unwrap_or(default),
+        Some(serde_json::Value::String(s)) => s.trim().parse::<f64>().ok()
+            .map(|f| f.round() as i64).unwrap_or(default),
+        _ => default,
+    }
+}
+
+/// The same, for a fractional setting (CFG scale, IP-Adapter weight, transition seconds).
+pub fn setting_f64(settings: &serde_json::Value, key: &str, default: f64) -> f64 {
+    match settings.get(key) {
+        Some(v) if v.is_number() => v.as_f64().unwrap_or(default),
+        Some(serde_json::Value::String(s)) => s.trim().parse::<f64>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+#[cfg(test)]
+mod setting_number_tests {
+    use super::{setting_f64, setting_i64};
+    use serde_json::json;
+
+    /// A number typed into the form arrives as a string, and must still be the number.
+    #[test]
+    fn string_shaped_numbers_are_read_as_numbers() {
+        let s = json!({
+            "comfyui_steps": "40", "comfyui_cfg": "7", "comfyui_width": "1152",
+            "comfyui_ip_weight": "0.65",
+        });
+        assert_eq!(setting_i64(&s, "comfyui_steps", 30), 40);
+        assert_eq!(setting_i64(&s, "comfyui_width", 1024), 1152);
+        assert_eq!(setting_f64(&s, "comfyui_cfg", 6.5), 7.0);
+        assert_eq!(setting_f64(&s, "comfyui_ip_weight", 0.7), 0.65);
+    }
+
+    /// Real numbers keep working — this is a widening, not a replacement.
+    #[test]
+    fn real_numbers_still_work() {
+        let s = json!({ "comfyui_steps": 45, "comfyui_cfg": 7.5 });
+        assert_eq!(setting_i64(&s, "comfyui_steps", 30), 45);
+        assert_eq!(setting_f64(&s, "comfyui_cfg", 6.5), 7.5);
+    }
+
+    /// Absent, empty and unparseable all fall back rather than producing a zero, because a zero
+    /// here is a black image or a divide-by-nothing rather than a visible error.
+    #[test]
+    fn junk_falls_back_to_the_default_not_to_zero() {
+        let s = json!({ "comfyui_steps": "", "comfyui_cfg": "abc", "comfyui_width": null });
+        assert_eq!(setting_i64(&s, "comfyui_steps", 30), 30);
+        assert_eq!(setting_f64(&s, "comfyui_cfg", 6.5), 6.5);
+        assert_eq!(setting_i64(&s, "comfyui_width", 1024), 1024);
+        assert_eq!(setting_i64(&s, "missing_entirely", 7), 7);
+    }
+}

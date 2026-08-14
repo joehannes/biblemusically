@@ -392,7 +392,23 @@ pub fn run() {
                     let route = suno_route.or(scrape_route).or(macro_step_route).or(macro_state_route)
                         .or(media_route).with(cors);
 
-                    warp::serve(route).run(([127, 0, 0, 1], 3337)).await;
+                    // Bind explicitly so a port already in use is a warning, not a crash.
+                    //
+                    // `warp::serve(..).run(..)` panics when the bind fails, and because this runs
+                    // inside a spawned task the panic took the whole app down at startup with a
+                    // raw backtrace and no window — every time a second copy was launched while
+                    // one was already running, which is an ordinary thing to do by accident. The
+                    // app is still perfectly usable without this server: it serves the local media
+                    // routes and the scrape/macro callbacks, so the honest outcome is to say which
+                    // features are degraded and carry on rather than to exit.
+                    match warp::serve(route).try_bind_ephemeral(([127, 0, 0, 1], 3337)) {
+                        Ok((_addr, server)) => server.await,
+                        Err(err) => eprintln!(
+                            "local helper server could not bind 127.0.0.1:3337 ({err}). Another copy \
+                             of the app is probably already running. Continuing without it — local \
+                             media preview and the browser-scrape callbacks will not work in this \
+                             window."),
+                    }
                 });
             }
 

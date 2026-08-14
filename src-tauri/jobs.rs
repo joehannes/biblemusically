@@ -477,8 +477,14 @@ async fn generate_song_api(
 
     // Target length: per-song `duration` if set, else the configured default, clamped to 10–600s.
     // The settings value may arrive as a JSON number or a string (the UI form stores it as text).
-    let settings_dur = settings.get("acestep_duration")
-        .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse::<f64>().ok())));
+    // Per engine, not shared. ACE-Step and HeartMuLa both read `acestep_duration`, so setting a
+    // length for one silently moved the other — and they do not even have the same practical
+    // ceiling. `acestep_duration` is still honoured as a fallback so an existing install keeps the
+    // length it had until the engine's own field is set.
+    let dur_key = format!("{label}_duration");
+    let own = crate::helpers::setting_f64(settings, &dur_key, 0.0);
+    let legacy = crate::helpers::setting_f64(settings, "acestep_duration", 0.0);
+    let settings_dur = if own >= 10.0 { Some(own) } else if legacy >= 10.0 { Some(legacy) } else { None };
     let duration = song.get("duration").and_then(|v| v.as_f64()).filter(|d| *d >= 10.0)
         .or(settings_dur)
         .unwrap_or(240.0)
@@ -501,15 +507,35 @@ async fn generate_song_api(
         if api_key.is_empty() { rb } else { rb.header("Authorization", format!("Bearer {}", api_key)) }
     };
 
-    let payload = serde_json::json!({
+    // The sampler knobs were hardcoded here, which meant the two engines' quality settings did not
+    // exist as far as anyone using the app was concerned. They are per engine because they are not
+    // the same controls: ACE-Step is a diffusion model with a step count and a batch, HeartMuLa is
+    // autoregressive with top-k, temperature and a guidance scale. Sending one engine's knobs to the
+    // other is meaningless, so each gets its own and the server ignores what it does not know.
+    let mut payload = serde_json::json!({
         "prompt": prompt,
         "lyrics": lyrics,
         "audio_duration": duration,
         "audio_format": "mp3",
-        "inference_steps": 8,
-        "batch_size": 2,
         "use_random_seed": true,
     });
+    if let Some(obj) = payload.as_object_mut() {
+        if label == "heartmula" {
+            obj.insert("topk".into(), serde_json::json!(
+                crate::helpers::setting_i64(settings, "heartmula_topk", 50).clamp(1, 200)));
+            obj.insert("temperature".into(), serde_json::json!(
+                crate::helpers::setting_f64(settings, "heartmula_temperature", 1.0).clamp(0.1, 2.0)));
+            obj.insert("cfg_scale".into(), serde_json::json!(
+                crate::helpers::setting_f64(settings, "heartmula_cfg_scale", 1.5).clamp(1.0, 10.0)));
+        } else {
+            obj.insert("inference_steps".into(), serde_json::json!(
+                crate::helpers::setting_i64(settings, "acestep_steps", 8).clamp(1, 200)));
+            obj.insert("batch_size".into(), serde_json::json!(
+                crate::helpers::setting_i64(settings, "acestep_batch", 2).clamp(1, 4)));
+            obj.insert("guidance_scale".into(), serde_json::json!(
+                crate::helpers::setting_f64(settings, "acestep_guidance", 7.5).clamp(1.0, 20.0)));
+        }
+    }
 
     // Kaggle's Cloudflare tunnel rotates every run, so a URL that was fine an hour ago (the
     // notebook's idle watchdog killed it, or Kaggle's batch time limit ended the run) can be
@@ -848,7 +874,8 @@ async fn real_riffusion(song: &Value, settings: &Value, job_id: &str, db: &crate
     let lyrics = song.get("lyrics").and_then(|v| v.as_str()).unwrap_or("");
     // The notebook takes minutes, not seconds, and refuses anything outside 5–10.
     let minutes = song.get("duration").and_then(|v| v.as_f64())
-        .or_else(|| settings.get("acestep_duration").and_then(|v| v.as_f64()))
+        .or_else(|| { let d = crate::helpers::setting_f64(settings, "acestep_duration", 0.0);
+                       if d > 0.0 { Some(d) } else { None } })
         .map(|secs| secs / 60.0)
         .unwrap_or(5.0)
         .clamp(5.0, 10.0);
@@ -940,7 +967,8 @@ async fn real_elevenlabs(song: &Value, settings: &Value, job_id: &str, db: &crat
     let lyrics = song.get("lyrics").and_then(|v| v.as_str()).unwrap_or("");
     let styles = adapt_styles_for_engine("elevenlabs", song, settings, job_id, db).await;
     let seconds = song.get("duration").and_then(|v| v.as_f64())
-        .or_else(|| settings.get("acestep_duration").and_then(|v| v.as_f64()))
+        .or_else(|| { let d = crate::helpers::setting_f64(settings, "acestep_duration", 0.0);
+                       if d > 0.0 { Some(d) } else { None } })
         .unwrap_or(180.0)
         .clamp(10.0, 300.0);
 
@@ -1493,9 +1521,9 @@ async fn real_comfy(
     };
     let negative = if extra_neg.trim().is_empty() { base_neg.to_string() } else { format!("{}, {}", base_neg, extra_neg.trim()) };
 
-    let width = settings.get("comfyui_width").and_then(|v| v.as_i64()).unwrap_or(1024);
-    let height = settings.get("comfyui_height").and_then(|v| v.as_i64()).unwrap_or(1024);
-    let ip_weight = settings.get("comfyui_ip_weight").and_then(|v| v.as_f64()).unwrap_or(0.7);
+    let width = crate::helpers::setting_i64(settings, "comfyui_width", 1024);
+    let height = crate::helpers::setting_i64(settings, "comfyui_height", 1024);
+    let ip_weight = crate::helpers::setting_f64(settings, "comfyui_ip_weight", 0.7);
     let batch = 2i64;
     let seed: i64 = (Uuid::new_v4().as_u128() & 0x7fff_ffff) as i64;
 
@@ -1540,8 +1568,8 @@ async fn real_comfy(
     let (steps, cfg, sampler, scheduler) = if auto_config {
         (profile.steps, profile.cfg, profile.sampler, profile.scheduler)
     } else {
-        (settings.get("comfyui_steps").and_then(|v| v.as_i64()).unwrap_or(30),
-         settings.get("comfyui_cfg").and_then(|v| v.as_f64()).unwrap_or(6.5),
+        (crate::helpers::setting_i64(settings, "comfyui_steps", 30),
+         crate::helpers::setting_f64(settings, "comfyui_cfg", 6.5),
          "dpmpp_2m", "karras")
     };
     db_log(db, job_id, &format!(
@@ -1658,8 +1686,8 @@ async fn real_comfy(
     wf = fill_str(&wf, "__LORA2__",
                   settings.get("comfyui_lora2").and_then(|v| v.as_str()).unwrap_or(""));
     wf = wf.replace("__LORA2_STRENGTH__", &format!("{:.2}",
-                  settings.get("comfyui_lora2_strength").and_then(|v| v.as_f64())
-                          .filter(|v| *v > 0.0 && *v <= 2.0).unwrap_or(0.65)));
+                  { let v = crate::helpers::setting_f64(settings, "comfyui_lora2_strength", 0.65);
+                    if v > 0.0 && v <= 2.0 { v } else { 0.65 } }));
     wf = fill_str(&wf, "__CKPT2__",
                   settings.get("comfyui_refiner_ckpt").and_then(|v| v.as_str()).unwrap_or(""));
     // The second prompt falls back to the first rather than to nothing: an empty conditioning in a
@@ -1671,8 +1699,8 @@ async fn real_comfy(
         wf = fill_str(&wf, "__PROMPT2__", &p2);
     }
     wf = wf.replace("__LORA_STRENGTH__", &format!("{:.2}",
-                  settings.get("comfyui_lora_strength").and_then(|v| v.as_f64())
-                          .filter(|v| *v > 0.0 && *v <= 2.0).unwrap_or(0.85)));
+                  { let v = crate::helpers::setting_f64(settings, "comfyui_lora_strength", 0.85);
+                    if v > 0.0 && v <= 2.0 { v } else { 0.85 } }));
     wf = fill_str(&wf, "__CKPT__", ckpt);
     wf = fill_str(&wf, "__PROMPT__", &full_prompt);
     wf = fill_str(&wf, "__NEGATIVE__", &negative);
@@ -1914,8 +1942,8 @@ async fn real_overlay(
         Err(_) => { db_log(db, job_id, "overlay: failed to fetch audio").await; return None; }
     }
 
-    let width = settings.get("video_width").and_then(|v| v.as_i64()).unwrap_or(1280).max(16);
-    let height = settings.get("video_height").and_then(|v| v.as_i64()).unwrap_or(720).max(16);
+    let width = crate::helpers::setting_i64(settings, "video_width", 1280).max(16);
+    let height = crate::helpers::setting_i64(settings, "video_height", 720).max(16);
     let style = settings.get("overlay_style").and_then(|v| v.as_str()).unwrap_or("cqt").to_string();
     let engine = settings.get("overlay_engine").and_then(|v| v.as_str()).unwrap_or("ffmpeg").to_string();
     let projectm = settings.get("projectm_path").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
@@ -2085,7 +2113,7 @@ async fn real_ffmpeg(
 
     // Transition config: whether to crossfade between scenes, the default transition, and its length.
     let transitions_enabled = settings.get("video_transitions_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-    let trans_dur = settings.get("video_transition_dur").and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))).unwrap_or(0.7).clamp(0.1, 3.0);
+    let trans_dur = crate::helpers::setting_f64(settings, "video_transition_dur", 0.7).clamp(0.1, 3.0);
     let default_trans = settings.get("video_transition").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).unwrap_or("fade").to_string();
 
     // Downloaded segment sources: (local path, animated?, duration seconds, transition-into-this-scene).
@@ -2177,10 +2205,10 @@ async fn real_ffmpeg(
         Some(overlay_src.clone())
     };
 
-    let width = settings.get("video_width").and_then(|v| v.as_i64()).unwrap_or(1280).max(16);
-    let height = settings.get("video_height").and_then(|v| v.as_i64()).unwrap_or(720).max(16);
+    let width = crate::helpers::setting_i64(settings, "video_width", 1280).max(16);
+    let height = crate::helpers::setting_i64(settings, "video_height", 720).max(16);
     let overlay_mode = settings.get("video_overlay_mode").and_then(|v| v.as_str()).unwrap_or("screen").to_string();
-    let overlay_opacity = settings.get("video_overlay_opacity").and_then(|v| v.as_f64()).unwrap_or(0.35).clamp(0.0, 1.0);
+    let overlay_opacity = crate::helpers::setting_f64(settings, "video_overlay_opacity", 0.35).clamp(0.0, 1.0);
 
     db_log(db, job_id, &format!("ffmpeg: composing {}x{} video ({} segments{})...", width, height, n,
         if overlay_path.is_some() { ", with overlay" } else { "" })).await;
