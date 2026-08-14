@@ -1225,17 +1225,43 @@ pub async fn open_kaggle_login(app: tauri::AppHandle) -> Res<Value> {
 }
 
 /// Write a kaggle.json to `~/.kaggle/kaggle.json` (0600 — the CLI refuses a world-readable token).
+/// Kaggle issues two different credentials, and they live in two different files.
+///
+/// A legacy API key is 32 hex characters and belongs in `kaggle.json` next to the username. An
+/// OAuth access token is `KGAT_` followed by 32 hex, and belongs in `~/.kaggle/access_token` on its
+/// own — the client reads it from there and reports `auth_method: ACCESS_TOKEN`. Putting one in the
+/// other's place does not fail loudly; the CLI simply cannot authenticate and answers every call
+/// with its generic "Authentication required to call the Kaggle API... you will need a Kaggle
+/// account", which reads as never having signed up.
+///
+/// That is what made adding a second account impossible. Kaggle's token page now hands out a
+/// `KGAT_` token, `save_kaggle_token` stored it as `key`, and every switch wrote it into
+/// kaggle.json where it could never work. Verified by hand: the same stored token authenticates as
+/// `johanneslightkid` the moment it is written to `access_token` instead.
+fn is_access_token(key: &str) -> bool {
+    key.trim().starts_with("KGAT_")
+}
+
+/// Write whichever credential this is to wherever the Kaggle client actually reads it from.
 async fn write_kaggle_json(username: &str, key: &str) -> Res<String> {
     let home = env::var("HOME").map_err(|_| "Could not locate your home directory.".to_string())?;
     let dir = PathBuf::from(&home).join(".kaggle");
     fs::create_dir_all(&dir).await.map_err(e)?;
+
+    if is_access_token(key) {
+        // The token is the whole credential and carries its own identity, so no username is written
+        // beside it. kaggle.json is left alone deliberately: the client prefers the access token, so
+        // an older key sitting there is inert, and deleting somebody's other credential to install
+        // this one is not this function's decision to make.
+        let path = dir.join("access_token");
+        fs::write(&path, format!("{}\n", key.trim())).await.map_err(e)?;
+        set_owner_only(&path).await;
+        return Ok(path.to_string_lossy().into_owned());
+    }
+
     let path = dir.join("kaggle.json");
     fs::write(&path, serde_json::json!({ "username": username, "key": key }).to_string()).await.map_err(e)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
+    set_owner_only(&path).await;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -3024,6 +3050,22 @@ mod kaggle_slug_tests {
         // A ref containing a quote must not be able to break the cell it lands in.
         let nasty = apply_upstream_pin(nb, "heartmula", &bson::doc! { "heartmula_git_ref": "a\"b" });
         assert!(nasty.contains(r#""a\"b""#), "ref was not escaped: {nasty}");
+    }
+
+    /// Kaggle's two credential kinds must land in two different files.
+    ///
+    /// The token page now hands out `KGAT_…`, which is an OAuth access token and only works from
+    /// `~/.kaggle/access_token`. Stored as `key` in kaggle.json it cannot authenticate, and the CLI
+    /// reports it as though no Kaggle account existed — which is why adding a second account failed
+    /// with a freshly minted token. Verified by hand on 2026-08-14: the same token authenticated as
+    /// its owner the moment it was written to the access-token file.
+    #[test]
+    fn an_oauth_token_is_not_an_api_key() {
+        assert!(is_access_token("KGAT_719a13037507696d7882178aab44c8f6"));
+        assert!(is_access_token("  KGAT_abc  "), "a pasted token may carry whitespace");
+        // A legacy API key is 32 hex characters with no prefix, and must keep going to kaggle.json.
+        assert!(!is_access_token("f9b2b5f4c1d0e3a29b8c7d6e5f4a3b21"));
+        assert!(!is_access_token(""));
     }
 
     /// Digit-only keys are debris and must never be written back.
