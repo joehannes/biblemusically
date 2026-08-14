@@ -481,14 +481,21 @@ async fn generate_song_api(
     // length for one silently moved the other — and they do not even have the same practical
     // ceiling. `acestep_duration` is still honoured as a fallback so an existing install keeps the
     // length it had until the engine's own field is set.
-    let dur_key = format!("{label}_duration");
-    let own = crate::helpers::setting_f64(settings, &dur_key, 0.0);
+    let own = crate::helpers::setting_f64(settings, &format!("{label}_duration"), 0.0);
     let legacy = crate::helpers::setting_f64(settings, "acestep_duration", 0.0);
-    let settings_dur = if own >= 10.0 { Some(own) } else if legacy >= 10.0 { Some(legacy) } else { None };
+    let base_duration = if own >= 10.0 { own } else if legacy >= 10.0 { legacy } else { 240.0 };
+
+    // The length is a range, not a number. A fixed value made every track in a series exactly the
+    // same length, which is monotonous and a bad fit for the material — six lines and forty lines
+    // do not want the same four minutes. `pick_duration` places the ask inside the range by how
+    // much there is to sing, stably per song so a retry is comparable with the take before it.
+    // An unset range collapses to the single value, so nothing moves for anyone who has not set one.
+    let dur_min = crate::helpers::setting_f64(settings, &format!("{label}_duration_min"), base_duration);
+    let dur_max = crate::helpers::setting_f64(settings, &format!("{label}_duration_max"), base_duration);
+    let song_id = song.get("id").and_then(|v| v.as_str()).unwrap_or("");
     let duration = song.get("duration").and_then(|v| v.as_f64()).filter(|d| *d >= 10.0)
-        .or(settings_dur)
-        .unwrap_or(240.0)
-        .clamp(10.0, 600.0);
+        .map(|d| d.clamp(10.0, 600.0))
+        .unwrap_or_else(|| crate::helpers::pick_duration(dur_min, dur_max, lyrics, song_id));
 
     // Rewrite the free-text styles into the shape this engine responds to best (comma tag list for
     // HeartMuLa's tags.txt, caption-with-BPM for ACE-Step). Falls back to the raw styles on any AI

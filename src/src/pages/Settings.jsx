@@ -364,6 +364,12 @@ const initialSettings = {
   heartmula_git_ref: "",
   acestep_git_ref: "",
   comfyui_git_ref: "",
+  // A range, not a number: each song is placed inside it by how much there is to sing, so a
+  // series does not come out as a row of identically-long tracks. Equal min and max pins it.
+  acestep_duration_min: 240,
+  acestep_duration_max: 360,
+  heartmula_duration_min: 240,
+  heartmula_duration_max: 360,
   heartmula_duration: 240,
   heartmula_topk: 50,
   heartmula_temperature: 1.0,
@@ -1205,7 +1211,8 @@ const SettingsComponent = () => {
         <div className="grid md:grid-cols-2 gap-4">
           <Field k="acestep_api_url" label="ACE-Step server URL" placeholder="https://xxxx.gradio.live or http://localhost:8001" testid="settings-acestep-url" value={s.acestep_api_url} onValueChange={updateS} />
           <Field k="acestep_api_key" label="API key (optional)" placeholder="only if the server sets ACESTEP_API_KEY" type="password" testid="settings-acestep-key" value={s.acestep_api_key} onValueChange={updateS} />
-          <Field k="acestep_duration" label="Song length in seconds (10–600)" placeholder="240" type="number" testid="settings-acestep-duration" value={s.acestep_duration} onValueChange={updateS} />
+          <Field k="acestep_duration_min" label="Song length: shortest (s)" placeholder="240" type="number" testid="settings-acestep-dur-min" value={s.acestep_duration_min} onValueChange={updateS} />
+          <Field k="acestep_duration_max" label="Song length: longest (s)" placeholder="360" type="number" testid="settings-acestep-dur-max" value={s.acestep_duration_max} onValueChange={updateS} />
           <Field k="acestep_steps" label="Diffusion steps (1–200)" placeholder="8" type="number" testid="settings-acestep-steps" value={s.acestep_steps} onValueChange={updateS} />
           <Field k="acestep_batch" label="Takes per run (1–4)" placeholder="2" type="number" testid="settings-acestep-batch" value={s.acestep_batch} onValueChange={updateS} />
           <Field k="acestep_guidance" label="Guidance scale (1–20)" placeholder="7.5" type="number" testid="settings-acestep-guidance" value={s.acestep_guidance} onValueChange={updateS} />
@@ -1233,7 +1240,8 @@ const SettingsComponent = () => {
         <div className="grid md:grid-cols-2 gap-4">
           <Field k="heartmula_api_url" label="HeartMuLa server URL" placeholder="https://xxxx.trycloudflare.com or http://localhost:8003" testid="settings-heartmula-url" value={s.heartmula_api_url} onValueChange={updateS} />
           <Field k="heartmula_api_key" label="API key (optional)" placeholder="only if the server sets API_KEY" type="password" testid="settings-heartmula-key" value={s.heartmula_api_key} onValueChange={updateS} />
-          <Field k="heartmula_duration" label="Song length in seconds (10–600)" placeholder="240" type="number" testid="settings-heartmula-duration" value={s.heartmula_duration} onValueChange={updateS} />
+          <Field k="heartmula_duration_min" label="Song length: shortest (s)" placeholder="240" type="number" testid="settings-heartmula-dur-min" value={s.heartmula_duration_min} onValueChange={updateS} />
+          <Field k="heartmula_duration_max" label="Song length: longest (s)" placeholder="360" type="number" testid="settings-heartmula-dur-max" value={s.heartmula_duration_max} onValueChange={updateS} />
           <Field k="heartmula_topk" label="Top-k (1–200)" placeholder="50" type="number" testid="settings-heartmula-topk" value={s.heartmula_topk} onValueChange={updateS} />
           <Field k="heartmula_temperature" label="Temperature (0.1–2.0)" placeholder="1.0" type="number" testid="settings-heartmula-temperature" value={s.heartmula_temperature} onValueChange={updateS} />
           <Field k="heartmula_cfg_scale" label="Guidance scale (1–10)" placeholder="1.5" type="number" testid="settings-heartmula-cfg" value={s.heartmula_cfg_scale} onValueChange={updateS} />

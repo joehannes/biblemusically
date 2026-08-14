@@ -547,3 +547,84 @@ mod setting_number_tests {
         assert_eq!(setting_i64(&s, "missing_entirely", 7), 7);
     }
 }
+
+/// Choose a target song length inside a configured range.
+///
+/// A single fixed number made every track in a series exactly the same length, which is both
+/// audibly monotonous and a poor fit for the material: a psalm of six lines and one of forty do not
+/// want the same four minutes. The setting is now a range, and the length is placed inside it
+/// according to how much there is to sing.
+///
+/// Two properties matter more than the exact curve:
+///
+///   * it is **stable per song** — the same song asks for the same length on every retry, so a
+///     regenerated track is comparable with the one before it. A random pick would make each retry
+///     a different song, which is indistinguishable from the engine behaving inconsistently.
+///   * it **degrades to the old behaviour** — an unset or inverted range collapses to the single
+///     value, so nothing changes for anyone who has not set one.
+///
+/// The result is a *request*. Engines are not obliged to honour it: HeartMuLa has been observed
+/// returning 120 s for a 500 s ask, which is why analysis measures the audio rather than trusting
+/// this number.
+pub fn pick_duration(min_s: f64, max_s: f64, lyrics: &str, song_id: &str) -> f64 {
+    let lo = min_s.max(10.0);
+    let hi = max_s.max(lo);
+    if hi - lo < 1.0 { return lo.clamp(10.0, 600.0); }
+
+    // How much there is to sing. Non-empty lines rather than characters: a line is roughly a
+    // musical phrase, while character count mostly measures how wordy the translation is.
+    let lines = lyrics.lines().filter(|l| !l.trim().is_empty()).count();
+    // 8 lines or fewer sits at the bottom of the range, 64 or more at the top, linear between.
+    let fill = ((lines.clamp(8, 64) - 8) as f64) / 56.0;
+
+    // A little jitter so a batch of similarly-sized lyrics does not come out identical, derived
+    // from the song id so it is the same on every run for the same song.
+    let hash = song_id.bytes().fold(0u64, |a, b| a.wrapping_mul(31).wrapping_add(b as u64));
+    let jitter = ((hash % 1000) as f64 / 1000.0 - 0.5) * 0.12; // ±6% of the range
+
+    (lo + (hi - lo) * (fill + jitter).clamp(0.0, 1.0)).clamp(10.0, 600.0)
+}
+
+#[cfg(test)]
+mod pick_duration_tests {
+    use super::pick_duration;
+
+    fn lyrics(n: usize) -> String { vec!["a line"; n].join("\n") }
+
+    #[test]
+    fn the_result_stays_inside_the_range() {
+        for n in [0, 1, 8, 20, 64, 200] {
+            let d = pick_duration(400.0, 600.0, &lyrics(n), "song-1");
+            assert!((400.0..=600.0).contains(&d), "{n} lines produced {d}s, outside 400-600");
+        }
+    }
+
+    /// More to sing, more time to sing it — the whole point of a range.
+    #[test]
+    fn longer_lyrics_ask_for_a_longer_song() {
+        let short = pick_duration(400.0, 600.0, &lyrics(8), "same-song");
+        let long = pick_duration(400.0, 600.0, &lyrics(64), "same-song");
+        assert!(long > short + 50.0, "8 lines -> {short}s but 64 lines -> {long}s");
+    }
+
+    /// A retry must ask for the same length, or two takes of one song are not comparable.
+    #[test]
+    fn the_same_song_always_asks_for_the_same_length() {
+        let a = pick_duration(400.0, 600.0, &lyrics(30), "song-abc");
+        let b = pick_duration(400.0, 600.0, &lyrics(30), "song-abc");
+        assert_eq!(a, b);
+        // ...and different songs of the same size are not all identical.
+        let c = pick_duration(400.0, 600.0, &lyrics(30), "song-xyz");
+        assert!((a - c).abs() > 0.01, "two different songs both got exactly {a}s");
+    }
+
+    /// No range set, or one entered backwards, behaves like the single value it replaces.
+    #[test]
+    fn a_missing_or_inverted_range_collapses_to_one_value() {
+        assert_eq!(pick_duration(240.0, 240.0, &lyrics(30), "s"), 240.0);
+        assert_eq!(pick_duration(240.0, 0.0, &lyrics(30), "s"), 240.0);
+        // And the hard bounds still hold.
+        assert_eq!(pick_duration(1.0, 1.0, &lyrics(30), "s"), 10.0);
+        assert!(pick_duration(500.0, 9000.0, &lyrics(64), "s") <= 600.0);
+    }
+}
