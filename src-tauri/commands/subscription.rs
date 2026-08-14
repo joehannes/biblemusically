@@ -361,11 +361,22 @@ pub async fn subs_refresh(state: State<'_, AppState>) -> Res<Value> {
 pub async fn subs_status(state: State<'_, AppState>) -> Res<Value> {
     let ent = current(&state).await;
     let settings = settings_of(&state).await;
+    // Which clock is running depends on the status, and for a lifetime licence none is.
+    //
+    // This used to prefer `trial_ends` over `period_ends` unconditionally. An upgraded account keeps
+    // the `trial_ends` it had before the upgrade, so a lifetime licence counted down a trial that
+    // had already finished — the Account page showed "2 days left on this period" directly beneath
+    // a "yours for this version" badge. A already-elapsed date also produced a negative count.
     let days_left = ent.as_ref().and_then(|p| {
-        let end = p["trial_ends"].as_str().filter(|s| !s.is_empty())
-            .or_else(|| p["period_ends"].as_str().filter(|s| !s.is_empty()))?;
+        let end = match p["status"].as_str().unwrap_or("") {
+            "lifetime" => return None,          // nothing to count down
+            "trial" => p["trial_ends"].as_str().filter(|s| !s.is_empty())?,
+            _ => p["period_ends"].as_str().filter(|s| !s.is_empty())?,
+        };
         let then = chrono::DateTime::parse_from_rfc3339(end).ok()?;
-        Some(((then.with_timezone(&chrono::Utc) - chrono::Utc::now()).num_hours() as f64 / 24.0).ceil() as i64)
+        let days = ((then.with_timezone(&chrono::Utc) - chrono::Utc::now()).num_hours() as f64 / 24.0).ceil() as i64;
+        // A period that has already run out is reported by `status`, not as a negative countdown.
+        if days < 0 { None } else { Some(days) }
     });
     Ok(json!({
         "signed_in": ent.is_some(),
