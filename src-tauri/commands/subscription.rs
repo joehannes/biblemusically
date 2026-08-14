@@ -138,6 +138,36 @@ pub async fn current(state: &AppState) -> Option<Value> {
     verify_entitlement(token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS)
 }
 
+/// The account this install belongs to, taken from the stored token WITHOUT verifying it.
+///
+/// Only ever used to ask the server "what is this account entitled to now?" — never to grant
+/// anything. That distinction is what makes reading an expired token safe here, and reading it is
+/// the whole point: `current` returns `None` once a token is past its grace window, and
+/// `subs_refresh` used that as its source of the email. So an install that sat closed for longer
+/// than the grace period could no longer refresh, because refreshing required a valid entitlement,
+/// which is exactly the thing it no longer had. It reported "Not signed in", the frontend swallowed
+/// it, and the app stayed locked with a paid licence sitting on the server.
+///
+/// Observed on 2026-08-14: a token that expired on the 6th, one day past its seven-day grace, on an
+/// account the server was returning `status: lifetime` for the entire time.
+///
+/// The answer it produces is checked properly — `subs_refresh` verifies the entitlement that comes
+/// back before storing it — so the worst a tampered email achieves is a correctly-signed entitlement
+/// for somebody else's account, which is no more than signing in as them would give.
+async fn account_email(state: &AppState) -> Option<String> {
+    if let Some(p) = current(state).await {
+        if let Some(e) = p["email"].as_str().filter(|e| !e.is_empty()) {
+            return Some(e.to_string());
+        }
+    }
+    let settings = settings_of(state).await;
+    let token = settings["subs_entitlement"].as_str().unwrap_or("");
+    let body = token.split('.').next().filter(|b| !b.is_empty())?;
+    let decoded = b64u_decode(body)?;
+    let parsed: Value = serde_json::from_slice(&decoded).ok()?;
+    parsed["email"].as_str().filter(|e| !e.is_empty()).map(|e| e.to_string())
+}
+
 /// The gate every restricted command calls first.
 ///
 /// Backend-side on purpose: the interface's blur is an explanation, not a lock. Deleting the CSS reveals
@@ -307,9 +337,9 @@ pub async fn sign_in_alongside(state: &AppState, id_token: &str) -> bool {
 pub async fn subs_refresh(state: State<'_, AppState>) -> Res<Value> {
     let settings = settings_of(&state).await;
     let base = base_of(&settings);
-    let email = current(&state).await
-        .and_then(|p| p["email"].as_str().map(|s| s.to_string()))
-        .ok_or("Not signed in.")?;
+    // Deliberately not `current()`: a token past its grace window is exactly when a refresh is most
+    // needed, and reading the email from it is what breaks that deadlock. See `account_email`.
+    let email = account_email(&state).await.ok_or("Not signed in.")?;
     let r = http()?.post(format!("{base}/v1/entitlement"))
         .json(&json!({ "email": email })).send().await.map_err(e)?;
     let parsed: Value = r.json().await.map_err(|_| "unreadable answer".to_string())?;

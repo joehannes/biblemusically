@@ -52,6 +52,32 @@ const asRect = (rect) => ({
   height: Math.max(1, rect.height),
 });
 
+// A wall-clock limit for calls that wait on something outside the app.
+//
+// Every one of these opens the system browser and then waits for the loopback redirect to come back.
+// If the person closes that window, or finishes on a different device, or Google simply never
+// redirects, the promise never settles — not resolved, not rejected. `try/finally` cannot help with
+// a promise that never finishes, so the button's spinner spins for the life of the process and the
+// action cannot be retried without restarting the app.
+//
+// Ten minutes because this is a human at a consent screen, possibly finding a password first; the
+// point is only that it ends. The message says what to do next rather than reporting a fault, since
+// giving up on a sign-in nobody completed is not an error.
+const EXTERNAL_WAIT_MS = 10 * 60 * 1000;
+
+function withExternalTimeout(promise, what) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`${what} was not completed within 10 minutes — the browser window was probably closed. You can try again.`)),
+        EXTERNAL_WAIT_MS,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 export const api = {
   // ============ Embedded browser webview (multi-page) ============
   // pageId identifies a browser "tab" (its own native child webview). Omitting it targets
@@ -275,11 +301,15 @@ export const api = {
   // Prefer this over startGoogleIdSignIn + subsSignIn: two halves is how the sign-in came to be
   // half-implemented in the first place.
   subsSignInGoogle: (oauthClientId, username) =>
-    invokeCommand("subs_sign_in_google", { oauthClientId: oauthClientId || null, username: username || null }),
+    withExternalTimeout(
+      invokeCommand("subs_sign_in_google", { oauthClientId: oauthClientId || null, username: username || null }),
+      "Signing in with Google"),
   // Just the Google half — the ID token, without touching the account server. For flows that need to
   // know who somebody is before deciding anything.
   startGoogleIdSignIn: (oauthClientId) =>
-    invokeCommand("start_google_id_sign_in", { oauthClientId: oauthClientId || null }),
+    withExternalTimeout(
+      invokeCommand("start_google_id_sign_in", { oauthClientId: oauthClientId || null }),
+      "Signing in with Google"),
   subsSignIn: (payload) => invokeCommand("subs_sign_in", { payload }),
   subsRefresh: () => invokeCommand("subs_refresh"),
   subsStatus: () => invokeCommand("subs_status"),
@@ -488,9 +518,13 @@ export const api = {
   discoverFromChannelSwitcher: (profileDir, timeoutSec) =>
     invokeCommand("discover_from_channel_switcher", { profile_dir: profileDir, timeout_sec: timeoutSec }),
   oauthStart: (id, oauth_client_id) =>
-    invokeCommand("oauth_start", { cid: id, ...(oauth_client_id ? { body: { oauth_client_id } } : {}) }),
+    withExternalTimeout(
+      invokeCommand("oauth_start", { cid: id, ...(oauth_client_id ? { body: { oauth_client_id } } : {}) }),
+      "Connecting the channel"),
   oauthStartForChannel: (id, oauth_client_id) =>
-    invokeCommand("oauth_start_for_channel", { cid: id, ...(oauth_client_id ? { body: { oauth_client_id } } : {}) }),
+    withExternalTimeout(
+      invokeCommand("oauth_start_for_channel", { cid: id, ...(oauth_client_id ? { body: { oauth_client_id } } : {}) }),
+      "Connecting the channel"),
   oauthComplete: (id, b) => invokeCommand("oauth_complete_channel", { cid: id, body: b }),
   channelPickedClient: (id) => invokeCommand("channel_picked_client", { cid: id }),
   discoverYoutubeChannels: (users, timeoutSec) => invokeCommand("discover_youtube_channels", { users, timeout_sec: timeoutSec }),
