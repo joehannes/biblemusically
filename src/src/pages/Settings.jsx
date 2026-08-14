@@ -210,6 +210,53 @@ const IMAGE_PACKS = [
   },
 ];
 
+// Where the heavy work runs — commands and rendering together.
+//
+// These are two separate settings that are almost never a sensible pair on their own: choosing
+// Modal for video assembly and leaving every ffmpeg probe on a phone that has no ffmpeg is a
+// configuration nobody wants and everybody can reach by clicking one tile and not the other. Each
+// pack sets both, and says what it costs and what it needs, so the decision is made once.
+//
+// Endpoints are deliberately left to the fields below: a pack can pick a provider, but it cannot
+// invent your worker's URL.
+const WORK_PACKS = [
+  {
+    id: "all_local",
+    label: "All on this machine",
+    blurb: "Nothing leaves the computer. Needs ffmpeg installed here and the CPU to spare — fine for a few videos a week.",
+    needs: "ffmpeg on this machine",
+    settings: { remote_cli_provider: "local", remote_render_provider: "local" },
+  },
+  {
+    id: "free_kaggle",
+    label: "Free — Kaggle sessions",
+    blurb: "Reuses the free Kaggle accounts the engines already use. No card, but it spends the same weekly quota and needs the project synced.",
+    needs: "a connected Kaggle account + Data & Sync",
+    settings: { remote_cli_provider: "kaggle", remote_render_provider: "kaggle" },
+  },
+  {
+    id: "free_actions",
+    label: "Free — GitHub Actions render",
+    blurb: "Video assembly and upload run in CI on a public repo; the small command steps stay on Kaggle. Slowest to start, cheapest to run at volume.",
+    needs: "a public repo + token, and Data & Sync",
+    settings: { remote_cli_provider: "kaggle", remote_render_provider: "actions" },
+  },
+  {
+    id: "paid_modal",
+    label: "Paid — Modal",
+    blurb: "The hands-off option: no sessions, no quota, no tunnels. $30 of credits a month covers a lot before anything is billed.",
+    needs: "a Modal account and the two deployed endpoints",
+    settings: { remote_cli_provider: "modal", remote_render_provider: "modal" },
+  },
+  {
+    id: "own_workers",
+    label: "Your own workers",
+    blurb: "Point both at HTTP endpoints you host. Most control, and entirely your uptime.",
+    needs: "two URLs you run",
+    settings: { remote_cli_provider: "http", remote_render_provider: "http" },
+  },
+];
+
 // Field component moved OUTSIDE of SettingsComponent to prevent focus-loss on re-render.
 const Field = memo(({ k, label, placeholder, type="text", testid, value, onValueChange }) => {
   const handleChange = useCallback((e) => {
@@ -1753,6 +1800,35 @@ const SettingsComponent = () => {
             caps publishing at 200 per 30 minutes; past that they stay drafts until the window clears.</span>
           </span>
         </label>
+      </Card>
+
+      {/* ── Where the work runs ───────────────────────────────────────────────
+          One decision, set across both of the cards below, because choosing them independently is
+          how you end up rendering on Modal while every probe waits on a device with no ffmpeg. */}
+      <Card className="p-6 mb-5">
+        <div className="flex items-center gap-2 mb-4"><Gauge className="w-4 h-4 text-primary" /><h2 className="font-semibold">Where the work runs</h2></div>
+        <div className="text-sm text-muted-foreground mb-3">
+          Sets both of the cards below at once — the command runner and the video renderer. Pick the
+          one that matches what you are willing to spend and maintain; the details stay editable.
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {WORK_PACKS.map((p) => {
+            const active = s.remote_cli_provider === p.settings.remote_cli_provider
+              && s.remote_render_provider === p.settings.remote_render_provider;
+            return (
+              <button
+                key={p.id}
+                data-testid={`work-pack-${p.id}`}
+                onClick={() => { updateS(p.settings); toast.success(`Work set to “${p.label}”.`); }}
+                className={`text-left rounded-lg border p-2.5 transition-all hover:border-primary/60 ${active ? "border-primary/60 bg-primary/5" : "border-border"}`}
+              >
+                <div className="text-sm font-medium">{p.label}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{p.blurb}</div>
+                <div className="text-[10px] text-muted-foreground/70 mt-1">Needs: {p.needs}</div>
+              </button>
+            );
+          })}
+        </div>
       </Card>
 
       {/* ── Remote commands ───────────────────────────────────────────────────

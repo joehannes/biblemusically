@@ -337,6 +337,66 @@ fn builtin_genre_presets() -> Vec<Value> {
         json!({ "id":"builtin-redm-nordicmelodic", "name":"Nordic Melodic Techno", "pack":"Regional EDM Fusion", "builtin":true,
             "genres":["melodic techno","nordic folk"],
             "styles":"melodic techno pulse with nordic folk vocal drones, icy pads, hardanger fiddle echoes, slow-burning hypnotic build, aurora-cold beauty, 122 bpm" }),
+
+        // ── Worship & Gospel ──────────────────────────────────────────────
+        // The catalogue was long on dance fusions and short on the music this app is actually for:
+        // congregational worship, and the gospel traditions that carry most sung scripture.
+        json!({ "id":"builtin-worship-modern", "name":"Modern Worship Anthem", "pack":"Worship & Gospel", "builtin":true,
+            "genres":["contemporary worship","arena pop"],
+            "styles":"contemporary worship anthem, driving eighth-note piano, delayed guitar swells, congregational gang vocals, huge reverby snare, key change into the final chorus, 74 bpm" }),
+        json!({ "id":"builtin-worship-gospel-choir", "name":"Gospel Choir", "pack":"Worship & Gospel", "builtin":true,
+            "genres":["black gospel","choir"],
+            "styles":"black gospel, full SATB choir, hammond organ stabs, walking bass, shuffle drums, call and response, joyful modulation, handclaps on two and four, 88 bpm" }),
+        json!({ "id":"builtin-worship-southern", "name":"Southern Gospel Quartet", "pack":"Worship & Gospel", "builtin":true,
+            "genres":["southern gospel","quartet"],
+            "styles":"southern gospel quartet, close four-part harmony, upright piano, brushed drums, warm acoustic bass, bright optimistic swing, 96 bpm" }),
+        json!({ "id":"builtin-worship-hymn", "name":"Reharmonised Hymn", "pack":"Worship & Gospel", "builtin":true,
+            "genres":["hymn","sacred"],
+            "styles":"traditional hymn reharmonised, felt piano, string quartet, soft male lead, reverent restraint, gradual swell, no percussion, 68 bpm" }),
+
+        // ── Chill & Meditative ────────────────────────────────────────────
+        // Scripture-over-a-bed is one of the highest-volume formats on YouTube, and none of it wants
+        // a drop.
+        json!({ "id":"builtin-chill-lofi-scripture", "name":"Lo-fi Scripture Beat", "pack":"Chill & Meditative", "builtin":true,
+            "genres":["lofi hip hop","chillhop"],
+            "styles":"lofi hip hop, dusty vinyl crackle, mellow rhodes chords, soft boom-bap drums, warm tape saturation, unhurried and study-friendly, 72 bpm" }),
+        json!({ "id":"builtin-chill-ambient-prayer", "name":"Ambient Prayer Bed", "pack":"Chill & Meditative", "builtin":true,
+            "genres":["ambient","drone"],
+            "styles":"ambient worship bed, evolving pad drones, distant piano figures, long reverb tails, no drums, space for a spoken voice, 60 bpm" }),
+        json!({ "id":"builtin-chill-neoclassical", "name":"Neoclassical Piano", "pack":"Chill & Meditative", "builtin":true,
+            "genres":["neoclassical","solo piano"],
+            "styles":"neoclassical solo piano with felt hammers, close-miked intimacy, subtle string underlay, melancholic but hopeful, sparse and patient, 64 bpm" }),
+
+        // ── Country & Folk ────────────────────────────────────────────────
+        json!({ "id":"builtin-folk-bluegrass", "name":"Bluegrass Gospel", "pack":"Country & Folk", "builtin":true,
+            "genres":["bluegrass","country gospel"],
+            "styles":"bluegrass gospel, banjo rolls, fiddle, mandolin chop, upright bass, high lonesome harmony, front-porch energy, 132 bpm" }),
+        json!({ "id":"builtin-folk-americana", "name":"Americana Ballad", "pack":"Country & Folk", "builtin":true,
+            "genres":["americana","folk"],
+            "styles":"americana folk ballad, fingerpicked acoustic guitar, pedal steel, brushed snare, dusty warm vocal, wide open and road-worn, 84 bpm" }),
+        json!({ "id":"builtin-folk-celtic-hymn", "name":"Celtic Hymn", "pack":"Country & Folk", "builtin":true,
+            "genres":["celtic","folk hymn"],
+            "styles":"celtic folk hymn, tin whistle, bodhran heartbeat, fiddle countermelody, modal harmony, misty and reverent, 78 bpm" }),
+
+        // ── African ───────────────────────────────────────────────────────
+        // African Christian music is enormous and the catalogue had only its EDM fusions.
+        json!({ "id":"builtin-africa-afrobeats-praise", "name":"Afrobeats Praise", "pack":"African", "builtin":true,
+            "genres":["afrobeats","afropop"],
+            "styles":"afrobeats praise, syncopated log drum and shaker groove, bright guitar highlife licks, layered call-and-response vocals, celebratory, 104 bpm" }),
+        json!({ "id":"builtin-africa-highlife", "name":"Highlife Thanksgiving", "pack":"African", "builtin":true,
+            "genres":["highlife","soukous"],
+            "styles":"highlife thanksgiving, interlocking clean guitars, horn section stabs, congas and cowbell, joyful dance feel, 118 bpm" }),
+        json!({ "id":"builtin-africa-gospel-choir", "name":"African Gospel Choir", "pack":"African", "builtin":true,
+            "genres":["african gospel","choir"],
+            "styles":"african gospel choir, massed harmony in thirds, djembe and shaker, organ pads, ululation, exuberant clapping, 100 bpm" }),
+
+        // ── Caribbean ─────────────────────────────────────────────────────
+        json!({ "id":"builtin-caribbean-reggae-psalm", "name":"Reggae Psalm", "pack":"Caribbean", "builtin":true,
+            "genres":["roots reggae","dub"],
+            "styles":"roots reggae psalm, one-drop drums, deep round bassline, offbeat guitar skank, melodica, spring reverb dub echoes, meditative, 74 bpm" }),
+        json!({ "id":"builtin-caribbean-soca", "name":"Soca Celebration", "pack":"Caribbean", "builtin":true,
+            "genres":["soca","calypso"],
+            "styles":"soca celebration, driving four-on-the-floor with syncopated percussion, bright brass, steel pan, exuberant crowd chants, 138 bpm" }),
     ]
 }
 
