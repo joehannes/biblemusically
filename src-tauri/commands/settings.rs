@@ -228,7 +228,14 @@ pub async fn get_settings(state: State<'_, AppState>, project_id: Option<String>
     if let Some(pid) = project_id.filter(|s| !s.is_empty()) {
         if let Some(d) = coll.find_one(doc! { "_id": &pid }).await.map_err(e)? {
             if let (Some(base), Value::Object(over)) = (merged.as_object_mut(), bson_to_value(d)) {
-                for (k, v) in over { base.insert(k, v); }
+                for (k, v) in over {
+                    // A project may not override account state, even if an older build wrote some
+                    // there. Without this the stale copy keeps winning the merge until something
+                    // happens to save, and what the frontend loads is what it posts back — which is
+                    // how an expired trial token kept overwriting a lifetime licence.
+                    if ACCOUNT_SCOPED_KEYS.contains(&k.as_str()) { continue; }
+                    base.insert(k, v);
+                }
             }
         }
     }
@@ -240,6 +247,29 @@ pub async fn get_settings(state: State<'_, AppState>, project_id: Option<String>
 /// See the call site in `update_settings` for why: these addresses are discovered by the app, only
 /// ever written to the singleton, and merged project-over-singleton — so a project copy is a stale
 /// address that outranks the live one.
+/// Keys that belong to the signed-in account, never to a project.
+///
+/// The entitlement is the one that mattered. `update_settings` mirrored the whole payload into the
+/// per-project document, `get_settings` merges that document OVER the singleton, and the frontend
+/// posts back whatever it loaded — so a project doc that had once captured a trial token kept
+/// winning the merge and then overwriting the singleton on every save. A lifetime licence reverted
+/// to an expired trial each time anything was saved.
+///
+/// Observed exactly that: the profile badge read "lifetime licence" while the same page counted
+/// "-2 days left on this period" from a `trial_ends` two days gone, and saving refused with "Sign in
+/// to use this" because `require()` was reading the clobbered token and finding `save_copies: false`.
+///
+/// These are facts about the account and the device, and there is no coherent meaning for a
+/// per-project copy of any of them.
+const ACCOUNT_SCOPED_KEYS: &[&str] = &[
+    "subs_entitlement", "subs_checked_at", "device_id",
+    "kaggle_accounts", "kaggle_active", "kaggle_username", "kaggle_connected",
+];
+
+fn strip_account_scoped(pdoc: &mut Document) {
+    for k in ACCOUNT_SCOPED_KEYS { pdoc.remove(*k); }
+}
+
 fn strip_discovered_urls(pdoc: &mut Document) {
     let keys: Vec<String> = pdoc.keys().filter(|k| k.ends_with("_api_url")).cloned().collect();
     for k in keys { pdoc.remove(&k); }
@@ -281,6 +311,7 @@ pub async fn update_settings(state: State<'_, AppState>, payload: Value, project
         // it is why `persist_engine_url` clearing the override was not enough on its own: the very
         // next autosave of the Settings form put the dead address straight back.
         strip_discovered_urls(&mut pdoc);
+        strip_account_scoped(&mut pdoc);
         strip_debris(&mut pdoc);
         pdoc.insert("_id", &pid);
         coll.update_one(doc! { "_id": &pid }, doc! { "$set": &pdoc })
@@ -1520,6 +1551,41 @@ pub async fn kaggle_quota() -> Res<Value> {
     }
 }
 
+/// Credentials are 0600 or they are a mistake — `kaggle` refuses a world-readable token, and this is
+/// somebody's account either way.
+async fn set_owner_only(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+/// Read `~/.kaggle/kaggle.json` verbatim, so a failed switch can be undone.
+async fn read_kaggle_json_raw() -> Option<String> {
+    let home = env::var("HOME").ok()?;
+    fs::read_to_string(PathBuf::from(home).join(".kaggle/kaggle.json")).await.ok()
+}
+
+/// Put back what `read_kaggle_json_raw` captured.
+async fn restore_kaggle_json_raw(contents: &str) -> Res<()> {
+    let home = env::var("HOME").map_err(e)?;
+    let path = PathBuf::from(home).join(".kaggle/kaggle.json");
+    fs::write(&path, contents).await.map_err(e)?;
+    set_owner_only(&path).await;
+    Ok(())
+}
+
+/// Move a parked OAuth token back into place — the reverse of `park_access_token`.
+async fn unpark_access_token(parked: &std::path::Path) -> Option<()> {
+    let live = parked.with_file_name("access_token");
+    fs::rename(parked, &live).await.ok()?;
+    set_owner_only(&live).await;
+    Some(())
+}
+
 /// Move the cached OAuth token aside so the API key in `kaggle.json` is what authenticates.
 ///
 /// This is the whole reason switching accounts appeared not to work. The modern Kaggle client
@@ -1553,9 +1619,39 @@ pub async fn activate_kaggle_account(state: State<'_, AppState>, username: Strin
         .ok_or_else(|| format!("No stored account '{}'.", username))?;
     let key = acct.get_str("key").map_err(|_| "Stored account is missing its key.".to_string())?;
 
+    // Keep the previous credentials until the new ones are known to work.
+    //
+    // Parking the cached OAuth token is necessary — the Kaggle client prefers it over kaggle.json,
+    // so a switch cannot take effect while it is there. But parking it and then writing a key that
+    // does not authenticate leaves the machine with no working credential at all, and the CLI
+    // answers every later call with its generic "Authentication required to call the Kaggle API...
+    // you will need a Kaggle account" — which reads as though the user had never signed in, rather
+    // than as though the switch they just made broke their login.
+    //
+    // Seen exactly that: kaggle.json holding an account whose key had started returning 401, the
+    // stored key for the other account no longer working either, and the one credential that did
+    // work sitting in access_token.disabled. Every engine start failed until it was put back.
+    let prev_kaggle_json = read_kaggle_json_raw().await;
     let parked = park_access_token().await;
     write_kaggle_json(&username, key).await?;
     let (verified, detail) = verify_kaggle_auth().await;
+
+    if !verified {
+        // Undo, in the reverse order it was done, and say what actually happened.
+        if let Some(prev) = prev_kaggle_json { let _ = restore_kaggle_json_raw(&prev).await; }
+        if let Some(path) = &parked { let _ = unpark_access_token(path).await; }
+        let (back, _) = verify_kaggle_auth().await;
+        return Ok(serde_json::json!({
+            "ok": false, "username": kaggle_cli_username().await.unwrap_or_default(),
+            "asked_for": username, "verified": false, "rolled_back": true,
+            "detail": format!(
+                "Kaggle rejected the stored key for “{username}”, so the switch was undone and your \
+                 previous sign-in was put back{}. {detail} Create a fresh token for {username} at \
+                 kaggle.com → Settings → API → Create New API Token, then add the account again.",
+                if back { " and works" } else { ", but it does not verify either" }),
+            "next_step": "Kaggle → Settings → API → Create New API Token, then re-add the account.",
+        }));
+    }
 
     // Ask the CLI who it is *now*. If it still disagrees, the settings record must not claim
     // otherwise: the CLI is what every push and poll actually runs as.
