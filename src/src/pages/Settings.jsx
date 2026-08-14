@@ -361,6 +361,9 @@ const initialSettings = {
   acestep_batch: 2,
   acestep_guidance: 7.5,
   // HeartMuLa keeps its own length: the two engines shared acestep_duration until 0.127.0.
+  heartmula_git_ref: "",
+  acestep_git_ref: "",
+  comfyui_git_ref: "",
   heartmula_duration: 240,
   heartmula_topk: 50,
   heartmula_temperature: 1.0,
@@ -1206,6 +1209,7 @@ const SettingsComponent = () => {
           <Field k="acestep_steps" label="Diffusion steps (1–200)" placeholder="8" type="number" testid="settings-acestep-steps" value={s.acestep_steps} onValueChange={updateS} />
           <Field k="acestep_batch" label="Takes per run (1–4)" placeholder="2" type="number" testid="settings-acestep-batch" value={s.acestep_batch} onValueChange={updateS} />
           <Field k="acestep_guidance" label="Guidance scale (1–20)" placeholder="7.5" type="number" testid="settings-acestep-guidance" value={s.acestep_guidance} onValueChange={updateS} />
+          <Field k="acestep_git_ref" label="Upstream revision (blank = latest)" placeholder="e.g. a commit sha" testid="settings-acestep-ref" value={s.acestep_git_ref} onValueChange={updateS} />
         </div>
         <PackRow title="Quality packs — one click sets steps, takes and guidance" packs={MUSIC_PACKS.acestep} s={s}
           onPick={(p) => { updateS(p.settings); toast.success(`ACE-Step set to “${p.label}”.`); }} />
@@ -1233,6 +1237,13 @@ const SettingsComponent = () => {
           <Field k="heartmula_topk" label="Top-k (1–200)" placeholder="50" type="number" testid="settings-heartmula-topk" value={s.heartmula_topk} onValueChange={updateS} />
           <Field k="heartmula_temperature" label="Temperature (0.1–2.0)" placeholder="1.0" type="number" testid="settings-heartmula-temperature" value={s.heartmula_temperature} onValueChange={updateS} />
           <Field k="heartmula_cfg_scale" label="Guidance scale (1–10)" placeholder="1.5" type="number" testid="settings-heartmula-cfg" value={s.heartmula_cfg_scale} onValueChange={updateS} />
+          <Field k="heartmula_git_ref" label="Upstream revision (blank = latest)" placeholder="e.g. v1.2.0 or a commit sha" testid="settings-heartmula-ref" value={s.heartmula_git_ref} onValueChange={updateS} />
+        </div>
+        <div className="text-[11px] text-muted-foreground mb-3">
+          Every start clones heartlib fresh, so you always get the newest upstream code. Leave the
+          revision blank for that. If an upstream change breaks the engine, put the last working
+          commit here — the boot log prints <code>[upstream] heartlib &lt;sha&gt; &lt;date&gt;</code> on
+          every run, which is where to find it.
         </div>
         <PackRow title="Sampler packs — one click sets top-k, temperature and guidance" packs={MUSIC_PACKS.heartmula} s={s}
           onPick={(p) => { updateS(p.settings); toast.success(`HeartMuLa set to “${p.label}”.`); }} />

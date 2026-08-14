@@ -208,6 +208,12 @@ fn classify(line: &str) -> Option<(&'static str, &'static str, bool)> {
     if l.contains("Downloading") || (l.contains("Fetching") && l.contains("files")) {
         return Some(("downloading", "info", true)); // throttled by the caller
     }
+    // The upstream revision this run is built from. Kept in the ring deliberately: every engine
+    // clones the default branch fresh on each start, so when one of them breaks overnight without
+    // anything here changing, this line is the only evidence of what actually did.
+    if l.contains("[upstream]") {
+        return Some(("installing", "milestone", true));
+    }
     if l.contains("environment OK") || l.contains("Successfully installed")
         || l.contains("installed —") || l.contains("Installing ") || l.contains("Collecting ")
     {

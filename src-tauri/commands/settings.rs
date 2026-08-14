@@ -929,6 +929,7 @@ async fn pull_kernel_for_push(
     dir: &std::path::Path,
     own: &str,
     upstream: &str,
+    settings: &Document,
 ) -> Result<PulledKernel, String> {
     let pull = |slug: String| {
         let kaggle = kaggle.to_string();
@@ -1021,6 +1022,11 @@ async fn pull_kernel_for_push(
         // notebook from a later release, and overwriting it would be a downgrade.
         if ours.unwrap_or(0) > theirs.unwrap_or(0) {
             let _ = fs::write(&nb_path, bundled).await;
+        }
+        // Apply the upstream pin last, so it lands on whichever notebook is about to be pushed.
+        if let Ok(src) = fs::read_to_string(&nb_path).await {
+            let pinned = apply_upstream_pin(&src, engine_of_slug(own), settings);
+            if pinned != src { let _ = fs::write(&nb_path, pinned).await; }
         }
     }
 
@@ -1754,7 +1760,9 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
     let tmp = env::temp_dir().join(format!("bm-kaggle-start-{}", engine));
     let _ = fs::remove_dir_all(&tmp).await;
     let _ = fs::create_dir_all(&tmp).await;
-    let pulled = match pull_kernel_for_push(&kaggle, &tmp, &own, &upstream).await {
+    let settings_doc = state.db.collection::<Document>("settings")
+        .find_one(doc! { "_id": "singleton" }).await.ok().flatten().unwrap_or_default();
+    let pulled = match pull_kernel_for_push(&kaggle, &tmp, &own, &upstream, &settings_doc).await {
         Ok(p) => p,
         Err(msg) => return Ok(serde_json::json!({
             "ok": false, "status": "pull_failed", "detail": msg,
@@ -1848,6 +1856,41 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
 /// way a hard-coded digest in this file would.
 fn strip_pinned_image(meta: &mut Value) {
     if let Some(obj) = meta.as_object_mut() { obj.remove("docker_image"); }
+}
+
+/// Write this engine's pinned upstream revision into the notebook before it is pushed.
+///
+/// Every engine tracks upstream by construction: heartlib, ACE-Step, ComfyUI and its custom nodes
+/// are each a `git clone --depth 1` of the default branch, and a Kaggle session always starts
+/// empty — so every run silently takes whatever was published since the last one. That is a fine
+/// default and a bad only option: when an upstream commit breaks an engine, the run fails with no
+/// sign that anything changed and no way back to the revision that worked.
+///
+/// So the notebooks carry a `_UPSTREAM_PINS = {}` line, and this replaces it with the ref from
+/// `<engine>_git_ref` when one is set. Empty keeps tracking upstream, which is what everyone gets
+/// unless they deliberately pin. Rewriting one whole line, rather than templating the notebook,
+/// keeps the file something a person can still open and run by hand on Kaggle.
+fn apply_upstream_pin(source: &str, engine: &str, settings: &Document) -> String {
+    const SENTINEL: &str = "_UPSTREAM_PINS = {}";
+    let key = format!("{engine}_git_ref");
+    let refname = settings.get(&key).and_then(|v| v.as_str()).map(str::trim).unwrap_or("");
+    if refname.is_empty() || !source.contains(SENTINEL) {
+        return source.to_string();
+    }
+    // The notebook names heartlib/ace-step/comfyui rather than the app's engine ids, and `video`
+    // runs a ComfyUI of its own.
+    let upstream_name = match engine {
+        "heartmula" => "heartlib",
+        "acestep" => "ace-step",
+        "comfyui" | "comfy" | "video" => "comfyui",
+        other => other,
+    };
+    // JSON-encode the ref so a quote or backslash in it cannot break the cell.
+    let encoded = serde_json::to_string(refname).unwrap_or_else(|_| "\"\"".into());
+    source.replace(
+        SENTINEL,
+        &format!("_UPSTREAM_PINS = {{{}: {}}}", serde_json::to_string(upstream_name).unwrap(), encoded),
+    )
 }
 
 /// The accelerator a serving run asks for, stated rather than inherited.
@@ -2141,7 +2184,8 @@ pub async fn supersede_session(db: &crate::store::Db, engine: &str) -> Res<Value
     let tmp = env::temp_dir().join(format!("bm-kaggle-stop-{}", engine));
     let _ = fs::remove_dir_all(&tmp).await;
     let _ = fs::create_dir_all(&tmp).await;
-    let pulled = match pull_kernel_for_push(&kaggle, &tmp, &own, &upstream).await {
+    // A teardown pushes GPU-off and never serves, so no pin is needed.
+    let pulled = match pull_kernel_for_push(&kaggle, &tmp, &own, &upstream, &Document::new()).await {
         Ok(p) => p,
         Err(msg) => return Ok(serde_json::json!({
             "ok": false, "detail": format!("Could not pull the kernel to supersede it: {msg}") })),
@@ -2857,6 +2901,33 @@ mod kaggle_slug_tests {
         // wholesale would throw away the per-project settings it exists to hold.
         assert_eq!(pdoc.get_str("music_engine").unwrap(), "heartmula");
         assert_eq!(pdoc.get_i32("comfyui_steps").unwrap(), 30);
+    }
+
+    /// A pinned upstream ref must reach the notebook, and no pin must leave it tracking upstream.
+    ///
+    /// This is the only brake on an update mechanism that is otherwise fully automatic: every
+    /// engine clones the default branch on every start, so an upstream commit that breaks the
+    /// engine breaks it everywhere at once, with nothing recording the revision that worked.
+    #[test]
+    fn an_upstream_pin_reaches_the_notebook_and_an_empty_one_does_not() {
+        let nb = "x = 1\n_UPSTREAM_PINS = {}\ny = 2\n";
+
+        let pinned = apply_upstream_pin(nb, "heartmula", &bson::doc! { "heartmula_git_ref": "v1.2.3" });
+        assert!(pinned.contains(r#"_UPSTREAM_PINS = {"heartlib": "v1.2.3"}"#),
+                "pin did not reach the notebook: {pinned}");
+
+        // The engine ids the app uses are not the names the notebooks clone under.
+        let comfy = apply_upstream_pin(nb, "video", &bson::doc! { "video_git_ref": "abc1234" });
+        assert!(comfy.contains(r#"{"comfyui": "abc1234"}"#), "{comfy}");
+
+        // Unset, empty and whitespace all mean "track upstream", which is the default everyone gets.
+        for d in [bson::doc! {}, bson::doc! { "heartmula_git_ref": "" }, bson::doc! { "heartmula_git_ref": "   " }] {
+            assert_eq!(apply_upstream_pin(nb, "heartmula", &d), nb, "an unset pin changed the notebook");
+        }
+
+        // A ref containing a quote must not be able to break the cell it lands in.
+        let nasty = apply_upstream_pin(nb, "heartmula", &bson::doc! { "heartmula_git_ref": "a\"b" });
+        assert!(nasty.contains(r#""a\"b""#), "ref was not escaped: {nasty}");
     }
 
     /// Digit-only keys are debris and must never be written back.
