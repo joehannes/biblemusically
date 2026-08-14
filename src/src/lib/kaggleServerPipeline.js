@@ -46,6 +46,8 @@ const HINT_NEXT_STEP = {
   tunnel_slow: "The server is up and its tunnel is open — this computer just cannot route the brand-new trycloudflare address yet, which can take several minutes. The address is already saved, so press Test connection in a few minutes. Do not press Start & connect: that would throw away a working GPU run and the replacement address would be just as new.",
   gpu_denied:
     "Kaggle ran the notebook on CPU instead of a GPU, so it could not serve. Your weekly Kaggle GPU quota (30 h) is most likely used up — it resets Saturdays UTC. Check kaggle.com/settings → Accelerator usage. Until it resets, either wait, or run the engine on another free GPU host (Colab / Lightning.ai) and paste its URL into this engine's server-URL field.",
+  no_internet:
+    "This Kaggle account cannot reach the internet from a notebook, so the engine could not download its own code. Kaggle grants notebook internet only to phone-verified accounts: open kaggle.com → Settings → Phone Verification and verify this account, then Start & connect again. Nothing needs changing here — the app already asks for internet on every run, and Kaggle is declining it.",
   gpu_unavailable:
     "Kaggle had no free GPU for this run, so the notebook ran on CPU and could not serve. This is not your quota — that still has hours on it — and connecting another account would not help, because the shortage is Kaggle's. Free T4s come and go through the day; press Start & connect again in a few minutes.",
 };

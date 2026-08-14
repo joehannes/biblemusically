@@ -126,6 +126,21 @@ fn detect_error(line: &str) -> Option<(String, Option<String>)> {
             Some("hf_token".into()),
         ));
     }
+    // No internet in the session. Every engine clones its code at run time, so this is the first
+    // thing that fails and it fails as a bare `CalledProcessError ... exit status 128` — which says
+    // nothing about the cause. Kaggle grants notebook internet only to phone-verified accounts, and
+    // it declines silently: the push asks for `enable_internet: true`, Kaggle stores it, and the
+    // session comes up without a network anyway. Seen on a freshly added second account whose
+    // metadata read `enable_internet: True` while git could not resolve github.com.
+    if l.contains("Could not resolve host") || l.contains("Temporary failure in name resolution")
+        || (l.contains("unable to access") && l.contains("github.com"))
+    {
+        return Some((
+            "This Kaggle account has no internet in its notebooks, so the engine could not download \
+             its own code. Kaggle only grants that to phone-verified accounts.".into(),
+            Some("no_internet".into()),
+        ));
+    }
     if l.contains("PapermillExecutionError") {
         return Some(("A notebook cell raised an exception — the run aborted.".into(), None));
     }
