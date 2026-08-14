@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { Button } from "./ui/button";
+import Spotlight from "./Spotlight";
 import { Card } from "./ui/card";
 import {
   Sparkles, ArrowRight, ArrowLeft, Check, Wand2, Loader2, SlidersHorizontal,
@@ -226,6 +227,10 @@ export default function GuidedFlow({
   const recommended = recommendedId;
 
   return (
+    <>
+      {/* Point at the control this step is about, when the step names one. Optional by design:
+          a step that has nothing to point at simply does not, and the page stays undimmed. */}
+      <Spotlight target={step?.spotlight} active={!!step?.spotlight} />
     <Card className={`overflow-hidden border-primary/30 ${compact ? "p-3" : "p-4"} space-y-3`}>
       {/* ── header + progress rail (every visited step is clickable: cherry-picking) ── */}
       <div className="flex items-start gap-2">
@@ -365,5 +370,6 @@ export default function GuidedFlow({
         </button>
       )}
     </Card>
+    </>
   );
 }

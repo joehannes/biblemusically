@@ -17,7 +17,17 @@ import { markStarted } from "./serverLifecycle";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const PROGRESS_POLL_MS = 2500;
-const POLL_MAX_MS = 14 * 60 * 1000; // Kaggle notebooks need ~8-10 min; give headroom for slow downloads
+// How long to watch a boot before letting go. This is the budget for the WHOLE boot, and at 14
+// minutes it was too small by construction: installing and pulling ~21 GB of checkpoints regularly
+// takes 13 of them, so a tunnel that appeared on schedule got about sixty seconds to become
+// routable before the watch ended — which made the monitor's own twelve-minute tunnel patience
+// unreachable, since it lives inside this window.
+//
+// Worse, giving up did not merely stop watching. The notebook's idle watchdog ends the session
+// after fifteen minutes with no connection to its port, and the app's own probing was the only
+// thing connecting. So the timeout killed the run it was waiting for: observed 2026-08-14 with the
+// tunnel printed at 19:01:50, the watch ending at 14:00, and the kernel COMPLETE shortly after.
+const POLL_MAX_MS = 35 * 60 * 1000;
 
 // engine key -> the matching test_* call (the readiness gate: a live tunnel isn't enough, the API must answer)
 const TEST_FN = {
@@ -328,9 +338,27 @@ async function watchBoot(engine, stillCurrent, gpuRetries = 0) {
     }
   }
 
-  patch(engine, { status: "error", phase: "error", detail: "Timed out waiting for the Kaggle server to come up.", next_step: "Open the notebook (button above) to check the run, then retry." });
-  pushLog(engine, "Timed out waiting for the Kaggle server to come up.", "error");
+  // Out of budget is not the same as failed, and saying so mattered: "timed out, then retry" invites
+  // a Start that supersedes a run which is still coming up, throwing away the eight to thirteen
+  // minutes it has already spent. Ask Kaggle what the run is actually doing before naming this.
   api.kaggleStopMonitor(engine).catch(() => {});
+  let live = null;
+  try { live = await api.fetchKaggleUrl(engine); } catch { /* fall through to the generic message */ }
+  if (!stillCurrent()) return;
+  if (live?.ok && live.url) {
+    pushLog(engine, `It came up while we were waiting — ${live.url}.`);
+    await finishWithTest(engine, live.url, stillCurrent);
+    return;
+  }
+  if (["running", "queued"].includes(live?.kernel_status)) {
+    patch(engine, { status: "waiting", phase: "tunneling", hint: "tunnel_slow",
+      detail: "The run is still going on Kaggle — this window simply stopped watching it.",
+      next_step: HINT_NEXT_STEP.tunnel_slow });
+    pushLog(engine, "Stopped watching, but the run is still alive on Kaggle. Press Test connection shortly — do not press Start & connect, that would cancel it.", "error");
+    return;
+  }
+  patch(engine, { status: "error", phase: "error", detail: "The run ended before a server came up.", next_step: "Open the notebook (button above) to see why, then Start & connect again." });
+  pushLog(engine, "The run ended before a server came up.", "error");
 }
 
 // Final gate: a live tunnel isn't enough — the engine's own API must answer before we say "ready".

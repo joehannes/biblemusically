@@ -201,6 +201,9 @@ export const composerFlow = {
       id: "visuals",
       title: "Visuals",
       question: "How should the images be prompted?",
+      // Points at the ComfyUI style control while this step is on screen, so "how should the images
+      // be prompted" is answered next to the thing that decides it rather than three pages away.
+      spotlight: { testid: "settings-comfy-style" },
       help: (ctx) => {
         const eng = imageEngine(ctx.settings?.image_engine);
         return `${eng.label}: ${eng.strengths}`;
