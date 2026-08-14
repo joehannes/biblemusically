@@ -858,7 +858,7 @@ export default function AIComposer() {
     <div className="max-w-7xl mx-auto px-3 sm:px-4 py-5 sm:py-8 space-y-5 sm:space-y-6">
       {/* HEADER SECTION */}
       <div className="flex items-start sm:items-center justify-between mb-2 flex-col sm:flex-row gap-3">
-        <h1 className="text-3xl sm:text-5xl font-bold">AI Composer</h1>
+        <h1 className="text-4xl sm:text-5xl font-bold">AI Composer</h1>
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Authors a multi-channel <span className="text-mono">lyrics.json</span> from your bible chapter + themes + section ideas. Powered by OpenRouter Qwen (free tier).</p>
 

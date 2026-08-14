@@ -70,7 +70,7 @@ export default function Composer() {
   ), [activeSongId, provider, submitting]));
 
   return (
-    <div className="p-8 max-w-7xl mx-auto fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto fade-in">
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/video")}</div>
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
         <h1 className="text-4xl sm:text-5xl font-bold">Video Composer</h1>

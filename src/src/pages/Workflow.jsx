@@ -404,7 +404,7 @@ export default function Workflow() {
 
   if (!activeProjectId) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <Card className="p-10 text-center text-muted-foreground border-dashed">Select a project on the Dashboard first.</Card>
       </div>
     );

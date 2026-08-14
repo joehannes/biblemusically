@@ -34,7 +34,7 @@ export default function Jobs() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto fade-in">
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/jobs")}</div>
       <h1 className="text-4xl sm:text-5xl font-bold mb-2">Jobs Monitor</h1>
       <p className="text-muted-foreground mb-6 max-w-2xl">Live queue, logs and retries. All long-running tasks (Suno, MJ, FFmpeg, YT upload) report here.</p>

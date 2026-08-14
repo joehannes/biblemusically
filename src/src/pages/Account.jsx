@@ -57,9 +57,9 @@ export default function Account() {
   const paid = status === "active" || status === "lifetime";
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="p-4 sm:p-6 lg:p-8 mx-auto fade-in space-y-4 max-w-2xl">
       <div>
-        <h1 className="text-xl font-semibold flex items-center gap-2">
+        <h1 className="text-4xl sm:text-5xl font-bold flex items-center gap-3">
           <UserCircle className="w-5 h-5 text-primary" /> Account
         </h1>
         <p className="text-sm text-muted-foreground">What you have, where it is signed in, and what is new.</p>

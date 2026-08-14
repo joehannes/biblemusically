@@ -450,10 +450,10 @@ export default function MacroManager() {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-6xl">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-4 max-w-6xl">
       <div className="flex items-center gap-2">
         <Wand2 className="w-5 h-5 text-primary" />
-        <h1 className="text-lg font-semibold">Macro Manager</h1>
+        <h1 className="text-4xl sm:text-5xl font-bold">Macro Manager</h1>
         <span className="text-xs text-muted-foreground">
           — recorded (or hand-built) browser macros, their sequences, and the app-wide connector actions they plug into.
         </span>

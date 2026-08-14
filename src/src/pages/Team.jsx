@@ -188,9 +188,9 @@ export default function Team() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto fade-in space-y-4">
       <div>
-        <h1 className="text-xl font-semibold flex items-center gap-2">
+        <h1 className="text-4xl sm:text-5xl font-bold flex items-center gap-3">
           <Users className="w-5 h-5 text-primary" /> Team
         </h1>
         <p className="text-sm text-muted-foreground">

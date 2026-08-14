@@ -87,10 +87,10 @@ export default function OverlayStudio() {
   const withAudio = (songs || []).filter(x => x.audio_url);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto" data-testid="overlay-studio-page">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto" data-testid="overlay-studio-page">
       <div className="flex items-center gap-2 mb-1">
         <Clapperboard className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-bold">Overlay Studio</h1>
+        <h1 className="text-4xl sm:text-5xl font-bold">Overlay Studio</h1>
       </div>
       <p className="text-sm text-muted-foreground mb-6">
         Generates a cheap, CPU-only audio-reactive animation for each song (ffmpeg visualizers; optional projectM tier).

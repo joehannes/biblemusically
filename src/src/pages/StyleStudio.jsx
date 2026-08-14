@@ -141,10 +141,10 @@ export default function StyleStudio() {
   const selChannelObj = channels.find((c) => c.id === selChannel);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <Palette className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-semibold">Style Studio</h1>
+        <h1 className="text-4xl sm:text-5xl font-bold">Style Studio</h1>
       </div>
       <p className="text-muted-foreground mb-6 max-w-3xl">
         Build reusable <span className="font-medium">style presets</span> (grouped into packs), then pin a sticky style to each

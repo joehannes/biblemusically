@@ -127,9 +127,9 @@ export default function Publicity() {
   const readySongs = songs.filter((s) => s.lyrics);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto fade-in">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
-        <h1 className="text-3xl sm:text-5xl font-bold flex items-center gap-3">
+        <h1 className="text-4xl sm:text-5xl font-bold flex items-center gap-3">
           <Megaphone className="w-8 h-8 text-primary" />Publicity
         </h1>
       </div>

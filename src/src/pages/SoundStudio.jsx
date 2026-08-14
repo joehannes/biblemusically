@@ -225,10 +225,10 @@ export default function SoundStudio() {
   const selectedCount = Object.keys(selected).length;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <Music2 className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-semibold">Sound Studio</h1>
+        <h1 className="text-4xl sm:text-5xl font-bold">Sound Studio</h1>
       </div>
       <p className="text-muted-foreground mb-6 max-w-3xl">
         Pick and <span className="font-medium">mix any number of genres</span> — including playful and playful-EDM styles —

@@ -87,10 +87,10 @@ export default function Insights() {
   const projectName = (id) => projects?.find((p) => p.id === id)?.name || id;
 
   return (
-    <div className="p-6 space-y-4 max-w-5xl">
+    <div className="p-4 sm:p-6 space-y-4 max-w-5xl">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <h1 className="text-4xl sm:text-5xl font-bold flex items-center gap-3">
             <BarChart3 className="h-6 w-6 text-primary" /> Insights
           </h1>
           <p className="text-sm text-muted-foreground mt-1">

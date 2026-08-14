@@ -28,7 +28,7 @@ export default function SectionEditor() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto fade-in">
       <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">step {getStepForPath("/sections")}</div>
       <h1 className="text-4xl sm:text-5xl font-bold mb-2">Section Editor</h1>
       <p className="text-muted-foreground mb-6 max-w-2xl">Each lyric line → a section: timing, mood, image prompt. Tweak anything — these drive image generation.</p>

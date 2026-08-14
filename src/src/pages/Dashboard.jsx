@@ -298,7 +298,7 @@ export default function Dashboard() {
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto fade-in">
       <div className="mb-10">
         <div className="text-mono text-[11px] uppercase tracking-[0.3em] text-muted-foreground mb-2">overview</div>
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">Projects</h1>

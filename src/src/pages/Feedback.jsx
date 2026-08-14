@@ -95,9 +95,9 @@ export default function Feedback() {
   };
 
   return (
-    <div className="p-8 max-w-2xl mx-auto space-y-4 fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto space-y-4 fade-in">
       <div>
-        <h1 className="text-xl font-semibold flex items-center gap-2">
+        <h1 className="text-4xl sm:text-5xl font-bold flex items-center gap-3">
           <MessageSquare className="w-5 h-5 text-primary" />Tell me something
         </h1>
         <p className="text-sm text-muted-foreground">

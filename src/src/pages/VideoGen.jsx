@@ -169,9 +169,9 @@ export default function VideoGen() {
   const tier = cat.tiers.find((t) => t.id === cat.tier);
 
   return (
-    <div className="space-y-4">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto fade-in space-y-4">
       <div>
-        <h1 className="text-xl font-semibold flex items-center gap-2">
+        <h1 className="text-4xl sm:text-5xl font-bold flex items-center gap-3">
           <Film className="w-5 h-5 text-primary" /> Video Gen
         </h1>
         <p className="text-sm text-muted-foreground">

@@ -193,10 +193,10 @@ export default function FreeformComposer() {
   ), [busy, items.length, topic, moodDriver, targets]));
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <Sparkles className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-semibold">Freeform Composer</h1>
+        <h1 className="text-4xl sm:text-5xl font-bold">Freeform Composer</h1>
         <Badge variant="secondary" className="ml-1">non-Bible</Badge>
       </div>
       <p className="text-muted-foreground mb-6 max-w-3xl">

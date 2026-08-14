@@ -122,10 +122,10 @@ export default function Transitions() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <Clapperboard className="w-5 h-5 text-primary" />
-        <h1 className="text-xl font-semibold">Transitions &amp; FX</h1>
+        <h1 className="text-4xl sm:text-5xl font-bold">Transitions &amp; FX</h1>
       </div>
       <p className="text-muted-foreground mb-4 max-w-3xl">
         Choose how much AI drives the scene-to-scene transitions, pick a preset pack, then let it suggest
