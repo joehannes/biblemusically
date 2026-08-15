@@ -630,6 +630,19 @@ async fn run_monitor(
                                     ),
                                     _ => (summary, hint),
                                 };
+                                // Name the account. "This Kaggle account has no internet" is only
+                                // actionable if you know which one it means, and the account that
+                                // ran is not always the one the user believes is active — a cached
+                                // OAuth token can outrank the key file, which is exactly how a run
+                                // ended up on an unverified second account here.
+                                let summary = match hint.as_deref() {
+                                    Some("no_internet") => format!(
+                                        "The Kaggle account “{}” has no internet in its notebooks, so the engine \
+                                         could not download its own code. Kaggle only grants that to \
+                                         phone-verified accounts.",
+                                        slug.split('/').next().unwrap_or(slug)),
+                                    _ => summary,
+                                };
                                 let mut p = progress.lock().unwrap();
                                 if p.error.is_none() { p.error = Some(summary); }
                                 if hint.is_some() { p.hint = hint; }

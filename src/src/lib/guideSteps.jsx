@@ -210,7 +210,12 @@ function KaggleStepBody({ settings, onDone }) {
     setState((k) => ({ ...k, verifying: true, error: "" }));
     try {
       const r = await api.saveKaggleToken(token);
-      setState({ verifying: false, verified: r.verified, username: r.username || "", error: r.verified ? "" : "Saved, but Kaggle didn't accept it — check you used the whole kaggle.json." });
+      // The backend now distinguishes "Kaggle rejected this" from "Kaggle accepted it, as somebody
+      // else" — the second one used to be reported as success and sent every run to the wrong
+      // account. Its explanation is specific, so show it instead of the generic guess.
+      setState({ verifying: false, verified: r.verified, username: r.username || "",
+        error: r.verified ? ""
+          : (r.detail || "Saved, but Kaggle didn't accept it — check you used the whole kaggle.json.") });
       if (r.verified) {
         toast.success(`Kaggle connected as ${r.username}`);
         // Record it so `isDone` can tell later without re-reading the token file.

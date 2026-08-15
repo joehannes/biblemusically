@@ -1266,6 +1266,11 @@ async fn write_kaggle_json(username: &str, key: &str) -> Res<String> {
 }
 
 /// Lightweight CLI auth check → (verified, detail).
+///
+/// Note what this does *not* answer: **who** authenticated. It asks whether the CLI can call the API
+/// at all, and a cached OAuth token makes that true no matter what is in `kaggle.json` — so on its
+/// own it will happily confirm a dead key. `install_kaggle_credential` is the one that checks
+/// identity, and every write of a credential goes through it for that reason.
 async fn verify_kaggle_auth() -> (bool, String) {
     let kaggle = locate_kaggle();
     match tokio::process::Command::new(&kaggle)
@@ -1279,6 +1284,96 @@ async fn verify_kaggle_auth() -> (bool, String) {
         }
         Err(err) => (false, format!("could not run the kaggle CLI: {err}")),
     }
+}
+
+/// What happened when a credential was installed.
+pub(crate) struct Installed {
+    /// A working credential is in place and nothing is shadowing it.
+    pub ok: bool,
+    /// Who the CLI authenticates as *now* — and therefore the only name the settings record may
+    /// carry. For a pasted OAuth token this can differ from the username that came with it, because
+    /// the token is the identity and the JSON around it is just what somebody typed.
+    pub actual: String,
+    /// Another credential authenticated instead of this one. Recorded at the moment it was observed,
+    /// because the rollback below puts that other credential back — after which "who is signed in"
+    /// no longer distinguishes *shadowed* from *rejected*, and those need different advice.
+    pub shadowed: bool,
+    /// The CLI's own words, kept for the message shown when this did not take.
+    pub detail: String,
+    /// Path of the OAuth token moved aside, if one was in the way.
+    pub parked: Option<std::path::PathBuf>,
+}
+
+/// Install a Kaggle credential, and prove it took.
+///
+/// Three things must be true before an account is *the* account, and each one has cost this project
+/// a debugging session:
+///
+///   1. **Nothing outranks it.** The Kaggle client prefers `~/.kaggle/access_token` over
+///      `kaggle.json`, so writing a key while a cached OAuth token sits there changes nothing.
+///   2. **The CLI accepts it.** A revoked key answers 401 on every call.
+///   3. **It authenticates as the account that was asked for.** This is the one that was missing,
+///      and it is the one that matters, because failing it *looks exactly like success*: the CLI
+///      answers cheerfully — as the previous account. Observed on this machine, and it is the whole
+///      reason both engines failed. `joehannes`'s key had been revoked (401 on every call) and
+///      `johanneslightkid`'s OAuth token was still in `access_token`, so pasting a fresh
+///      `joehannes` kaggle.json verified fine, was recorded as the active account, and every push
+///      afterwards ran as `johanneslightkid` — an account with no notebook internet, whose runs
+///      then died cloning heartlib. The app reported the symptom truthfully and blamed the wrong
+///      account for it.
+///
+/// Rolls back on failure rather than leaving a machine with no working credential at all — parking a
+/// token and then writing a key that cannot authenticate is a way to *lose* a working sign-in, which
+/// has also happened here.
+pub(crate) async fn install_kaggle_credential(username: &str, key: &str) -> Res<Installed> {
+    let is_token = is_access_token(key);
+    let prev_kaggle_json = read_kaggle_json_raw().await;
+    let prev_token = read_access_token_raw().await;
+
+    // A `KGAT_` token goes to `access_token`, where it becomes the top credential by itself — there
+    // is nothing to move out of its way. Only an API key needs the cached token parked.
+    let parked = if is_token { None } else { park_access_token().await };
+    write_kaggle_json(username, key).await?;
+
+    // No CLI to ask — a phone, or a desktop that never installed one. The key file is then the only
+    // credential there is and nothing can be outranking it, so take the write at face value rather
+    // than failing a switch that is fine.
+    if locate_kaggle_opt().is_none() {
+        return Ok(Installed { ok: true, actual: username.to_string(), shadowed: false,
+                              detail: "No kaggle CLI here — credential written.".into(), parked });
+    }
+
+    let (verified, detail) = verify_kaggle_auth().await;
+    let actual = kaggle_cli_username().await.unwrap_or_default();
+
+    // What "took" means differs by credential, because the two prove different things:
+    //
+    //   * An **API key** is a (username, key) pair, so Kaggle accepting it proves the key is live —
+    //     but `config view` echoes the username straight back out of the file we just wrote, so it
+    //     proves nothing about identity on its own. What it *does* catch is a cached OAuth token
+    //     still outranking us, which reports somebody else entirely. Both checks together are the
+    //     proof; either alone is the bug.
+    //   * An **OAuth token** carries its own identity, and the CLI reports whose it is. The username
+    //     typed beside it is a label, so the token's answer wins rather than failing the install.
+    if verified && (is_token || actual == username) {
+        return Ok(Installed { ok: true, actual, shadowed: false, detail, parked });
+    }
+    let shadowed = verified && actual != username;
+
+    // Undo, in the reverse order it was done. Restoring the *token* matters as much as the key file:
+    // a pasted token that does not authenticate would otherwise sit on top of a sign-in that did.
+    if let Some(prev) = prev_kaggle_json { let _ = restore_kaggle_json_raw(&prev).await; }
+    if is_token { let _ = restore_access_token_raw(prev_token.as_deref()).await; }
+    if let Some(path) = &parked { let _ = unpark_access_token(path).await; }
+    Ok(Installed {
+        ok: false,
+        actual: kaggle_cli_username().await.unwrap_or_default(),
+        shadowed,
+        detail: if shadowed {
+            format!("Kaggle authenticated as “{actual}” rather than “{username}”. {detail}")
+        } else { detail },
+        parked: None,
+    })
 }
 
 /// Read the stored Kaggle accounts (`[{username, key}]`) from the settings singleton.
@@ -1303,23 +1398,59 @@ pub async fn save_kaggle_token(state: State<'_, AppState>, token_json: String) -
     if username.is_empty() || key.is_empty() {
         return Err("The token is missing \"username\" or \"key\". Download a fresh one from Kaggle → Settings → Create New API Token.".into());
     }
-    let path = write_kaggle_json(&username, &key).await?;
-    let (verified, detail) = verify_kaggle_auth().await;
+    let installed = install_kaggle_credential(&username, &key).await?;
+    // File it under whoever it turned out to be. A pasted OAuth token authenticates as its owner
+    // whatever the JSON around it claims, and filing it under the claimed name would make it
+    // un-switchable later: `activate_kaggle_account` looks accounts up by username.
+    let filed = if installed.ok && !installed.actual.is_empty() { installed.actual.clone() } else { username.clone() };
 
-    // Upsert into the account list (dedupe by username), then mark it active.
+    // Remember the account either way — a key that could not take today is still the key to retry
+    // with, and dropping it would make the user paste it again. What is conditional is *active*:
+    // recording an account as active while the CLI runs as somebody else is precisely the lie that
+    // sent both engines to the wrong account (see `install_kaggle_credential`).
     let coll = state.db.collection::<Document>("settings");
     let mut accts = stored_kaggle_accounts(&state.db).await;
-    accts.retain(|a| a.get_str("username").ok() != Some(username.as_str()));
-    accts.push(doc! { "username": &username, "key": &key });
+    accts.retain(|a| a.get_str("username").ok() != Some(filed.as_str()));
+    accts.push(doc! { "username": &filed, "key": &key });
     let bson_accts = bson::to_bson(&accts).map_err(e)?;
-    coll.update_one(
-        doc! { "_id": "singleton" },
-        doc! { "$set": { "kaggle_accounts": bson_accts, "kaggle_active": &username,
-                         "kaggle_connected": true, "kaggle_username": &username } },
-    ).with_options(crate::store::UpdateOptions::builder().upsert(true).build()).await.map_err(e)?;
+    let mut set = doc! { "kaggle_accounts": bson_accts };
+    if installed.ok {
+        set.insert("kaggle_active", &filed);
+        set.insert("kaggle_connected", true);
+        set.insert("kaggle_username", &filed);
+    }
+    coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": set })
+        .with_options(crate::store::UpdateOptions::builder().upsert(true).build()).await.map_err(e)?;
 
-    Ok(serde_json::json!({ "ok": true, "username": username, "verified": verified, "detail": detail,
-        "path": path, "account_count": accts.len() }))
+    if !installed.ok {
+        // Two different failures, and telling them apart is the whole point of this path: either
+        // Kaggle would not accept the credential at all, or it accepted the machine's *other* one.
+        // The second used to read as success.
+        let shadowed = installed.shadowed;
+        return Ok(serde_json::json!({
+            "ok": false, "verified": false, "username": installed.actual, "asked_for": username,
+            "shadowed_by": if shadowed { installed.actual.clone() } else { String::new() },
+            "account_count": accts.len(),
+            "detail": if shadowed {
+                format!("“{username}” was saved but not made active: this computer is still signed in \
+                         to Kaggle as “{}”, and every run would go there. {}",
+                        installed.actual, installed.detail)
+            } else {
+                format!("“{username}” was saved but Kaggle did not accept it, so nothing was changed \
+                         and your previous sign-in is untouched. {}", installed.detail)
+            },
+            "next_step": if shadowed {
+                "Sign the other account out — `kaggle auth logout`, or delete \
+                 ~/.kaggle/access_token — then paste this token again.".to_string()
+            } else {
+                format!("Create a fresh token for {username} at kaggle.com → Settings → API → \
+                         Create New API Token, then paste it here.")
+            },
+        }));
+    }
+
+    Ok(serde_json::json!({ "ok": true, "username": username, "verified": true,
+        "detail": installed.detail, "account_count": accts.len() }))
 }
 
 /// List connected Kaggle accounts (usernames + which is active). Never returns keys.
@@ -1604,6 +1735,25 @@ async fn restore_kaggle_json_raw(contents: &str) -> Res<()> {
     Ok(())
 }
 
+/// Read `~/.kaggle/access_token` verbatim, so installing a new one can be undone.
+async fn read_access_token_raw() -> Option<String> {
+    let home = env::var("HOME").ok()?;
+    fs::read_to_string(PathBuf::from(home).join(".kaggle/access_token")).await.ok()
+}
+
+/// Put back what `read_access_token_raw` captured — or remove the file, when there was none before.
+async fn restore_access_token_raw(contents: Option<&str>) -> Res<()> {
+    let home = env::var("HOME").map_err(e)?;
+    let path = PathBuf::from(home).join(".kaggle/access_token");
+    match contents {
+        Some(prev) => { fs::write(&path, prev).await.map_err(e)?; set_owner_only(&path).await; }
+        // Nothing was there before, so leaving the rejected token behind would be worse than the
+        // state we started in: it outranks the key file and cannot authenticate.
+        None => { let _ = fs::remove_file(&path).await; }
+    }
+    Ok(())
+}
+
 /// Move a parked OAuth token back into place — the reverse of `park_access_token`.
 async fn unpark_access_token(parked: &std::path::Path) -> Option<()> {
     let live = parked.with_file_name("access_token");
@@ -1657,48 +1807,35 @@ pub async fn activate_kaggle_account(state: State<'_, AppState>, username: Strin
     // Seen exactly that: kaggle.json holding an account whose key had started returning 401, the
     // stored key for the other account no longer working either, and the one credential that did
     // work sitting in access_token.disabled. Every engine start failed until it was put back.
-    let prev_kaggle_json = read_kaggle_json_raw().await;
-    let parked = park_access_token().await;
-    write_kaggle_json(&username, key).await?;
-    let (verified, detail) = verify_kaggle_auth().await;
+    let installed = install_kaggle_credential(&username, key).await?;
 
-    if !verified {
-        // Undo, in the reverse order it was done, and say what actually happened.
-        if let Some(prev) = prev_kaggle_json { let _ = restore_kaggle_json_raw(&prev).await; }
-        if let Some(path) = &parked { let _ = unpark_access_token(path).await; }
+    if !installed.ok {
         let (back, _) = verify_kaggle_auth().await;
         return Ok(serde_json::json!({
-            "ok": false, "username": kaggle_cli_username().await.unwrap_or_default(),
-            "asked_for": username, "verified": false, "rolled_back": true,
+            "ok": false, "username": installed.actual, "asked_for": username,
+            "verified": false, "rolled_back": true,
             "detail": format!(
-                "Kaggle rejected the stored key for “{username}”, so the switch was undone and your \
-                 previous sign-in was put back{}. {detail} Create a fresh token for {username} at \
-                 kaggle.com → Settings → API → Create New API Token, then add the account again.",
-                if back { " and works" } else { ", but it does not verify either" }),
+                "The switch to “{username}” did not take, so it was undone and your previous \
+                 sign-in was put back{}. {} Create a fresh token for {username} at kaggle.com → \
+                 Settings → API → Create New API Token, then add the account again.",
+                if back { " and works" } else { ", but it does not verify either" }, installed.detail),
             "next_step": "Kaggle → Settings → API → Create New API Token, then re-add the account.",
         }));
     }
 
-    // Ask the CLI who it is *now*. If it still disagrees, the settings record must not claim
-    // otherwise: the CLI is what every push and poll actually runs as.
-    let actual = kaggle_cli_username().await.unwrap_or_else(|| username.clone());
-    let switched = actual == username;
-
+    // The settings record is only allowed to name the account the CLI actually runs as — the CLI is
+    // what every push and poll uses, and a record that disagrees is how the app ends up addressing
+    // one account while authenticating as another.
     state.db.collection::<Document>("settings").update_one(
         doc! { "_id": "singleton" },
-        doc! { "$set": { "kaggle_active": &actual, "kaggle_username": &actual, "kaggle_connected": true } },
+        doc! { "$set": { "kaggle_active": &installed.actual, "kaggle_username": &installed.actual,
+                         "kaggle_connected": true } },
     ).await.map_err(e)?;
 
     Ok(serde_json::json!({
-        "ok": switched, "username": actual, "asked_for": username, "verified": verified,
-        "parked_access_token": parked.map(|p| p.to_string_lossy().to_string()),
-        "detail": if switched {
-            format!("Now running as {actual}.")
-        } else {
-            format!("Asked for {username}, but the Kaggle CLI still authenticates as {actual}. \
-                     {detail} Sign out of the CLI (`kaggle auth logout`) and try again — until then \
-                     every push and poll runs as {actual}.")
-        },
+        "ok": true, "username": installed.actual, "asked_for": username, "verified": true,
+        "parked_access_token": installed.parked.map(|p| p.to_string_lossy().to_string()),
+        "detail": format!("Now running as {}.", installed.actual),
     }))
 }
 
@@ -1740,12 +1877,28 @@ pub async fn rotate_kaggle_account(state: State<'_, AppState>) -> Res<Value> {
     let next = &accts[(idx + 1) % accts.len()];
     let next_user = next.get_str("username").map_err(|_| "next account missing username".to_string())?.to_string();
     let key = next.get_str("key").map_err(|_| "next account missing key".to_string())?;
-    write_kaggle_json(&next_user, key).await?;
+
+    // Through the same install path as every other switch. Writing the key file directly — which is
+    // what this did — cannot rotate anything while a cached OAuth token outranks it: the caller was
+    // told the account had changed, retried the start, and got another run on the exhausted account.
+    let installed = install_kaggle_credential(&next_user, key).await?;
+    if !installed.ok {
+        return Ok(serde_json::json!({
+            "ok": false, "username": installed.actual, "asked_for": next_user, "rotated_from": active,
+            "detail": format!(
+                "Could not switch to “{next_user}”: this computer is still signed in as “{}”. {}",
+                installed.actual, installed.detail),
+            "next_step": format!(
+                "Create a fresh API token for {next_user} (kaggle.com → Settings → API), or sign the \
+                 other account out with `kaggle auth logout`."),
+        }));
+    }
     state.db.collection::<Document>("settings").update_one(
         doc! { "_id": "singleton" },
-        doc! { "$set": { "kaggle_active": &next_user, "kaggle_username": &next_user, "kaggle_connected": true } },
+        doc! { "$set": { "kaggle_active": &installed.actual, "kaggle_username": &installed.actual,
+                         "kaggle_connected": true } },
     ).await.map_err(e)?;
-    Ok(serde_json::json!({ "ok": true, "username": next_user, "rotated_from": active }))
+    Ok(serde_json::json!({ "ok": true, "username": installed.actual, "rotated_from": active }))
 }
 
 /// The directories this platform will actually let the app write to, with the facts needed to
