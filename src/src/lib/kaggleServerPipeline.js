@@ -45,7 +45,9 @@ const HINT_NEXT_STEP = {
   tunnel_dead: "The notebook printed a tunnel URL that never answered, and the run has since ended. Press Start & connect to launch a fresh one.",
   tunnel_slow: "The server is up and its tunnel is open — this computer just cannot route the brand-new trycloudflare address yet, which can take several minutes. The address is already saved, so press Test connection in a few minutes. Do not press Start & connect: that would throw away a working GPU run and the replacement address would be just as new.",
   gpu_denied:
-    "Kaggle ran the notebook on CPU instead of a GPU, so it could not serve. Your weekly Kaggle GPU quota (30 h) is most likely used up — it resets Saturdays UTC. Check kaggle.com/settings → Accelerator usage. Until it resets, either wait, or run the engine on another free GPU host (Colab / Lightning.ai) and paste its URL into this engine's server-URL field.",
+    "Kaggle ran the notebook on CPU instead of a GPU, so it could not serve. The message above carries the account's real used/allowed minutes read from Kaggle — the quota resets Saturdays UTC. Connect another free Kaggle account (Settings → Kaggle accounts) and the app will start engines on whichever account has room, or run this engine on another free GPU host (Google Colab works with the same notebook) and paste its URL into this engine's server-URL field.",
+  torch_cpu:
+    "This run HAD a GPU — the quota is fine and another account will not help, because the same thing will happen there. The notebook's install pulled a CPU-only build of torch over Kaggle's CUDA one, so the model had nothing to load onto. Press Start & connect once more: the app re-pushes its own bundled notebook whenever the copy on Kaggle is older, and the current one pins the CUDA build. If it repeats, open the notebook and check what the install cell resolved torch to.",
   no_internet:
     "The Kaggle account this run went to cannot reach the internet from a notebook, so the engine could not download its own code. Kaggle grants notebook internet only to phone-verified accounts: open kaggle.com → Settings → Phone Verification and verify that account, then Start & connect again. Nothing needs changing here — the app already asks for internet on every run, and Kaggle is declining it. Check the account name in the message above first: if it is not the one you connected, this computer is still signed in to Kaggle as somebody else (a cached token in ~/.kaggle/access_token outranks the key file), and the fix is to switch accounts rather than to verify a phone.",
   gpu_unavailable:
@@ -208,6 +210,17 @@ export async function autoStartKaggleServer(engine, { gpuRetries = 0 } = {}) {
     }
   }
 
+  // No account could host this engine — decided before anything was pushed, so nobody waits eight
+  // minutes to be told. This is the case that used to arrive as "out of free GPU time" *after* the
+  // run, and it now arrives with the reason: every account empty, or every account already full.
+  if (!start.ok && start.status === "no_account") {
+    patch(engine, { status: "error", phase: "error", hint: "gpu_denied", needsAccount: true,
+      detail: start.detail, next_step: start.next_step });
+    pushLog(engine, start.detail || "No Kaggle account can run this engine right now.", "error");
+    try { window.dispatchEvent(new CustomEvent("bm:kaggle-needs-account", { detail: { engine } })); } catch { /* non-browser */ }
+    return;
+  }
+
   if (!start.ok) {
     const stillStuck = start.status === "gpu_slots_full" && ownZombieSession;
     const detail = stillStuck
@@ -220,6 +233,7 @@ export async function autoStartKaggleServer(engine, { gpuRetries = 0 } = {}) {
   // Track it so the lifecycle watchdog can shut it down again — a running GPU session burns the
   // free weekly quota whether or not anything is using it.
   markStarted(engine);
+  if (start.account_note) pushLog(engine, start.account_note);
   pushLog(engine, start.detail || "Push accepted — booting…");
   patch(engine, { status: "waiting", phase: "queued" });
 
@@ -275,21 +289,34 @@ async function watchBoot(engine, stillCurrent, gpuRetries = 0) {
         return;
       }
 
-      // GPU quota is per-account: when Kaggle denies this account a GPU, automatically rotate to the
-      // next connected account and retry. Only if none is left do we stop and prompt the user to
-      // connect another free account (a global listener in Shell opens the guided step).
+      // A GPU that was there all along, and a torch that could not see it. Rotating accounts is
+      // exactly the wrong move — the next account installs the same CPU wheel — so this ends the
+      // run and says what to do instead. (The retry is cheap: a start re-pushes the app's own
+      // bundled notebook whenever Kaggle's copy is older, which is where the fix lives.)
+      if (m.hint === "torch_cpu") {
+        patch(engine, { status: "error", phase: "error", hint: "torch_cpu",
+          detail: m.error || "The GPU was present but torch could not use it.",
+          next_step: HINT_NEXT_STEP.torch_cpu });
+        pushLog(engine, m.error || "GPU present, torch CPU-only — not a quota problem.", "error");
+        return;
+      }
+
+      // GPU quota is per-account, so when this account is out the answer is another account — but
+      // only one that actually has quota AND a free session slot. The old behaviour rotated to the
+      // next name in the list regardless, which most often meant spending another eight minutes
+      // discovering that account was empty too.
       if (m.hint === "gpu_denied") {
-        pushLog(engine, "This Kaggle account got no GPU (quota spent) — trying another connected account…", "error");
-        let rot = null;
-        try { rot = await api.rotateKaggleAccount(); } catch { /* ignore */ }
-        if (rot?.ok) {
-          pushLog(engine, `Switched to Kaggle account "${rot.username}" — retrying the server start.`);
+        pushLog(engine, "This account is out of GPU time — looking for a connected account with room…", "error");
+        let pick = null;
+        try { pick = await api.pickKaggleAccount(engine); } catch { /* ignore */ }
+        if (pick?.ok && pick.switched) {
+          pushLog(engine, `Moving ${engine} to Kaggle account "${pick.username}" — ${pick.detail}`);
           return autoStartKaggleServer(engine); // restart the whole flow on the fresh account
         }
         patch(engine, { status: "error", phase: "error", hint: "gpu_denied", needsAccount: true,
-          detail: "This Kaggle account is out of free GPU time, and no other account is connected.",
-          next_step: HINT_NEXT_STEP.gpu_denied });
-        pushLog(engine, "Out of GPU quota — connect another free Kaggle account to keep going.", "error");
+          detail: pick?.detail || m.error || "Every connected Kaggle account is out of free GPU time.",
+          next_step: pick?.next_step || HINT_NEXT_STEP.gpu_denied });
+        pushLog(engine, pick?.detail || "Out of GPU quota — connect another free Kaggle account to keep going.", "error");
         try { window.dispatchEvent(new CustomEvent("bm:kaggle-needs-account", { detail: { engine } })); } catch { /* non-browser */ }
         return;
       }

@@ -58,13 +58,22 @@ async fn client() -> Res<reqwest::Client> {
         .build().map_err(|e| e.to_string())
 }
 
-/// GET a Kaggle endpoint with basic auth, returning parsed JSON.
-async fn get(path: &str, query: &[(&str, &str)]) -> Res<Value> {
-    let (user, key) = credentials().await
-        .ok_or("No ~/.kaggle/kaggle.json — connect a Kaggle account first.")?;
+/// GET a Kaggle endpoint as a NAMED account, rather than as whoever the key file currently holds.
+///
+/// The key file is machine-global: one `~/.kaggle/kaggle.json`, one identity at a time. That is fine
+/// for pushing (a push is a deliberate act the user just asked for) and wrong for reading, because
+/// the app needs to know things about accounts it is *not* currently running as — how much quota the
+/// other account has left, whether the kernel this engine was started on is still alive. Doing that
+/// through the key file means writing somebody else's credential over the user's just to ask a
+/// question, and writing it back afterwards; a crash in between leaves the machine signed in as an
+/// account the user never chose.
+///
+/// Basic auth carries the identity per request, so none of that is necessary. This is the primitive
+/// every multi-account read is built on.
+async fn get_as(user: &str, key: &str, path: &str, query: &[(&str, &str)]) -> Res<Value> {
     let res = client().await?
         .get(format!("{BASE}{path}"))
-        .basic_auth(&user, Some(&key))
+        .basic_auth(user, Some(key))
         .query(query)
         .send().await.map_err(|e| format!("Could not reach Kaggle: {e}"))?;
     let status = res.status();
@@ -81,6 +90,13 @@ async fn get(path: &str, query: &[(&str, &str)]) -> Res<Value> {
     serde_json::from_str(&text)
         .map_err(|_| format!("Kaggle returned something unreadable: {}",
                              text.chars().take(200).collect::<String>()))
+}
+
+/// GET as whoever the key file holds — the ordinary case.
+async fn get(path: &str, query: &[(&str, &str)]) -> Res<Value> {
+    let (user, key) = credentials().await
+        .ok_or("No ~/.kaggle/kaggle.json — connect a Kaggle account first.")?;
+    get_as(&user, &key, path, query).await
 }
 
 // ── Which way to talk to Kaggle ─────────────────────────────────────────────
@@ -164,6 +180,28 @@ pub fn parse_quota(v: &Value) -> Quota {
 /// This account's GPU quota, straight from Kaggle.
 pub async fn quota() -> Res<Quota> {
     Ok(parse_quota(&get("/kernels/quota", &[]).await?))
+}
+
+/// A NAMED account's GPU quota, without disturbing the key file.
+///
+/// This is what makes "which account should this engine start on?" answerable. Asking it of the
+/// active account only — which is all `quota()` can do — means the app can report that *this*
+/// account is out and still have no idea whether the other one is, so its only honest advice was
+/// "connect another account" even when one was already connected and full.
+pub async fn quota_as(user: &str, key: &str) -> Res<Quota> {
+    Ok(parse_quota(&get_as(user, key, "/kernels/quota", &[]).await?))
+}
+
+/// A kernel's status, read as a named account.
+///
+/// An engine's run belongs to the account it was started on, and that is not necessarily the account
+/// the key file holds now — which is the whole point of starting engines on different accounts. So
+/// polling a run has to carry the credential of the account that owns it.
+pub async fn kernel_status_as(user: &str, key: &str, slug: &str) -> Res<String> {
+    let (owner, name) = slug.split_once('/')
+        .ok_or_else(|| format!("'{slug}' is not an owner/name kernel slug."))?;
+    let v = get_as(user, key, "/kernels/status", &[("userName", owner), ("kernelSlug", name)]).await?;
+    Ok(v["status"].as_str().unwrap_or("unknown").to_string())
 }
 
 // ── Status ──────────────────────────────────────────────────────────────────

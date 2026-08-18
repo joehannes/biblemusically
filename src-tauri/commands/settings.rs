@@ -916,7 +916,26 @@ pub(crate) async fn kaggle_owner(db: &crate::store::Db) -> String {
 /// the user has no copy yet.
 pub(crate) async fn kaggle_slugs(db: &crate::store::Db, engine: &str) -> Option<(String, String, &'static str)> {
     let (name, key) = kaggle_kernel_for(engine)?;
-    let owner = kaggle_owner(db).await;
+    // An engine's kernel belongs to the account it was started on, which is not necessarily the
+    // account the machine is signed in as now — that is the entire point of spreading engines
+    // across accounts. Naming the kernel after whoever happens to be active would, the moment a
+    // second engine went to a second account, make every status poll and URL fetch for the first
+    // engine address a kernel on the wrong account: `accountB/biblemusically-acestep-server`, which
+    // does not exist, reported as "no server running" for a server that was serving perfectly.
+    //
+    // The assignment is written before a start resolves these slugs, so a fresh start and a later
+    // poll both land in the same place. An assignment naming an account that has since been removed
+    // is ignored rather than trusted — falling back to the active account is what a user who just
+    // deleted that account would expect.
+    let assigned = engine_accounts(db).await.get_str(engine).unwrap_or("").to_string();
+    let owner = if !assigned.is_empty()
+        && stored_kaggle_accounts(db).await.iter()
+            .any(|a| a.get_str("username").ok() == Some(assigned.as_str()))
+    {
+        assigned
+    } else {
+        kaggle_owner(db).await
+    };
     Some((format!("{owner}/{name}"), format!("{KAGGLE_UPSTREAM_OWNER}/{name}"), key))
 }
 
@@ -1901,6 +1920,181 @@ pub async fn rotate_kaggle_account(state: State<'_, AppState>) -> Res<Value> {
     Ok(serde_json::json!({ "ok": true, "username": installed.actual, "rotated_from": active }))
 }
 
+// ── Choosing an account, rather than rotating blindly ───────────────────────
+
+/// Which account each engine last ran on. Read from the settings singleton.
+///
+/// This exists because an engine's kernel is per-account: `<owner>/biblemusically-heartmula-server`
+/// is a different kernel, with its own installed packages and its own ~25 GB of downloaded
+/// checkpoints, on every account it has ever run on. Forgetting where an engine lives means the next
+/// start may cold-boot it somewhere else for no reason — ten minutes to arrive at what was already
+/// sitting ready on the other account.
+async fn engine_accounts(db: &crate::store::Db) -> Document {
+    db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten()
+        .and_then(|d| d.get_document("kaggle_engine_accounts").ok().cloned())
+        .unwrap_or_default()
+}
+
+/// Record that `engine` now runs on `username`.
+async fn set_engine_account(db: &crate::store::Db, engine: &str, username: &str) {
+    let _ = db.collection::<Document>("settings").update_one(
+        doc! { "_id": "singleton" },
+        doc! { "$set": { format!("kaggle_engine_accounts.{engine}"): username } },
+    ).with_options(crate::store::UpdateOptions::builder().upsert(true).build()).await;
+}
+
+/// Ask every connected account what it has left, and note which engines are parked on each.
+///
+/// Every account is asked with its own stored key rather than through the key file, so this changes
+/// nothing about who the machine is signed in as — see `kaggle_api::get_as`. The requests go out
+/// together because they are independent and each one costs a round trip to Kaggle; asked in
+/// sequence, three accounts would put three seconds in front of a button press.
+///
+/// An account that cannot be reached comes back `quota_known: false` rather than as a zero. That
+/// distinction is load-bearing: a zero is a reason to move an engine elsewhere, an unknown is not.
+pub(crate) async fn kaggle_account_fitness(db: &crate::store::Db) -> Vec<crate::kaggle_accounts::AccountFitness> {
+    let assigned = engine_accounts(db).await;
+    let accts = stored_kaggle_accounts(db).await;
+
+    let probes = accts.iter().filter_map(|a| {
+        let user = a.get_str("username").ok()?.to_string();
+        let key = a.get_str("key").ok().unwrap_or("").to_string();
+        Some(async move {
+            let engines: Vec<String> = Vec::new();
+            let mut f = crate::kaggle_accounts::AccountFitness {
+                username: user.clone(), engines, ..Default::default()
+            };
+            if key.is_empty() {
+                f.note = "No API key stored for this account — re-add its kaggle.json.".into();
+                return f;
+            }
+            match crate::kaggle_api::quota_as(&user, &key).await {
+                Ok(q) => {
+                    f.left_minutes = q.left_minutes;
+                    f.allowed_minutes = q.allowed_minutes;
+                    f.resets_at = q.resets_at;
+                    f.quota_known = true;
+                }
+                Err(msg) => f.note = msg,
+            }
+            f
+        })
+    });
+    let mut fits: Vec<_> = futures_util::future::join_all(probes).await;
+
+    // Fill in the engine assignments from the app's own bookkeeping.
+    for f in fits.iter_mut() {
+        f.engines = assigned.iter()
+            .filter(|(_, v)| v.as_str() == Some(f.username.as_str()))
+            .map(|(k, _)| k.to_string())
+            .collect();
+        f.engines.sort();
+    }
+    fits
+}
+
+/// Every connected account with its quota and its current engine load — what the Settings screen
+/// needs to show why a start went where it went, without the user opening Kaggle in a browser.
+#[tauri::command]
+pub async fn kaggle_account_overview(state: State<'_, AppState>) -> Res<Value> {
+    let fits = kaggle_account_fitness(&state.db).await;
+    let doc = state.db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten();
+    let active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
+    let total_left: i64 = fits.iter().filter(|f| f.quota_known).map(|f| f.left_minutes).sum();
+    Ok(serde_json::json!({
+        "accounts": fits,
+        "active": active,
+        "total_left_minutes": total_left,
+        "max_engines_per_account": crate::kaggle_accounts::MAX_ENGINES_PER_ACCOUNT,
+        "min_useful_minutes": crate::kaggle_accounts::MIN_USEFUL_MINUTES,
+    }))
+}
+
+/// Put the best account for `engine` in place, and say what was decided.
+///
+/// This replaces the old "rotate to the next account and hope" as the thing a start does. Rotation
+/// was only ever reached *after* a run had already failed for eight minutes, and it moved to the
+/// next name in the list whether or not that account had a single GPU minute left — so the common
+/// outcome of running out of quota was to spend another eight minutes running out of it again.
+///
+/// Called before the slugs are resolved, because `kaggle_slugs` names the kernel after whoever is
+/// active: choosing afterwards would push to the previous account's kernel under the new account's
+/// credential, which is a 403 at best.
+pub(crate) async fn ensure_account_for_engine(state: &AppState, engine: &str) -> Value {
+    let fits = kaggle_account_fitness(&state.db).await;
+    let doc = state.db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten();
+    let active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
+    let assigned = engine_accounts(&state.db).await
+        .get_str(engine).map(|s| s.to_string()).unwrap_or_default();
+
+    let choice = crate::kaggle_accounts::choose(&fits, engine, &assigned, &active);
+    match &choice {
+        crate::kaggle_accounts::Choice::None { reason } => serde_json::json!({
+            "ok": false, "switched": false, "username": active, "detail": reason,
+            "accounts": fits,
+        }),
+        crate::kaggle_accounts::Choice::Keep { username, reason } => {
+            // Still record it: an engine that has never been assigned needs its first home written
+            // down, or every later start re-decides from scratch and can wander.
+            if assigned != *username { set_engine_account(&state.db, engine, username).await; }
+            // The record can name an account the CLI is not actually signed in as — a cached OAuth
+            // token outranks the key file. Make it true rather than assume it.
+            if active != *username {
+                if let Some(acct) = stored_kaggle_accounts(&state.db).await.iter()
+                    .find(|a| a.get_str("username").ok() == Some(username.as_str()))
+                {
+                    if let Ok(key) = acct.get_str("key") {
+                        let _ = install_kaggle_credential(username, key).await;
+                    }
+                }
+            }
+            serde_json::json!({ "ok": true, "switched": false, "username": username,
+                                "detail": reason, "accounts": fits })
+        }
+        crate::kaggle_accounts::Choice::Switch { username, from, reason } => {
+            let accts = stored_kaggle_accounts(&state.db).await;
+            let key = accts.iter()
+                .find(|a| a.get_str("username").ok() == Some(username.as_str()))
+                .and_then(|a| a.get_str("key").ok().map(|s| s.to_string()))
+                .unwrap_or_default();
+            let installed = match install_kaggle_credential(username, &key).await {
+                Ok(i) => i,
+                Err(msg) => return serde_json::json!({
+                    "ok": false, "switched": false, "username": active,
+                    "detail": format!("Could not switch to “{username}”: {msg}"), "accounts": fits }),
+            };
+            if !installed.ok {
+                // Left on the previous account deliberately: a half-applied switch is how a push
+                // lands on one account while the app believes it is on another.
+                return serde_json::json!({
+                    "ok": false, "switched": false, "username": installed.actual,
+                    "detail": format!(
+                        "“{username}” has {} GPU minutes free but this computer could not switch to \
+                         it — it is still signed in as “{}”. {}",
+                        fits.iter().find(|f| f.username == *username).map(|f| f.left_minutes).unwrap_or(0),
+                        installed.actual, installed.detail),
+                    "next_step": "Create a fresh API token for that account (kaggle.com → Settings → API), \
+                                  or sign the other one out with `kaggle auth logout`.",
+                    "accounts": fits });
+            }
+            let _ = state.db.collection::<Document>("settings").update_one(
+                doc! { "_id": "singleton" },
+                doc! { "$set": { "kaggle_active": &installed.actual, "kaggle_username": &installed.actual,
+                                 "kaggle_connected": true } },
+            ).await;
+            set_engine_account(&state.db, engine, &installed.actual).await;
+            serde_json::json!({ "ok": true, "switched": true, "username": installed.actual,
+                                "from": from, "detail": reason, "accounts": fits })
+        }
+    }
+}
+
+/// The command form, so the interface can pre-flight a start (and explain it) before pressing go.
+#[tauri::command]
+pub async fn pick_kaggle_account(state: State<'_, AppState>, engine: String) -> Res<Value> {
+    Ok(ensure_account_for_engine(&state, &engine).await)
+}
+
 /// The directories this platform will actually let the app write to, with the facts needed to
 /// choose between them.
 ///
@@ -1999,6 +2193,31 @@ pub async fn pick_directory(
 pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> Res<Value> {
     // Refused before anything is pulled or pushed: a hidden engine must not occupy a GPU slot.
     if engine_hidden(&engine) { return Ok(hidden_engine_reply(&engine)); }
+
+    // ── Choose the account BEFORE the slugs are built ──────────────────────
+    // `kaggle_slugs` names this engine's kernel after whoever is active, so the account has to be
+    // settled first — deciding afterwards would address the old account's kernel while holding the
+    // new account's credential.
+    //
+    // This is also where "one account per engine" stops being something the user has to arrange by
+    // hand. Kaggle lets an account hold only a couple of GPU sessions at once and an engine holds
+    // its session for hours, so a second engine on a single account was a refusal with a confusing
+    // name. Now the second engine simply goes to the account with room, and the reply says so.
+    let picked = ensure_account_for_engine(&state, &engine).await;
+    if picked["ok"] != Value::Bool(true) {
+        return Ok(serde_json::json!({
+            "ok": false, "status": "no_account",
+            "detail": picked["detail"].as_str().unwrap_or("No Kaggle account can run this engine right now."),
+            "next_step": picked["next_step"].as_str().unwrap_or(
+                "Connect another free Kaggle account (Settings → Kaggle accounts → Add another \
+                 account), or wait for the weekly quota to reset — Kaggle resets it Saturdays UTC."),
+            "accounts": picked["accounts"].clone(),
+        }));
+    }
+    let account_note = picked["switched"].as_bool().unwrap_or(false).then(|| format!(
+        "Started on Kaggle account “{}” — {}",
+        picked["username"].as_str().unwrap_or(""), picked["detail"].as_str().unwrap_or("")));
+
     let (own, upstream, _) = match kaggle_slugs(&state.db, &engine).await {
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
@@ -2067,7 +2286,8 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
         } else { String::new() };
         Ok(serde_json::json!({
             "ok": true, "status": "starting", "slug": pulled.slug, "created": pulled.from_upstream,
-            "quota_warning": quota_note,
+            "quota_warning": quota_note, "account": picked["username"].clone(),
+            "account_note": account_note,
             "detail": format!("{} server starting on Kaggle (GPU batch run).{} It needs ~8-10 min to install, download models and open the tunnel.", engine, created),
             "next_step": "Watch the live log below. The run serves until Kaggle's ~9-12 h batch limit."
         }))
