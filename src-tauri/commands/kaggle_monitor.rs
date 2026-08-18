@@ -147,16 +147,10 @@ fn detect_error(line: &str) -> Option<(String, Option<String>)> {
     if l.contains("CUDA out of memory") || l.contains("OutOfMemoryError") {
         return Some(("The GPU ran out of memory while loading the model.".into(), Some("oom".into())));
     }
-    // Kaggle accepted the run but handed us a CPU-only container. The app ALWAYS pushes with
-    // enable_gpu=true, so this means Kaggle declined the GPU — almost always an exhausted weekly
-    // quota. Without this the notebook just skips serving and the run ends "successfully", which
-    // surfaced as the useless "the run ended before the server came up".
-    if l.contains("NO GPU ON THIS RUN") {
-        return Some((
-            "Kaggle gave this run no GPU, so the server was not started. Your weekly GPU quota is most likely exhausted.".into(),
-            Some("gpu_denied".into()),
-        ));
-    }
+    // NOTE: "NO GPU ON THIS RUN" is deliberately NOT matched here. It is a header, and the line
+    // after it is what says why — see `no_gpu_cause`. Matching the header was the bug: it made an
+    // engine whose install had quietly swapped Kaggle's CUDA torch for a CPU-only wheel report
+    // itself as an exhausted weekly quota, sending people to a quota page with hours still on it.
     // The notebook exhausted every tunnel route (cloudflared/QUIC → cloudflared/HTTP2 →
     // localhost.run) and gave up. Without this the cell simply ends, the kernel finishes cleanly, and
     // the only thing the app could say was the uselessly generic "the run ended before a server came
@@ -176,6 +170,50 @@ fn detect_error(line: &str) -> Option<(String, Option<String>)> {
         }
     }
     None
+}
+
+/// Has the notebook finished printing its GPU verdict?
+///
+/// The block is a header plus its evidence, printed in one go: `nvidia-smi`'s exit status, the torch
+/// build and whether it can see CUDA, and `CUDA_VISIBLE_DEVICES`. The last of those ends it. The
+/// length cap is the safety net for a notebook revision that prints a different set — judging on
+/// partial evidence beats hanging on evidence that never arrives.
+fn no_gpu_verdict_complete(lines: &[String]) -> bool {
+    lines.iter().any(|l| l.contains("CUDA_VISIBLE_DEVICES")) || lines.len() >= 6
+}
+
+/// Why this run has no usable GPU, from the evidence the notebook printed under its header.
+///
+/// Two causes wear the same symptom and they are not remotely the same problem:
+///
+/// * **Kaggle gave the container no GPU.** `nvidia-smi` fails. The quota is the usual reason, and
+///   the answer is another account or another week.
+/// * **The GPU is right there and torch cannot reach it.** `nvidia-smi` succeeds and
+///   `torch.cuda.is_available()` is still false, which happens when a dependency resolution during
+///   install pulls a CPU-only torch wheel over Kaggle's CUDA one. No amount of quota fixes this, and
+///   telling somebody to connect another account sends them to do the one thing guaranteed not to
+///   work — on the *next* account it will install the same CPU wheel.
+///
+/// This is the notebook's own test, read back off its own output: it gates serving on torch rather
+/// than on the driver, for the same reason.
+fn no_gpu_cause(lines: &[String]) -> (&'static str, String) {
+    let joined = lines.join("\n");
+    let smi_ran_ok = lines.iter().any(|l| l.contains("nvidia-smi:") && l.contains("exit 0"));
+    let torch_blind = joined.contains("cuda.is_available() = False");
+    // The notebook spells this out itself on newer revisions; honour it when present rather than
+    // re-deriving, so a future notebook can be more certain than this function can.
+    let says_so = joined.contains("GPU PRESENT BUT TORCH CANNOT USE IT");
+
+    if says_so || (smi_ran_ok && torch_blind) {
+        let torch_line = lines.iter().find(|l| l.contains("cuda.is_available()"))
+            .map(|l| l.trim()).unwrap_or("");
+        return ("torch_cpu", format!(
+            "This run HAD a GPU — Kaggle's quota is not the problem. The notebook's install replaced \
+             Kaggle's CUDA build of torch with a CPU-only one, so the model had nothing to load onto \
+             and the server refused to serve. {}", torch_line));
+    }
+    ("gpu_denied", "Kaggle gave this run no GPU at all, so the server was not started — \
+                    nvidia-smi found no device.".to_string())
 }
 
 /// Map a single log `data` line to a phase (if it's a recognizable milestone) and whether it's
@@ -411,6 +449,10 @@ async fn run_monitor(
     let mut status_iv = tokio::time::interval(Duration::from_secs(12));
     let mut probe_iv = tokio::time::interval(Duration::from_secs(PROBE_EVERY_SECS));
     let mut last_download_push: u128 = 0;
+    // Evidence for the GPU verdict, collected across lines. See `no_gpu_cause`: the notebook prints
+    // a header and then the facts, and judging on the header alone is what made every cause look
+    // like an exhausted quota.
+    let mut no_gpu_lines: Option<Vec<String>> = None;
     let mut url_seen_ms: u128 = 0; // when the tunnel URL was first printed (drives the stall timeout)
     let mut warned_slow = false;
     let mut seen_active = false; // the kernel has been observed queued/running at least once
@@ -607,29 +649,52 @@ async fn run_monitor(
                             let line = line.trim_end().to_string();
                             if line.is_empty() { continue; }
 
+                            // ── The GPU verdict, judged on its evidence rather than its header ──
+                            // Both of these `continue`, so the block is consumed here and never
+                            // reaches the generic matchers below.
+                            if line.contains("NO GPU ON THIS RUN") {
+                                progress.lock().unwrap().push("error", line.chars().take(240).collect());
+                                no_gpu_lines = Some(vec![line.clone()]);
+                                continue;
+                            }
+                            if let Some(buf) = no_gpu_lines.as_mut() {
+                                buf.push(line.clone());
+                                progress.lock().unwrap().push("error", line.chars().take(240).collect());
+                                if !no_gpu_verdict_complete(buf) { continue; }
+                                let evidence = no_gpu_lines.take().unwrap_or_default();
+                                let (hint, summary) = no_gpu_cause(&evidence);
+
+                                // Only a genuine denial is worth a quota lookup, and only then is
+                                // the distinction between "spent" and "Kaggle had none free"
+                                // meaningful. A CPU-only torch is neither.
+                                let (hint, summary) = if hint == "gpu_denied" {
+                                    match crate::kaggle_api::quota().await {
+                                        Ok(q) if q.left_minutes > 0 => ("gpu_unavailable", format!(
+                                            "Kaggle gave this run no GPU, but this account still has {} of its {} \
+                                             GPU minutes left this week — so the quota is not the reason and \
+                                             another account would not help. Kaggle simply had no free T4 for \
+                                             this session.", q.left_minutes, q.allowed_minutes)),
+                                        Ok(q) => ("gpu_denied", format!(
+                                            "Kaggle gave this run no GPU: this account has used {} of its {} \
+                                             weekly GPU minutes. It resets {}.",
+                                            q.used_minutes, q.allowed_minutes,
+                                            if q.resets_at.is_empty() { "weekly, Saturdays UTC".into() }
+                                            else { q.resets_at.clone() })),
+                                        // Unreachable quota is not evidence of an empty one. Report
+                                        // what was actually seen and let the user decide.
+                                        Err(_) => ("gpu_denied", summary),
+                                    }
+                                } else { (hint, summary) };
+
+                                let mut p = progress.lock().unwrap();
+                                if p.error.is_none() { p.error = Some(summary); }
+                                p.hint = Some(hint.to_string());
+                                if phase_rank("error") >= phase_rank(&p.phase) { p.phase = "error".into(); }
+                                continue;
+                            }
+
                             // Fatal error?
                             if let Some((summary, hint)) = detect_error(&line) {
-                                // "Kaggle gave this run no GPU" is one symptom with two very
-                                // different causes, and the app used to assume the worse one: it
-                                // announced that the weekly quota was spent and asked the user to
-                                // connect a second account. It said exactly that to an account
-                                // holding 29.8 of its 30 hours, on a run where Kaggle had simply
-                                // had no free T4 that minute — a probe kernel pushed six minutes
-                                // later was given two. So ask Kaggle what the quota really is
-                                // before naming a cause. `gpu_unavailable` is the same denial with
-                                // hours still on the clock, and the answer to it is to try again,
-                                // not to go and find another account.
-                                let (summary, hint) = match (hint.as_deref(), crate::kaggle_api::quota().await) {
-                                    (Some("gpu_denied"), Ok(q)) if q.left_minutes > 0 => (
-                                        format!(
-                                            "Kaggle gave this run no GPU, so the server never started — but this \
-                                             account still has {} of its {} GPU minutes left this week, so the \
-                                             quota is not the reason. Kaggle just had none free for this session.",
-                                            q.left_minutes, q.allowed_minutes),
-                                        Some("gpu_unavailable".to_string()),
-                                    ),
-                                    _ => (summary, hint),
-                                };
                                 // Name the account. "This Kaggle account has no internet" is only
                                 // actionable if you know which one it means, and the account that
                                 // ran is not always the one the user believes is active — a cached
@@ -827,4 +892,73 @@ pub async fn kaggle_stop_monitor(engine: String, monitors: State<'_, KaggleMonit
         stop.store(true, Ordering::Relaxed);
     }
     Ok(serde_json::json!({ "ok": true }))
+}
+
+#[cfg(test)]
+mod gpu_verdict_tests {
+    use super::*;
+
+    /// The exact block heartmula/acestep print when Kaggle handed the container no accelerator.
+    fn denied() -> Vec<String> {
+        vec![
+            "  NO GPU ON THIS RUN — not serving.".into(),
+            "  nvidia-smi: exit 127 — nvidia-smi is not installed on this container".into(),
+            "  torch 2.10.0+cu128: cuda.is_available() = False".into(),
+            "  CUDA_VISIBLE_DEVICES = '<unset>'".into(),
+        ]
+    }
+
+    /// The same block when the GPU is present and the notebook's own install broke torch.
+    fn torch_cpu() -> Vec<String> {
+        vec![
+            "  NO GPU ON THIS RUN — not serving.".into(),
+            "  nvidia-smi: exit 0".into(),
+            "  torch 2.10.0+cpu: cuda.is_available() = False".into(),
+            "  CUDA_VISIBLE_DEVICES = '0,1'".into(),
+        ]
+    }
+
+    /// The regression this whole change exists for: a GPU that was physically present, reported as
+    /// an exhausted weekly quota, on an account with hours left.
+    #[test]
+    fn a_cpu_only_torch_is_not_reported_as_an_exhausted_quota() {
+        let (hint, summary) = no_gpu_cause(&torch_cpu());
+        assert_eq!(hint, "torch_cpu");
+        assert!(summary.contains("HAD a GPU"), "{summary}");
+        assert!(!summary.to_lowercase().contains("quota is the problem"), "{summary}");
+    }
+
+    /// …and the genuine denial must still be called a denial, or the fix would just move the lie.
+    #[test]
+    fn a_missing_accelerator_is_still_a_denial() {
+        assert_eq!(no_gpu_cause(&denied()).0, "gpu_denied");
+    }
+
+    /// A newer notebook states the conclusion outright. Believe it over re-deriving, since it can
+    /// know things this parser cannot.
+    #[test]
+    fn the_notebooks_own_verdict_wins() {
+        let mut lines = denied();
+        lines.push("  GPU PRESENT BUT TORCH CANNOT USE IT — an install step replaced torch".into());
+        assert_eq!(no_gpu_cause(&lines).0, "torch_cpu");
+    }
+
+    /// The verdict is only judged once the evidence has arrived — judging at the header is the
+    /// original bug, and it would classify every run as a denial.
+    #[test]
+    fn the_verdict_waits_for_its_evidence() {
+        assert!(!no_gpu_verdict_complete(&["  NO GPU ON THIS RUN — not serving.".to_string()]));
+        assert!(no_gpu_verdict_complete(&torch_cpu()));
+    }
+
+    /// A notebook revision that prints something else entirely must not hang the monitor waiting
+    /// for a line that is never coming.
+    #[test]
+    fn unrecognised_evidence_still_terminates() {
+        let odd: Vec<String> = (0..6).map(|i| format!("line {i}")).collect();
+        assert!(no_gpu_verdict_complete(&odd));
+        // With nothing recognisable in it, the safe reading is the denial — that is the case the
+        // user can act on, and it does not claim the hardware was there.
+        assert_eq!(no_gpu_cause(&odd).0, "gpu_denied");
+    }
 }

@@ -154,6 +154,10 @@ export const api = {
   activateKaggleAccount: (username) => invokeCommand("activate_kaggle_account", { username }),
   removeKaggleAccount: (username) => invokeCommand("remove_kaggle_account", { username }),
   rotateKaggleAccount: () => invokeCommand("rotate_kaggle_account"),
+  // Quota-aware replacement for rotateKaggleAccount: picks the account with room for THIS engine
+  // and puts it in place, instead of stepping to the next name in the list and hoping.
+  pickKaggleAccount: (engine) => invokeCommand("pick_kaggle_account", { engine }),
+  kaggleAccountOverview: () => invokeCommand("kaggle_account_overview"),
   listStorageLocations: () => invokeCommand("list_storage_locations"),
   pickDirectory: (title) => invokeCommand("pick_directory", { title }),
   fetchKaggleUrl: (engine) => invokeCommand("fetch_kaggle_url", { engine }),

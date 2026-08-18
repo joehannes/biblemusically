@@ -93,37 +93,75 @@ pub const PROVIDERS: &[Provider] = &[
         signup_url: "https://www.kaggle.com/account/login?phase=startRegisterTab",
         setup: &[
             "Create a free Kaggle account (a Google account works).",
-            "Verify your phone number — Kaggle will not hand out a GPU until you do.",
+            "Verify your phone number — kaggle.com → Settings → Phone Verification. This is not \
+             optional: an unverified account gets neither a GPU nor internet inside a notebook, and \
+             an engine that cannot reach the internet cannot download its own code.",
             "Open Settings → Account → Create New API Token and save the kaggle.json it downloads.",
             "Paste that file into Settings → Kaggle accounts → Add another account.",
-            "Press Start & connect on any engine. The first run takes about ten minutes.",
+            "Press Start & connect on any engine. The first run takes about ten minutes — it is \
+             installing the engine and pulling its checkpoints. Leave it alone until it says Ready; \
+             restarting it throws that work away and spends the quota again.",
+            "Optional but worth it: add a SECOND free account the same way. Kaggle allows only a \
+             couple of GPU sessions per account, so a second one is what lets the music engine and \
+             the image engine run at the same time — the app picks which account each engine starts \
+             on by itself.",
         ],
         needs: &["kaggle.json"],
         note: "The only free host the app can drive completely on its own, and the reason it works \
-               without a card. Quota is per account, so connecting a second one roughly doubles what \
-               you can render in a week.",
+               without a card. Both the weekly quota and the concurrent-session limit are per \
+               account, so a second one both doubles the hours and lets two engines serve at once.",
     },
     Provider {
         id: "lightning",
         label: "Lightning.ai",
         shape: Shape::NotebookTunnel,
-        cost: Cost::Free,
-        price: "free tier, then hourly",
-        free_allowance: "~80 GPU-hours per month",
+        cost: Cost::Credits,
+        price: "15 credits/month free, then hourly",
+        free_allowance: "15 credits ≈ 22 h on a T4 (fewer on faster GPUs)",
         automated: false,
         engines: &[],
         signup_url: "https://lightning.ai/sign-up",
         setup: &[
-            "Create a free Lightning.ai account.",
-            "Start a new Studio and attach a GPU (T4 or A10G).",
+            "Create a free Lightning.ai account and verify your phone — GPU machines stay locked until you do.",
+            "Start a Studio. It opens as a 4-CPU machine: THIS IS NOT THE GPU. Look for the machine \
+             selector in the Studio (top-right) and switch it to a T4.",
             "Upload the engine notebook from Settings → the engine → Open notebook, or clone it.",
             "Run it. It prints a public URL exactly as the Kaggle one does.",
             "Paste that URL into the engine's server-URL field here.",
+            "Switch the Studio back to CPU or stop it when you are done — a GPU Studio spends credits while it idles.",
         ],
         needs: &["server URL"],
-        note: "About 80 free hours a month on top of Kaggle's ~30 a week, and the session persists \
-               instead of dying at 12 hours. Currently a paste-the-URL provider: the app does not \
-               drive it the way it drives Kaggle.",
+        note: "Its free tier DOES include GPUs, which is worth saying because it does not look like \
+               it: the Studio you are given boots as a 4-CPU machine and the GPU is a switch inside \
+               it, not something offered at signup — so the usual conclusion is that the free plan \
+               has none. What it actually gives is 15 credits a month, about 22 hours on a T4. The \
+               '~80 hours' figure quoted around the web is the interruptible rate, not the dedicated \
+               one. A100/H100 are paid plans only. Paste-the-URL: the app does not drive this the \
+               way it drives Kaggle.",
+    },
+    Provider {
+        id: "colab",
+        label: "Google Colab",
+        shape: Shape::NotebookTunnel,
+        cost: Cost::Free,
+        price: "free",
+        free_allowance: "~15-30 GPU-hours per week, when a T4 is free",
+        automated: false,
+        engines: &["acestep", "heartmula", "riffusion"],
+        signup_url: "https://colab.research.google.com/",
+        setup: &[
+            "Open colab.research.google.com and sign in with a Google account. Nothing to install.",
+            "Upload the engine notebook from Settings → the engine → Open notebook.",
+            "Runtime → Change runtime type → T4 GPU, then Run all.",
+            "The last cell prints a https://….trycloudflare.com address.",
+            "Paste that address into the engine's server-URL field here.",
+        ],
+        needs: &["server URL"],
+        note: "The closest thing to a second Kaggle: a completely separate free quota, and the engine \
+               notebooks run on it unchanged — they already fall back off Kaggle's paths. Use it for \
+               the music engines. NOT for ComfyUI or FLUX: Google restricts image-generation web UIs \
+               on the free tier specifically, and that is the one workload it will cut off. Sessions \
+               cap at 12 h and a GPU is never guaranteed at busy times.",
     },
 
     // ── Your own hardware ───────────────────────────────────────────────
@@ -399,6 +437,15 @@ mod tests {
         // fal is restricted, and must not claim engines it cannot serve.
         assert!(!hosts(provider("fal").unwrap(), "heartmula"));
         assert!(hosts(provider("fal").unwrap(), "video"));
+
+        // Colab's restriction is a policy one rather than a capability one, and it has to survive
+        // somebody "tidying up" the engine list: Google specifically curtails image-generation web
+        // UIs on the free tier, so pointing a user at Colab for ComfyUI or FLUX is sending them to
+        // the one workload it cuts off. The music engines are unaffected.
+        let colab = provider("colab").expect("colab is in the catalogue");
+        assert!(hosts(colab, "acestep") && hosts(colab, "heartmula"));
+        assert!(!hosts(colab, "comfyui"), "Colab free tier must not be offered for ComfyUI");
+        assert!(!hosts(colab, "flux"), "Colab free tier must not be offered for FLUX");
     }
 
     /// Reading the provider off a pasted URL is what turns "is RunPod set up?" from a guess into a

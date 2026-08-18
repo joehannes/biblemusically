@@ -15,6 +15,8 @@ pub mod tray;
 pub mod comfy_registry;
 #[path = "../kaggle_api.rs"]
 pub mod kaggle_api;
+#[path = "../kaggle_accounts.rs"]
+pub mod kaggle_accounts;
 #[path = "../compute_providers.rs"]
 pub mod compute_providers;
 #[path = "../image_styles.rs"]
@@ -625,6 +627,8 @@ pub fn run() {
             commands::list_project_assets,
             commands::restore_project_assets,
             commands::list_kaggle_accounts,
+            commands::kaggle_account_overview,
+            commands::pick_kaggle_account,
             commands::kaggle_diagnostics,
             commands::kaggle_quota,
             commands::image_style_catalogue,
