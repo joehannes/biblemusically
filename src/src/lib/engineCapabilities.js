@@ -153,9 +153,10 @@ export const IMAGE_ENGINES = {
     note: "browser automation of your own account",
     tier: "account",
     risky: true,
-    riskNote: "Driven through your own Midjourney account in a browser. Every route to it automates a \
-session Midjourney's terms reserve for their own interface, and a termination takes the subscription \
-with it. FLUX, Leonardo, Ideogram and Recraft cover the same ground without that.",
+    riskNote: "Drives midjourney.com in a real browser, signed in as you — their own site, not Discord \
+and not a user token, so this is not the self-botting route the proxy projects use. It is still \
+automation of a session their terms reserve for their interface, so the subscription at risk is yours. \
+FLUX, Leonardo, Ideogram and Recraft cover the same ground with an API and no account risk.",
     caps: {
       flagSyntax: true,           // --ar --stylize --chaos --weird --no
       aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:2", "21:9"],
@@ -330,19 +331,22 @@ export const imageEngine = (id) => IMAGE_ENGINES[canonical(id)] || EMPTY;
 
 /** The engines a picker should offer, as `[id, engine]` pairs. */
 function offer(catalogue, settings, current) {
-  const show = settings?.show_risky_engines === true;
-  return Object.entries(catalogue).filter(([id, engine]) => {
-    // A switched-off engine is not offered even when it is the current selection — unlike the risky
-    // ones below, there is no "turn it on" setting that would bring it back, so keeping it in the
-    // list would only offer a choice that cannot be acted on. Somebody already on it therefore sees
-    // the picker fall to its first entry, which is the honest outcome: that engine is gone for now.
-    if (engineHidden(id)) return false;
-    // The one already selected is always offered, even when it is hidden behind the risky switch. A
-    // picker whose value is missing from its own list renders blank, and somebody on an engine they
-    // cannot see cannot choose to leave it.
-    return !engine.risky || show || id === canonical(current);
+  return Object.entries(catalogue).filter(([id]) => {
+    // A switched-off engine is not offered even when it is the current selection: there is no "turn
+    // it on" setting that would bring it back, so keeping it in the list would only offer a choice
+    // that cannot be acted on. Somebody already on it therefore sees the picker fall to its first
+    // entry, which is the honest outcome — that engine is gone for now.
+    return !engineHidden(id);
   });
 }
+
+// `risky` used to hide an engine until a switch in Settings was found and turned on. It no longer
+// hides anything; it decides whether the picker prints `riskNote` next to the choice.
+//
+// Hiding was the wrong tool. It did not reduce the risk — it moved the explanation somewhere nobody
+// reads, and left a picker that silently lacked the engine the person came for. What actually
+// protects an account is knowing, at the moment of choosing, whose account is being driven and what
+// the failure mode is. That is what `riskNote` says, and it says it where the choice happens.
 
 export const visibleMusicEngines = (settings, current) => offer(MUSIC_ENGINES, settings, current);
 export const visibleImageEngines = (settings, current) => offer(IMAGE_ENGINES, settings, current);

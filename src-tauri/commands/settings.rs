@@ -754,78 +754,6 @@ pub fn engine_hidden(engine: &str) -> bool {
     HIDDEN_ENGINES.iter().any(|h| *h == e)
 }
 
-/// Engines that exist, work, and are not offered until somebody deliberately turns them on.
-///
-/// Different from `HIDDEN_ENGINES`, which is "switched off in this build, full stop". These are
-/// switched off *by default* and unlockable, because they carry a risk the user should accept
-/// knowingly rather than discover:
-///
-/// * **`suno_api`** drives Suno over plain HTTP with the user's own session cookie. It is the only
-///   Suno path that works on a phone, and it is unofficial: Suno's terms describe non-interface
-///   access as self-botting, and the account that gets suspended is the user's. That is a choice to
-///   make on purpose, so it is not on the engine list until it is made.
-pub const ADMIN_ONLY_ENGINES: &[&str] = &["suno_api"];
-
-pub fn engine_is_admin_only(engine: &str) -> bool {
-    let e = engine.trim().to_ascii_lowercase();
-    ADMIN_ONLY_ENGINES.iter().any(|a| *a == e)
-}
-
-/// The phrase that unlocks them.
-///
-/// Deliberately a typed phrase and not a password. This is a single-user desktop app running as the
-/// user, on the user's own machine, reading the user's own settings file — a secret kept here would
-/// protect nothing from anybody, and pretending otherwise would be the same theatre the team module
-/// refuses about roles. What a phrase *does* buy is that nobody enables an account-risking engine by
-/// clicking a toggle they did not read.
-pub const ADMIN_UNLOCK_PHRASE: &str = "I accept the risk to my account";
-
-pub fn unlock_phrase_matches(given: &str) -> bool {
-    given.trim().eq_ignore_ascii_case(ADMIN_UNLOCK_PHRASE)
-}
-
-/// Turn the admin-only engines on or off. Enabling requires the phrase typed exactly.
-#[tauri::command]
-pub async fn set_admin_engines(state: State<'_, AppState>, enabled: bool, phrase: Option<String>) -> Res<Value> {
-    if enabled && !unlock_phrase_matches(phrase.as_deref().unwrap_or("")) {
-        return Ok(serde_json::json!({
-            "ok": false, "unlocked": false,
-            "detail": format!("To turn these on, type: {ADMIN_UNLOCK_PHRASE}"),
-        }));
-    }
-    let mut set = Document::new();
-    set.insert("admin_engines_unlocked", enabled);
-    // Turning the lock back on must also put the engine back, or the setting says "locked" while a
-    // locked engine keeps generating.
-    if !enabled {
-        let cur = state.db.collection::<Document>("settings")
-            .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
-            .and_then(|d| d.get_str("music_engine").ok().map(|s| s.to_string()))
-            .unwrap_or_default();
-        if engine_is_admin_only(&cur) { set.insert("music_engine", "heartmula"); }
-    }
-    state.db.collection::<Document>("settings")
-        .update_one(doc! { "_id": "singleton" }, doc! { "$set": set }).upsert(true).await.map_err(e)?;
-    Ok(serde_json::json!({
-        "ok": true, "unlocked": enabled,
-        "engines": ADMIN_ONLY_ENGINES,
-        "detail": if enabled { "Unlocked. The extra engines now appear in the music-engine list." }
-                  else { "Locked again, and the engine reset to HeartMuLa if one of these was selected." },
-    }))
-}
-
-/// Whether the admin-only engines are currently offered, and which they are.
-#[tauri::command]
-pub async fn admin_engines_status(state: State<'_, AppState>) -> Res<Value> {
-    let unlocked = state.db.collection::<Document>("settings")
-        .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
-        .and_then(|d| d.get_bool("admin_engines_unlocked").ok())
-        .unwrap_or(false);
-    Ok(serde_json::json!({
-        "unlocked": unlocked, "engines": ADMIN_ONLY_ENGINES, "phrase": ADMIN_UNLOCK_PHRASE,
-    }))
-}
-
 /// The refusal a hidden engine gives, shaped like every other command result so no caller special-cases it.
 fn hidden_engine_reply(engine: &str) -> Value {
     serde_json::json!({
@@ -3535,32 +3463,7 @@ mod kaggle_slug_tests {
     }
 }
 
-    #[test]
-    fn an_account_risking_engine_is_off_until_somebody_types_the_words() {
-        // The point is not secrecy — this is the user's own machine and their own settings file, so a
-        // secret kept here would protect nothing. The point is that nobody enables it by clicking a
-        // toggle they did not read.
-        assert!(engine_is_admin_only("suno_api"));
-        assert!(engine_is_admin_only("  SUNO_API  "), "ids arrive from settings and UI, not just code");
-        assert!(!engine_is_admin_only("heartmula"));
-        assert!(!engine_is_admin_only("acestep"));
 
-        assert!(unlock_phrase_matches(ADMIN_UNLOCK_PHRASE));
-        assert!(unlock_phrase_matches("  i accept the risk to my account  "));
-        assert!(!unlock_phrase_matches("yes"));
-        assert!(!unlock_phrase_matches(""));
-        assert!(!unlock_phrase_matches("I accept"));
-    }
-
-    #[test]
-    fn an_admin_only_engine_is_not_merely_hidden() {
-        // Two different states that would be easy to conflate: HIDDEN_ENGINES is "not in this build",
-        // ADMIN_ONLY_ENGINES is "in this build, off until asked for". Conflating them would either
-        // ship an account risk on by default, or make an unlockable engine unreachable.
-        for e in ADMIN_ONLY_ENGINES {
-            assert!(!engine_hidden(e), "{e} is unlockable, so it must not also be build-hidden");
-        }
-    }
 
     #[test]
     fn only_a_stuck_kernel_state_is_worth_clearing() {

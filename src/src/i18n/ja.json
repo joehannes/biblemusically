@@ -2794,7 +2794,8 @@
     "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "選んだエンジンで各曲をレンダリングします。キューに入ったジョブとして、ここで進行を追えます。Suno も他と同じくプレーンな HTTP を使い、そのセッションが応答しない場合は、代わりに勝手に実行するのではなくブラウザ経路が提案されます。",
     "Run it in the browser": "ブラウザで実行",
     "Suno would not answer over HTTP — usually an expired session.": "Suno が HTTP で応答しませんでした——多くは期限切れのセッションです。",
-    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "ブラウザ経路はあなたとしてサインインし、Suno のページを直接入力するため、セッションが使えないときでも動きます——ただしこのウィンドウが必要で、一度に一曲ずつです。"
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "ブラウザ経路はあなたとしてサインインし、Suno のページを直接入力するため、セッションが使えないときでも動きます——ただしこのウィンドウが必要で、一度に一曲ずつです。",
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno と Midjourney は API ではなく、あなた自身のアカウントを使います。そのため、選ぶその場で、どちらも誰のアカウントが危険にさらされるかを示します。どちらも隠されていません——見えないエンジンは、重みを量れないエンジンです。"
   },
   "same_as_english": [
     "DPI —",

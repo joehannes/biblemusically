@@ -295,9 +295,6 @@ export const api = {
   workOnFork: (projectId) => invokeCommand("work_on_fork", { projectId }),
   rejoinMain: (projectId, onto) => invokeCommand("rejoin_main", { projectId, onto: onto || null }),
   // Engines that are off by default because they carry an account risk, not because they are broken.
-  // Unlocking takes a typed phrase — see ADMIN_ONLY_ENGINES in commands/settings.rs.
-  adminEnginesStatus: () => invokeCommand("admin_engines_status"),
-  setAdminEngines: (enabled, phrase) => invokeCommand("set_admin_engines", { enabled, phrase: phrase || null }),
   projectHistory: (projectId, limit) => invokeCommand("project_history", { projectId, limit: limit || null }),
   rewindProject: (projectId, commit) => invokeCommand("rewind_project", { projectId, commit }),
   // ============ Account, trial, subscription ============

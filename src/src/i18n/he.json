@@ -2792,7 +2792,8 @@
     "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "מרנדר כל שיר במנוע שבחרת, כמשימה בתור שאפשר לעקוב אחריה כאן. Suno עובד ב-HTTP פשוט כמו השאר; אם ההפעלה שלו לא עונה, מוצע מסלול הדפדפן כגיבוי במקום להיבחר במקומך.",
     "Run it in the browser": "הרץ את זה בדפדפן",
     "Suno would not answer over HTTP — usually an expired session.": "Suno לא ענה ב-HTTP — לרוב הפעלה שפג תוקפה.",
-    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "מסלול הדפדפן נכנס בשמך וממלא את הדף של Suno עצמו, ולכן הוא עובד כשההפעלה לא — אבל הוא זקוק לחלון הזה, ומטפל בשיר אחד בכל פעם."
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "מסלול הדפדפן נכנס בשמך וממלא את הדף של Suno עצמו, ולכן הוא עובד כשההפעלה לא — אבל הוא זקוק לחלון הזה, ומטפל בשיר אחד בכל פעם.",
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "‏Suno ו-Midjourney פונים לחשבונות שלך ולא ל-API, ולכן כל אחד מציין של מי החשבון שבסיכון, במקום שבו בוחרים. אף אחד מהם אינו מוסתר: מנוע שאינך רואה הוא מנוע שאינך יכול לשקול."
   },
   "same_as_english": [
     "DPI —",

@@ -2786,7 +2786,8 @@
     "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "Renderuje każdy utwór na wybranym silniku, jako zadanie w kolejce, które możesz tu śledzić. Suno działa przez zwykłe HTTP jak reszta; jeśli jego sesja nie odpowiada, droga przez przeglądarkę jest proponowana jako zapasowa, a nie wybierana za ciebie.",
     "Run it in the browser": "Uruchom w przeglądarce",
     "Suno would not answer over HTTP — usually an expired session.": "Suno nie odpowiedziało przez HTTP — zwykle to wygasła sesja.",
-    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Droga przez przeglądarkę loguje się jako ty i wypełnia własną stronę Suno, więc działa, gdy sesja nie działa — ale potrzebuje tego okna i obsługuje jeden utwór naraz."
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Droga przez przeglądarkę loguje się jako ty i wypełnia własną stronę Suno, więc działa, gdy sesja nie działa — ale potrzebuje tego okna i obsługuje jeden utwór naraz.",
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno i Midjourney korzystają z twoich własnych kont, a nie z API, więc każdy podaje, czyje konto jest zagrożone, dokładnie tam, gdzie dokonujesz wyboru. Żaden nie jest ukryty: silnika, którego nie widzisz, nie da się ocenić."
   },
   "same_as_english": [
     "DPI —",

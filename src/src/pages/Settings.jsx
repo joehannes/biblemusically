@@ -545,12 +545,11 @@ const SettingsComponent = () => {
     const patch = typeof updates === "string" ? { [updates]: maybeValue } : updates;
     setS(prev => ({ ...prev, ...patch }));
   }, []);
-  // Suno and Midjourney are hidden unless asked for — or unless one of them is already the engine
-  // in use, since a panel that vanishes under somebody mid-project is worse than one they can see
-  // and choose to leave.
-  const riskyShown = s.show_risky_engines === true
-    || s.music_engine === "suno" || s.image_engine === "midjourney"
-    || s.music_engine_fallback === "suno";
+  // Suno and Midjourney have their own settings cards like every other engine. They used to be
+  // hidden behind a switch, which protected nobody: it moved the explanation somewhere nobody reads
+  // and left a picker that silently lacked the engine somebody came for. The risk is stated at the
+  // point of choosing instead (EngineRisk, from `riskNote`), which is where it can change a decision.
+  const riskyShown = true;
   const [status, setStatus] = useState({});
   const [kaggleState, setKaggleState] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -1190,19 +1189,11 @@ const SettingsComponent = () => {
           </p>
         </div>
 
-        {/* The engines that automate an account the user holds. Hidden by default, never deleted. */}
-        <label className="flex items-start gap-2 mt-4 cursor-pointer" data-testid="settings-show-risky-engines">
-          <input type="checkbox" className="accent-primary mt-0.5"
-                 checked={s.show_risky_engines === true}
-                 onChange={(e) => updateS({ show_risky_engines: e.target.checked })} />
-          <span className="text-xs">
-            <span className="font-medium">Show Suno and Midjourney</span>
-            <span className="text-muted-foreground"> — neither has a public API, so the app reaches
-            them by driving a session you are logged into, which their terms reserve for their own
-            interface. The account that could be suspended is yours. They are kept working and simply
-            not offered by default; an official Suno API is reportedly on the way.</span>
-          </span>
-        </label>
+        <p className="text-xs text-muted-foreground mt-4">
+          Suno and Midjourney reach accounts you hold rather than an API, so each says whose account
+          is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one
+          you cannot weigh.
+        </p>
       </Card>
 
       <Card className="p-6 mb-5">

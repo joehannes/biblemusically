@@ -3041,31 +3041,6 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                         // for when this fails — the job runner cannot drive a webview, so that
                         // handover lives in Music Gen.
                         "suno" => real_suno_http(state, &song, job_id, db, &state.cancelled_jobs).await,
-                        // Suno over plain HTTP — the only Suno path that works on a phone, and the
-                        // one that risks the user's own account. Refused unless the lock in
-                        // Settings has been opened deliberately, so an engine id copied from a
-                        // shared project cannot switch it on by itself.
-                        "suno_api" => {
-                            let unlocked = settings_doc.get("admin_engines_unlocked")
-                                .and_then(|v| v.as_bool()).unwrap_or(false);
-                            if !unlocked {
-                                db_log(db, job_id, "suno_api is locked — unlock it in Settings → Music engine \
-                                                    before selecting it.").await;
-                                None
-                            } else {
-                                // The lock is open, but the bridge from this runner into
-                                // commands/suno_api.rs is deliberately not built. That module drives
-                                // Suno with the user's own session cookie, which Suno's terms treat
-                                // as self-botting — the account at risk is the user's, and TODOS.md's
-                                // engine-access research is why Suno was hidden in the first place.
-                                // The lock and the engine list are the part worth having now; the
-                                // sellable path is an aggregator that runs its own accounts.
-                                db_log(db, job_id, "suno_api: the engine is unlocked but not connected to \
-                                                    the job runner. See TODOS.md — the supported route is an \
-                                                    aggregator API, not this machine's Suno cookie.").await;
-                                None
-                            }
-                        }
                         _ => real_heartmula(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
                     };
                     match produced {

@@ -714,12 +714,21 @@ Decisions already taken, so a new session does not re-litigate them.
 
 ### Removed on purpose: Midjourney. Under review: Suno.
 
-**Midjourney is out.** Every route to it (trueai-org/midjourney-proxy, novicezk/midjourney-proxy,
-imagineapi, midjourney-ui) drives Midjourney's Discord channel with a Discord **user** token. That is
-self-botting, against Discord's terms, and a termination takes the Midjourney subscription with it. Not a
-risk to ship inside a product sold publicly. Defaults moved to FLUX (v0.88.x); the remaining work is
-removing the Playwright path (`packaging/midjourney-generator.js`, the `midjourney` job branch, the
-`mj_*` settings) rather than leaving dead code that looks supported.
+**Midjourney is back in, 2026-09-02 — and the reasoning above was about a different thing.** Every
+route this section rejected (trueai-org/midjourney-proxy, novicezk/midjourney-proxy, imagineapi,
+midjourney-ui) drives Midjourney's *Discord* channel with a Discord **user** token, which is
+self-botting and takes the Discord account with it. That is a real objection to those projects.
+
+It was never what this app does. `packaging/midjourney-generator.js` drives **midjourney.com's own
+website** in a real browser signed in as the user — no Discord, no user token, checked line by line.
+Still automation of a session their terms reserve for their interface, so the subscription at risk is
+the user's and the engine says so where it is chosen; but it is not the route that gets Discord
+accounts terminated, and the two had been collapsed into one verdict.
+
+So the Playwright path stays, and the "hide it until a switch is found" treatment is gone: hiding
+protected nobody, it moved the explanation somewhere nobody reads and left a picker that silently
+lacked the engine somebody came for. `riskNote` states whose account is being driven at the moment of
+choosing, which is where it can change a decision.
 
 **Suno carries the same class of risk** and the same reasoning applies — its terms restrict access to its
 own interface, and the cookie path is outside that. The difference is whose account dies: the user's Suno

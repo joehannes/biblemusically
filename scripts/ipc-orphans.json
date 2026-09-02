@@ -1,30 +1,23 @@
 {
   "_comment": "Commands that are built, registered and wrapped in api.js, and that no page calls — on purpose. Checked by scripts/audit-ipc.mjs. Every entry has to say why, and an entry that stops being an orphan (because the feature got its button) is reported as stale so the exemption goes with it. Anything NOT in here is a feature nobody can reach, which is a defect.",
   "orphans": {
-    "openSunoLogin": "Suno is switched off in this build. The engine, its cookie capture and its sign-in all stay in place behind that decision rather than being deleted — see TODOS.md, 'Engine access research'.",
-    "saveSunoCookie": "Same: the Suno path is intact but not offered.",
-    "sunoGenerate": "commands/suno_api.rs is deliberately not wired into the job runner. jobs.rs refuses the `suno_api` engine even when the admin lock is open, and says why in the job log.",
-    "sunoPoll": "Same module, same decision.",
-    "sunoStatus": "Same module, same decision.",
-    "openMjLogin": "Midjourney was removed on purpose (its only route is a Discord user token, which is self-botting). Kept, unoffered, in case an official API arrives.",
-    "adminEnginesStatus": "The lock works, but the only engine it unlocks is the one above — which cannot generate. A switch that unlocks nothing usable would be worse than no switch. Surface both of these together with the Suno engine, or not at all.",
-    "setAdminEngines": "See adminEnginesStatus.",
-
+    "openSunoLogin": "Settings signs in through the app's own embedded browser (a local navigate to /browser), from which the automation profile can be seeded. This command spawns a separate Playwright window instead — the older route, kept because it is the only one that works when the embedded webview is unavailable.",
+    "saveSunoCookie": "The cookie is saved by the capture flow and by the local warp endpoint, both of which write it directly. This is the paste-it-yourself route, and nothing offers a paste box.",
+    "sunoGenerate": "Generation goes through the job runner now (jobs.rs `real_suno_http`), which calls this module's internals directly so it can poll on its own clock and honour cancellation. The command remains for a caller that wants one song without a job.",
+    "sunoPoll": "See sunoGenerate — the runner calls `poll_clips` underneath rather than the command.",
+    "sunoStatus": "Settings reads the cookie's state from the settings document, which suno_api keeps up to date; this is the on-demand re-check and nothing asks for one.",
+    "openMjLogin": "Same pair as openSunoLogin: Settings uses the embedded browser, this spawns a standalone Playwright window.",
     "falCatalogue": "fal.ai is reached through the shared image-API path in image_apis.rs, like every other paid engine. These two are the direct route, kept because fal's own catalogue is the only one that changes weekly.",
     "falGenerate": "See falCatalogue.",
-
     "subsSignIn": "An alternate to the Google sign-in Paywall.jsx uses. Kept for an account that has no Google identity.",
     "startGoogleIdSignIn": "The other half of that pair — Paywall.jsx uses the loopback flow instead.",
     "oauthStart": "The generic OAuth entry point. Every caller in the app wants oauthStartForChannel, which resolves the channel's own client from the pool.",
-
     "remoteExec": "The primitive the render and shorts paths are built on. The interface drives those, not the runner underneath.",
     "buildRenderSpec": "Public so a future panel can show exactly what would be sent before it is sent; nothing shows it yet.",
     "recordRenderResult": "Reachable by a worker that was given a callback URL. The app's own path reads the BM_RESULT line through reconcile_render_jobs instead.",
-
     "testVideo": "Superseded by verifyVideoGraphs, which does the same reachability check and then also reports which presets this particular server can run. VideoGen calls that one.",
     "webviewListPages": "A diagnostic for the embedded browser. No screen needs the list.",
     "vaultPut": "The generic 'store any secret'. Every real flow writes its own typed entry, and a free-form secret box would invite a key in the wrong slot.",
-
     "renderBubble": "Speech bubbles render, and the graphic-novel page has no bubble editor to place them with. A real gap, not a decision — see the audit report.",
     "deeplinkSetupSteps": "The instructions for making a phone sign in on its own. Team.jsx reports whether the redirect is configured but never shows the steps to configure it. A real gap, not a decision."
   }

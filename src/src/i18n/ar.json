@@ -2798,7 +2798,8 @@
     "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "يعالج كل أغنية على المحرّك الذي اخترته، كمهمة في الطابور يمكنك متابعتها هنا. يعمل Suno عبر HTTP عادي مثل البقية؛ وإذا لم تستجب جلسته، يُعرض مسار المتصفّح كبديل بدلاً من اتخاذه نيابةً عنك.",
     "Run it in the browser": "شغّله في المتصفّح",
     "Suno would not answer over HTTP — usually an expired session.": "لم يستجب Suno عبر HTTP — غالبًا جلسة منتهية.",
-    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "مسار المتصفّح يسجّل الدخول باسمك ويملأ صفحة Suno نفسها، فيعمل حين لا تعمل الجلسة — لكنه يحتاج هذه النافذة، ويعالج أغنية واحدة في كل مرة."
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "مسار المتصفّح يسجّل الدخول باسمك ويملأ صفحة Suno نفسها، فيعمل حين لا تعمل الجلسة — لكنه يحتاج هذه النافذة، ويعالج أغنية واحدة في كل مرة.",
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "يصل Suno وMidjourney إلى حسابات تملكها أنت بدلًا من واجهة برمجية، ولذلك يذكر كلٌّ منهما حساب مَن هو المعرَّض للخطر عند نقطة الاختيار. ولا يُخفى أيٌّ منهما: المحرّك الذي لا تراه محرّك لا يمكنك تقديره."
   },
   "same_as_english": [
     "Video Gen"

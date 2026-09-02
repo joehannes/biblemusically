@@ -2795,7 +2795,8 @@
     "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "선택한 엔진에서 각 곡을 렌더링하며, 여기에서 지켜볼 수 있는 대기열 작업으로 실행됩니다. Suno도 나머지와 마찬가지로 일반 HTTP를 사용하고, 세션이 응답하지 않으면 브라우저 경로를 대신 실행하지 않고 대안으로 제안합니다.",
     "Run it in the browser": "브라우저에서 실행",
     "Suno would not answer over HTTP — usually an expired session.": "Suno가 HTTP로 응답하지 않았습니다 — 보통 만료된 세션입니다.",
-    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "브라우저 경로는 사용자로 로그인해 Suno 자체 페이지를 채우므로 세션이 안 될 때도 동작합니다 — 다만 이 창이 필요하고 한 번에 한 곡씩 처리합니다."
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "브라우저 경로는 사용자로 로그인해 Suno 자체 페이지를 채우므로 세션이 안 될 때도 동작합니다 — 다만 이 창이 필요하고 한 번에 한 곡씩 처리합니다.",
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno와 Midjourney는 API가 아니라 사용자 본인의 계정을 사용하므로, 선택하는 자리에서 누구의 계정이 위험한지 각각 알려 줍니다. 둘 다 숨기지 않습니다: 보이지 않는 엔진은 가늠할 수 없는 엔진입니다."
   },
   "same_as_english": [
     "DPI —",
