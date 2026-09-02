@@ -2788,7 +2788,9 @@
     "Upstream revision (blank = latest)": "مراجعة المصدر (فارغ = الأحدث)",
     "Where the work runs": "مكان تشغيل العمل",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "اخترت ضمن ComfyUI — لذا يمكن لمجموعة واحدة من الصور الرئيسية أن تعمل تحت أي حزمة حركة، ويتم إعادة إخراج نمطها لكل قناة دون إعادة إنشائها.",
-    "Your own workers": "عمالك الخاصون"
+    "Your own workers": "عمالك الخاصون",
+    "In your own words — what you want more of, and what to stay away from.": "بكلماتك الخاصة — ما تريد المزيد منه، وما يجب تجنّبه.",
+    "This outranks everything counted below.": "هذا يتقدّم على كل ما هو محسوب أدناه."
   },
   "same_as_english": [
     "Video Gen"

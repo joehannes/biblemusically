@@ -2782,7 +2782,9 @@
     "Upstream revision (blank = latest)": "גרסת upstream (ריק = העדכנית ביותר)",
     "Where the work runs": "היכן שהעבודה רצה",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "שבחרת תחת ComfyUI — כך שערכת תמונות מאסטר אחת יכולה לרוץ תחת כל חבילת תנועה, ולעבור עיצוב מחדש לפי ערוץ מבלי ליצור אותן מחדש.",
-    "Your own workers": "עובדים משלך"
+    "Your own workers": "עובדים משלך",
+    "In your own words — what you want more of, and what to stay away from.": "במילים שלך — ממה תרצה יותר, וממה להתרחק.",
+    "This outranks everything counted below.": "זה גובר על כל מה שנספר למטה."
   },
   "same_as_english": [
     "DPI —",

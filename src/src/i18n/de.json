@@ -2813,7 +2813,9 @@
     "Upstream revision (blank = latest)": "Upstream-Revision (leer = neueste)",
     "Where the work runs": "Ausführungsort",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "was unter ComfyUI ausgewählt wurde — so kann ein Satz Master-Bilder unter jedem Motion-Pack laufen und pro Kanal neu gestaltet werden, ohne sie neu zu generieren.",
-    "Your own workers": "Eigene Worker"
+    "Your own workers": "Eigene Worker",
+    "In your own words — what you want more of, and what to stay away from.": "In Ihren eigenen Worten – wovon Sie mehr möchten und wovon Sie sich fernhalten wollen.",
+    "This outranks everything counted below.": "Das hat Vorrang vor allem, was unten gezählt wird."
   },
   "same_as_english": [
     "Clips",

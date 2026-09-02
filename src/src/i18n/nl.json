@@ -2775,6 +2775,8 @@
     "→ type": "→ typ",
     "★ recommended": "★ aanbevolen",
     "⚠️ You added Gmail addresses to the discovery field below, but you still need to create an OAuth client above first.": "⚠️ U heeft Gmail-adressen toegevoegd aan het ontdekkingsveld hieronder, maar u moet eerst nog een OAuth-client hierboven aanmaken.",
-    "Takes per run (1–4)": "Opnames per run (1–4)"
+    "Takes per run (1–4)": "Opnames per run (1–4)",
+    "In your own words — what you want more of, and what to stay away from.": "In je eigen woorden — waar je meer van wilt en waar je vandaan wilt blijven.",
+    "This outranks everything counted below.": "Dit gaat boven alles wat hieronder is geteld."
   }
 }

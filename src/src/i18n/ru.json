@@ -2788,7 +2788,9 @@
     "Upstream revision (blank = latest)": "Ревизия репозитория (пусто = последняя)",
     "Where the work runs": "Где выполняются задачи",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "выбранного в ComfyUI — поэтому один набор мастер-изображений можно использовать с любым набором движения и стилизовать заново для каждого канала без повторной генерации.",
-    "Your own workers": "Собственные воркеры"
+    "Your own workers": "Собственные воркеры",
+    "In your own words — what you want more of, and what to stay away from.": "Своими словами — чего вы хотите больше и чего лучше избегать.",
+    "This outranks everything counted below.": "Это важнее всего, что подсчитано ниже."
   },
   "same_as_english": [
     "DPI —",

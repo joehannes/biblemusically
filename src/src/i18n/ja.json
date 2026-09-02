@@ -2784,7 +2784,9 @@
     "Upstream revision (blank = latest)": "アップストリーム・リビジョン（空欄＝最新）",
     "Where the work runs": "実行環境",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "ComfyUIで選択したマスター画像セットを使用するため、再生成を行わずにどのモーションパックでも実行でき、チャンネルごとにスタイルを変更できます。",
-    "Your own workers": "カスタムワーカー"
+    "Your own workers": "カスタムワーカー",
+    "In your own words — what you want more of, and what to stay away from.": "ご自身の言葉で——もっと欲しいものと、避けたいものを。",
+    "This outranks everything counted below.": "これは下に集計されたすべてに優先します。"
   },
   "same_as_english": [
     "DPI —",

@@ -2764,7 +2764,9 @@
     "Upstream revision (blank = latest)": "Revisi hulu (kosong = terbaru)",
     "Where the work runs": "Tempat proses dijalankan",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "yang Anda pilih di bawah ComfyUI — jadi satu set gambar master dapat berjalan di bawah paket gerakan apa pun, dan digaya ulang per saluran tanpa menggenerasinya ulang.",
-    "Your own workers": "Worker Anda sendiri"
+    "Your own workers": "Worker Anda sendiri",
+    "In your own words — what you want more of, and what to stay away from.": "Dengan kata-kata Anda sendiri — apa yang Anda inginkan lebih banyak, dan apa yang harus dihindari.",
+    "This outranks everything counted below.": "Ini mengalahkan semua yang dihitung di bawah."
   },
   "same_as_english": [
     "DPI —",

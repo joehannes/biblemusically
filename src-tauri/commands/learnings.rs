@@ -248,27 +248,116 @@ pub async fn forget_learnings(
     };
 
     let mut data = read_data(&path);
+    forget_in(&mut data, &kind, key.as_deref())?;
+    write_data(&path, data.clone())?;
+    Ok(data)
+}
+
+/// The removal itself, on the `data` object — pure, so the rules can be tested without a store.
+///
+/// `key` empty means the whole kind.
+pub(crate) fn forget_in(data: &mut Value, kind: &str, key: Option<&str>) -> Res<()> {
     let obj = data.as_object_mut().ok_or("learnings root is not an object")?;
+
+    // `preferences` is not a tally. It is the one thing the user stated in words, it lives at the
+    // root rather than under `tally`/`signals`, and `learnings_prompt_block` gives it the last word
+    // over everything counted — so withdrawing it must not require clearing the whole store, which
+    // is what withdrawing it used to cost (this branch simply did not exist, so asking to forget it
+    // silently did nothing at all).
+    if kind == "preferences" {
+        obj.remove("preferences");
+        return Ok(());
+    }
 
     match key.filter(|k| !k.trim().is_empty()) {
         // One key: drop its tally entry and every signal that named it.
         Some(key) => {
-            if let Some(per_kind) = obj.get_mut("tally").and_then(|t| t.get_mut(&kind)).and_then(|v| v.as_object_mut()) {
-                per_kind.remove(&key);
+            if let Some(per_kind) = obj.get_mut("tally").and_then(|t| t.get_mut(kind)).and_then(|v| v.as_object_mut()) {
+                per_kind.remove(key);
             }
-            if let Some(arr) = obj.get_mut("signals").and_then(|s| s.get_mut(&kind)).and_then(|v| v.as_array_mut()) {
-                arr.retain(|sig| sig["key"].as_str() != Some(key.as_str()));
+            if let Some(arr) = obj.get_mut("signals").and_then(|s| s.get_mut(kind)).and_then(|v| v.as_array_mut()) {
+                arr.retain(|sig| sig["key"].as_str() != Some(key));
             }
         }
         // The whole kind.
         None => {
-            if let Some(m) = obj.get_mut("tally").and_then(|v| v.as_object_mut()) { m.remove(&kind); }
-            if let Some(m) = obj.get_mut("signals").and_then(|v| v.as_object_mut()) { m.remove(&kind); }
+            if let Some(m) = obj.get_mut("tally").and_then(|v| v.as_object_mut()) { m.remove(kind); }
+            if let Some(m) = obj.get_mut("signals").and_then(|v| v.as_object_mut()) { m.remove(kind); }
         }
     }
+    Ok(())
+}
 
-    write_data(&path, data.clone())?;
-    Ok(data)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store() -> Value {
+        json!({
+            "preferences": "warmer, less literal, no crowds",
+            "tally": {
+                "kept_image": { "gold leaf": 4, "neon": 1 },
+                "genre_pick": { "liquid dnb": 3 },
+            },
+            "signals": {
+                "kept_image": [ { "key": "gold leaf" }, { "key": "neon" } ],
+                "genre_pick": [ { "key": "liquid dnb" } ],
+            },
+        })
+    }
+
+    #[test]
+    fn a_stated_preference_can_be_withdrawn_on_its_own() {
+        let mut d = store();
+        forget_in(&mut d, "preferences", None).unwrap();
+        assert!(d.get("preferences").is_none(), "the stated preference survived");
+        // …and nothing else went with it: withdrawing what you said is not clearing the store.
+        assert_eq!(d["tally"]["kept_image"]["gold leaf"], 4);
+        assert_eq!(d["signals"]["genre_pick"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn merging_cannot_express_this_which_is_why_it_is_a_removal() {
+        // `merge` is a deep merge, so an empty patch adds nothing and `""` would leave the key in
+        // place — and `learnings_prompt_block` reads the key, not its emptiness.
+        let mut d = store();
+        merge(&mut d, &json!({ "preferences": "" }));
+        assert_eq!(d["preferences"], "");
+        assert!(d.get("preferences").is_some());
+        forget_in(&mut d, "preferences", None).unwrap();
+        assert!(d.get("preferences").is_none());
+    }
+
+    #[test]
+    fn one_key_leaves_its_siblings_and_the_other_kinds_alone() {
+        let mut d = store();
+        forget_in(&mut d, "kept_image", Some("neon")).unwrap();
+        assert!(d["tally"]["kept_image"].get("neon").is_none());
+        assert_eq!(d["tally"]["kept_image"]["gold leaf"], 4);
+        let sigs = d["signals"]["kept_image"].as_array().unwrap();
+        assert_eq!(sigs.len(), 1);
+        assert_eq!(sigs[0]["key"], "gold leaf");
+        assert_eq!(d["tally"]["genre_pick"]["liquid dnb"], 3);
+    }
+
+    #[test]
+    fn a_whole_kind_takes_its_tally_and_its_signals() {
+        let mut d = store();
+        forget_in(&mut d, "kept_image", None).unwrap();
+        assert!(d["tally"].get("kept_image").is_none());
+        assert!(d["signals"].get("kept_image").is_none());
+        assert_eq!(d["tally"]["genre_pick"]["liquid dnb"], 3);
+        // The words the user typed are not a tally and are not swept up with one.
+        assert_eq!(d["preferences"], "warmer, less literal, no crowds");
+    }
+
+    #[test]
+    fn forgetting_something_that_was_never_there_is_not_an_error() {
+        let mut d = json!({});
+        forget_in(&mut d, "kept_image", Some("gold leaf")).unwrap();
+        forget_in(&mut d, "preferences", None).unwrap();
+        assert_eq!(d, json!({}));
+    }
 }
 
 /// Where the learnings live on disk — surfaced so the UI can show/open the folder.

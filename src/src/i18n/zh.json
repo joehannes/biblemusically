@@ -2784,7 +2784,9 @@
     "Upstream revision (blank = latest)": "上游版本（留空 = 最新）",
     "Where the work runs": "任务运行位置",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "您在 ComfyUI 下选择的内容 — 因此一套母版图像可以在任何动态预设包下运行，并可按频道重塑风格而无需重新生成。",
-    "Your own workers": "自备 Worker"
+    "Your own workers": "自备 Worker",
+    "In your own words — what you want more of, and what to stay away from.": "用你自己的话——你想要更多的是什么，要避开的是什么。",
+    "This outranks everything counted below.": "这优先于下面统计的一切。"
   },
   "same_as_english": [
     "DPI —",

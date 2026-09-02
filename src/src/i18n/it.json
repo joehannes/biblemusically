@@ -2764,6 +2764,8 @@
     "→ type": "→ digita",
     "★ recommended": "★ consigliato",
     "⚠️ You added Gmail addresses to the discovery field below, but you still need to create an OAuth client above first.": "⚠️ Ha aggiunto indirizzi Gmail al campo di rilevamento sottostante, ma deve prima creare un client OAuth sopra.",
-    "Cinematic drift": "Deriva cinematografica"
+    "Cinematic drift": "Deriva cinematografica",
+    "In your own words — what you want more of, and what to stay away from.": "Con parole tue: che cosa vuoi di più e da che cosa stare alla larga.",
+    "This outranks everything counted below.": "Questo ha la precedenza su tutto ciò che è conteggiato sotto."
   }
 }
