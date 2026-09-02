@@ -258,6 +258,16 @@ export const api = {
   buildEpub: (payload) => invokeCommand("build_epub", { payload }),
   listEbookStores: () => invokeCommand("list_ebook_stores"),
   ebookPricing: (payload) => invokeCommand("ebook_pricing", { payload }),
+  // ============ Avatar universes ============
+  // A reader made explicit — who they are and the givens their world supplies — so an edition can
+  // be retold for somebody it was not written for without being written again from nothing.
+  universeAxes: () => invokeCommand("universe_axes"),
+  universeInterviewNext: (payload) => invokeCommand("universe_interview_next", { payload }),
+  universeSave: (payload) => invokeCommand("universe_save", { payload }),
+  universeList: (projectId) => invokeCommand("universe_list", { projectId: projectId || null }),
+  universeDelete: (id) => invokeCommand("universe_delete", { id }),
+  universeDerive: (payload) => invokeCommand("universe_derive", { payload }),
+  universeRetell: (payload) => invokeCommand("universe_retell", { payload }),
   // ============ Print on demand (Printify) ============
   // The one integration here with a real API — shapes taken from its OpenAPI spec.
   printifyStorefronts: () => invokeCommand("printify_storefronts"),

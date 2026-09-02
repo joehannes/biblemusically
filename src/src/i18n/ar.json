@@ -2842,7 +2842,27 @@
     "Use its own words": "استخدام كلماته هو",
     "Verses and a chorus": "مقاطع ولازمة",
     "What shape is the song?": "ما شكل الأغنية؟",
-    "Who is speaking": "من المتكلّم"
+    "Who is speaking": "من المتكلّم",
+    "— every answer changes what a retelling can say.": "— كل إجابة تغيّر ما يمكن لإعادة السرد أن تقوله.",
+    "Describe one": "صف واحدًا",
+    "Describing one reader": "وصف قارئ واحد",
+    "Every edition is written for somebody. Say who, and the same book can be written again for a different reader — in their language, from where they stand — without being written again from nothing.": "كل طبعة تُكتب لشخص ما. قل لمن، وعندها يمكن كتابة الكتاب نفسه من جديد لقارئ آخر — بلغته، ومن حيث يقف — دون أن يُكتب من الصفر مرة أخرى.",
+    "Grounded": "راسخ",
+    "How many": "كم العدد",
+    "Keep these": "احتفظ بهذه",
+    "Neighbours": "الجيران",
+    "Neighbours of": "جيران",
+    "No AI answered, so these came from a table: real coordinates, but nobody's life. Give each of them a name and a sentence before you retell anything through them.": "لم يجب أي ذكاء اصطناعي، فجاءت هذه من جدول: إحداثيات حقيقية، لكنها ليست حياة أحد. امنح كل واحد اسمًا وجملة قبل أن تعيد سرد أي شيء من خلاله.",
+    "Nobody described yet. A reader takes about a minute at the sketch depth.": "لم يُوصف أحد بعد. القارئ الواحد يستغرق نحو دقيقة على عمق المسودة.",
+    "of about": "من نحو",
+    "Pick an edition…": "اختر طبعة…",
+    "Pick what moves. Everything you do not pick is held exactly as it is, so what differs between two of these is something you decided rather than something that drifted.": "اختر ما يتغيّر. كل ما لا تختاره يبقى كما هو تمامًا، فما يفرّق بين اثنتين منها هو قرارك أنت لا انحرافٌ عابر.",
+    "Retell an edition for them": "أعد سرد طبعة له",
+    "Retell it": "أعد سردها",
+    "Show me": "أرِني",
+    "That's enough": "هذا يكفي",
+    "Who this is for": "لمن هذا",
+    "Written again rather than translated: same beat on every page, so the art already made still belongs where it is — but the words, the images and how much is explained are chosen for this reader.": "مكتوبة من جديد لا مترجمة: النبضة نفسها في كل صفحة، فيبقى الفن المُنجَز في موضعه — لكن الكلمات والصور ومقدار الشرح تُختار لهذا القارئ."
   },
   "same_as_english": [
     "Video Gen"
