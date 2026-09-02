@@ -1,10 +1,14 @@
 // Which engines a picker is allowed to offer.
 //
 // Suno and Midjourney are reached by driving a session the user is logged into, which their terms
-// reserve for their own interface — so the account that gets suspended is the user's. They stay in
-// the code (an official Suno API is reportedly coming) but must not be something anybody arrives at
-// by accident. These tests hold that line in both directions: hidden by default, and never hidden so
-// thoroughly that somebody already using one cannot see it to switch away.
+// reserve for their own interface — so the account that gets suspended is the user's.
+//
+// They used to be hidden until a switch in Settings was found. That protected nobody: it moved the
+// explanation somewhere nobody reads and left a picker silently lacking the engine somebody came
+// for, while the risk was unchanged for anyone who did find the switch. They are offered now, and
+// the obligation moved rather than disappearing — **an offered risky engine must say whose account
+// is at risk, at the point of choosing**. That is the line these tests hold, along with the one that
+// did not change: an engine switched off in this build is never offered at all.
 //
 // Run with: npm run test:unit
 import { test } from "node:test";
@@ -16,35 +20,44 @@ import {
 
 const ids = (pairs) => pairs.map(([id]) => id);
 
-test("nothing that automates the user's own account is offered by default", () => {
+test("every engine that is not switched off is offered, whatever the settings say", () => {
   assert.deepEqual(ids(visibleMusicEngines({}, "heartmula")),
-    ["acestep", "heartmula", "riffusion", "elevenlabs"]);
+    ["suno", "acestep", "heartmula", "riffusion", "elevenlabs"]);
   assert.deepEqual(ids(visibleImageEngines({}, "flux")),
-    ["flux", "comfyui", "leonardo", "fal", "ideogram", "recraft", "gemini"]);
-  // Including for a settings object that has never heard of the flag.
-  assert.ok(!ids(visibleMusicEngines(undefined, "")).includes("suno"));
-  assert.ok(!ids(visibleImageEngines(null, "")).includes("midjourney"));
+    ["midjourney", "flux", "comfyui", "leonardo", "fal", "ideogram", "recraft", "gemini"]);
+  // Including for a settings object that has never heard of any flag, and for none at all: the
+  // offer no longer depends on a setting, so no setting can make an engine disappear.
+  assert.ok(ids(visibleMusicEngines(undefined, "")).includes("suno"));
+  assert.ok(ids(visibleImageEngines(null, "")).includes("midjourney"));
+  assert.ok(ids(visibleMusicEngines({ show_risky_engines: false }, "")).includes("suno"),
+    "the retired flag must not still be gating anything");
 });
 
-test("switching the flag on offers them, and each one says whose account is at risk", () => {
-  const on = { show_risky_engines: true };
-  assert.ok(ids(visibleMusicEngines(on, "heartmula")).includes("suno"));
-  assert.ok(ids(visibleImageEngines(on, "flux")).includes("midjourney"));
-
-  for (const engine of [MUSIC_ENGINES.suno, IMAGE_ENGINES.midjourney]) {
-    assert.ok(isRisky(engine), `${engine.label} must be marked risky`);
+test("an offered engine that drives your own account says so, in the first person", () => {
+  // This is what replaced hiding, so it is now the load-bearing assertion in this file: if a risky
+  // engine can be picked without the warning, the trade made in v0.143 was a straight loss.
+  for (const [, engine] of [...visibleMusicEngines({}, ""), ...visibleImageEngines({}, "")]) {
+    if (!isRisky(engine)) continue;
+    assert.ok(engine.riskNote && engine.riskNote.trim().length > 40,
+      `${engine.label} is offered and risky, so it must carry a real warning`);
     assert.match(engine.riskNote, /your(s)? own|yours/i,
       `${engine.label}'s warning must be about the user's own account, not an abstraction`);
   }
 });
 
-test("the engine already in use is always offered, hidden or not", () => {
+test("Midjourney's warning does not repeat the Discord claim that was never true of this app", () => {
+  // The engine was shelved on a verdict about the Discord-user-token proxies. This one drives
+  // midjourney.com's own site in the user's browser, and the copy has to keep those apart.
+  const note = IMAGE_ENGINES.midjourney.riskNote;
+  assert.match(note, /midjourney\.com/i, "say what it actually drives");
+  assert.match(note, /not.*discord|discord.*not/i, "and that it is not the Discord route");
+});
+
+test("the engine already in use is always offered", () => {
   // A picker whose value is missing from its own list renders blank, and somebody on an engine they
   // cannot see has no way to choose to leave it.
   assert.ok(ids(visibleMusicEngines({}, "suno")).includes("suno"));
   assert.ok(ids(visibleImageEngines({}, "midjourney")).includes("midjourney"));
-  // But only that one — selecting Suno must not also reveal Midjourney.
-  assert.ok(!ids(visibleImageEngines({}, "flux")).includes("midjourney"));
 });
 
 test("no free engine is marked risky, so the warning keeps its meaning", () => {
@@ -159,11 +172,9 @@ test("the guided music flow offers exactly what the picker offers", async () => 
   const step = musicFlow.steps.find((s) => s.id === "engine");
   const ctx = { settings: { music_engine: "heartmula" } };
   const offered = step.options(ctx).map((o) => o.id);
+  // Derived from the same function, not a second list that can drift: that drift is what let the
+  // flow go on offering Suno while never learning Riffusion or ElevenLabs existed.
   assert.deepEqual(offered, ids(visibleMusicEngines(ctx.settings, "heartmula")));
-  assert.ok(!offered.includes("suno"), "the flow must not offer a hidden engine");
   assert.ok(offered.includes("riffusion"), "and must know about engines added since");
-
-  // With the flag on, it offers Suno like everything else.
-  const shown = { settings: { music_engine: "heartmula", show_risky_engines: true } };
-  assert.ok(step.options(shown).map((o) => o.id).includes("suno"));
+  assert.ok(offered.includes("suno"), "the flow offers what the picker offers, risky included");
 });
