@@ -333,7 +333,8 @@ pub fn render(art: &TextArt) -> Result<String, String> {
         }
         Layout::CircularBadge => {
             let r = inner_w / 2.0;
-            let size = fit_size(&text, inner_w, 2);
+            // No `fit_size` here: `stacked` measures its own longest line and sizes to it, so a
+            // second measurement taken up here was only ever discarded.
             format!(
                 "<circle cx=\"{cx}\" cy=\"{}\" r=\"{r}\" fill=\"none\" stroke=\"{colour}\" \
                  stroke-width=\"{}\"/>\n{}",

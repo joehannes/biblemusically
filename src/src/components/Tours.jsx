@@ -8,6 +8,7 @@ import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 import { toast } from "sonner";
 import WelcomeTour from "./WelcomeTour";
+import { listen, voiceInputAvailable } from "../lib/voice";
 import {
   GraduationCap, X, ArrowRight, ArrowLeft, Sparkles, Wrench, Map as MapIcon, Lightbulb,
   Wand2, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Compass,
@@ -133,14 +134,11 @@ function WorkflowTour({ onClose }) {
 }
 
 // ── AI-guided daily generation ───────────────────────────────────────────────
-function getRecognition() {
-  const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-  if (!SR) return null;
-  const rec = new SR();
-  rec.continuous = false;
-  rec.interimResults = false;
-  return rec;
-}
+//
+// Dictation goes through lib/voice.js. It used to call `window.SpeechRecognition` here directly,
+// which WebKitGTK — this app's own desktop webview on Linux — does not implement, so the mic button
+// could only ever answer "speech input isn't available in this webview". `listen()` falls back to
+// recording and transcribing on the backend, which works everywhere the app has a microphone.
 
 function DailyGuide({ onClose }) {
   const nav = useNavigate();
@@ -153,7 +151,6 @@ function DailyGuide({ onClose }) {
   const [listening, setListening] = useState(false);
   const [plan, setPlan] = useState([]);      // AI-proposed ordered steps for today
   const [planBusy, setPlanBusy] = useState(false);
-  const recRef = useRef(null);
 
   // The AI suggests today's angles FROM the project's own brief + channels, so suggestions are
   // on-brand rather than generic. Free-text (typed or spoken) steers a re-roll.
@@ -207,18 +204,17 @@ function DailyGuide({ onClose }) {
     })();
   }, [suggest]);
 
-  const toggleMic = () => {
-    if (listening) { recRef.current?.stop(); setListening(false); return; }
-    const rec = getRecognition();
-    if (!rec) return toast.error("Speech input isn't available in this webview.");
-    recRef.current = rec;
-    rec.onresult = (ev) => {
-      const text = Array.from(ev.results).map((r) => r[0].transcript).join(" ");
-      setNote((n) => (n ? `${n} ${text}` : text));
-    };
-    rec.onend = () => setListening(false);
-    rec.start();
+  const toggleMic = async () => {
+    if (listening) return;
+    if (!voiceInputAvailable()) return toast.error("Speech input isn't available in this webview.");
     setListening(true);
+    try {
+      const heard = await listen({ maxMs: 12000 });
+      if (!heard) return void toast.message("I didn't catch that — try again, or type it.");
+      setNote((n) => (n ? `${n} ${heard}` : heard));
+    } finally {
+      setListening(false);
+    }
   };
 
   const choose = async (opt) => {

@@ -579,31 +579,6 @@ fn youtube_str()  -> String { "youtube".into() }
 fn pending_str()  -> String { "pending".into() }
 
 // ────────────────────────────────────────────────────────────────
-// AI Compose request
-// ────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ComposeRequest {
-    pub chapter_text: String,
-    #[serde(default)]
-    pub sections: Vec<serde_json::Value>,
-    #[serde(default)]
-    pub targets: Vec<serde_json::Value>,
-    #[serde(default)]
-    pub themes: serde_json::Value,
-    #[serde(default = "default_mj_params")]
-    pub mj_params: String,
-    #[serde(default)]
-    pub style_keywords: Vec<String>,
-    #[serde(default)]
-    pub generate: serde_json::Value,
-    #[serde(default = "default_title_pattern")]
-    pub title_pattern: String,
-    #[serde(default = "default_artist")]
-    pub artist: String,
-}
-
-// ────────────────────────────────────────────────────────────────
 // Character
 // ────────────────────────────────────────────────────────────────
 
@@ -651,6 +626,3 @@ pub struct CharacterCreate {
     pub appearance_tags: Option<Vec<String>>,
 }
 
-fn default_mj_params()     -> String { "--ar 16:9 --v 8.1".into() }
-fn default_title_pattern() -> String { "{artist} - {book} {chapter} ({styles})".into() }
-fn default_artist()        -> String { "Joehannes Lightkid".into() }

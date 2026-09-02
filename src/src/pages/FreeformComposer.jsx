@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStudio } from "../lib/store";
 import { api } from "../lib/api";
@@ -13,17 +13,15 @@ import { Switch } from "../components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Sparkles, Mic, MicOff, Plus, Trash2, Wand2, Import, Globe2, Palette, Music2, Image as ImageIcon, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { listen, voiceInputAvailable } from "../lib/voice";
 
-// Web Speech API — supported in Chromium (which Tauri's webview uses on Linux/Windows).
-function getRecognition() {
-  const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-  if (!SR) return null;
-  const rec = new SR();
-  rec.continuous = true;
-  rec.interimResults = false;
-  rec.lang = "en-US";
-  return rec;
-}
+// Dictation goes through lib/voice.js, not the Web Speech API directly.
+//
+// This page used to call `window.SpeechRecognition` itself, under a comment claiming Tauri's webview
+// is Chromium. On Linux it is WebKitGTK, which has no SpeechRecognition at all — so the mic button
+// answered "speech recognition isn't available in this webview" on the app's own primary desktop
+// platform, while `listen()` two files away already handled exactly that case by recording and
+// transcribing on the backend.
 
 const DEFAULT_TARGETS = [
   { language: "English", genre: "cinematic pop" },
@@ -45,13 +43,6 @@ export default function FreeformComposer() {
   const [items, setItems] = useState([]);
   const [channels, setChannels] = useState([]);
   const [listening, setListening] = useState(false);
-  const recRef = useRef(null);
-  const micSupported = useRef(false);
-
-  useEffect(() => {
-    micSupported.current = !!getRecognition();
-    return () => { try { recRef.current && recRef.current.stop(); } catch (_) {} };
-  }, []);
 
   // Channels drive multi-version cultural adaptation (one target per channel).
   useEffect(() => {
@@ -63,29 +54,28 @@ export default function FreeformComposer() {
     })();
   }, [activeProjectId]);
 
-  const toggleMic = () => {
-    if (listening) {
-      try { recRef.current && recRef.current.stop(); } catch (_) {}
-      setListening(false);
-      return;
-    }
-    const rec = getRecognition();
-    if (!rec) {
+  // One press dictates one thought, appended to whatever is already typed. `listen()` stops on its
+  // own when the speaker stops, so there is nothing to "stop" mid-flight except the wait itself.
+  const toggleMic = async () => {
+    if (listening) return;
+    if (!voiceInputAvailable()) {
       toast.error("Speech recognition isn't available in this webview. Type the topic instead.");
       return;
     }
-    recRef.current = rec;
-    rec.onresult = (e) => {
-      let chunk = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) chunk += e.results[i][0].transcript;
+    setListening(true);
+    toast.success("Listening… describe your topic.");
+    try {
+      const heard = await listen({ maxMs: 15000 });
+      if (!heard) {
+        toast.message("I didn't catch that — try again, or type it.");
+        return;
       }
-      if (chunk) setTopic((prev) => (prev ? prev.trim() + " " : "") + chunk.trim());
-    };
-    rec.onerror = (e) => { toast.error(`Mic error: ${e.error || "unknown"}`); setListening(false); };
-    rec.onend = () => setListening(false);
-    try { rec.start(); setListening(true); toast.success("Listening… describe your topic."); }
-    catch (_) { setListening(false); }
+      setTopic((prev) => (prev ? prev.trim() + " " : "") + heard.trim());
+    } catch (err) {
+      toast.error(`Mic error: ${err}`);
+    } finally {
+      setListening(false);
+    }
   };
 
   const setTarget = (i, patch) => setTargets((t) => t.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
@@ -218,7 +208,7 @@ export default function FreeformComposer() {
                 data-testid="freeform-mic"
               >
                 {listening ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
-                {listening ? "Stop" : "Speak"}
+                {listening ? "Listening…" : "Speak"}
               </button>
             </Label>
             <Textarea

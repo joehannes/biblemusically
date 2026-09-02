@@ -143,7 +143,7 @@ pub fn rotation(settings: &Value) -> Vec<String> {
     let primary = settings["ai_provider"].as_str().unwrap_or("openrouter").trim().to_string();
     let mut out: Vec<String> = Vec::new();
 
-    let mut consider = |p: &str, out: &mut Vec<String>| {
+    let consider = |p: &str, out: &mut Vec<String>| {
         if out.iter().any(|x| x == p) { return; }
         if !configured(p, settings) { return; }
         // Nothing left today is not a candidate — asking anyway buys a 429 and a wait.

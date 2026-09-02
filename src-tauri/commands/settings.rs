@@ -3,7 +3,7 @@ use bson::{doc, Document};
 use serde_json::Value;
 use std::env;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 use tokio::fs;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
@@ -12,10 +12,6 @@ use warp::Filter;
 
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
-
-fn proj0() -> crate::store::FindOneOptions {
-    crate::store::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
-}
 
 fn bson_to_value(doc: Document) -> Value {
     let mut m = serde_json::Map::new();
@@ -26,22 +22,6 @@ fn bson_to_value(doc: Document) -> Value {
     Value::Object(m)
 }
 
-
-async fn probe_midjourney_proxy() -> Option<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
-        .build()
-        .ok()?;
-    for port in [8080u16, 8086u16, 8081u16, 8085u16] {
-        let url = format!("http://127.0.0.1:{}", port);
-        if let Ok(res) = client.get(format!("{}/info", url.trim_end_matches('/'))).send().await {
-            if res.status().is_success() {
-                return Some(url);
-            }
-        }
-    }
-    None
-}
 
 async fn get_settings_doc(db: &crate::store::Db) -> Result<Value, String> {
     let doc = db.collection::<Document>("settings")
@@ -208,7 +188,7 @@ pub async fn validate_google_refresh_tokens_internal(db: &crate::store::Db) -> R
     Ok(invalidated)
 }
 
-pub async fn ensure_mj_autostart_internal(db: &crate::store::Db) -> Res<Value> {
+pub async fn ensure_mj_autostart_internal(_db: &crate::store::Db) -> Res<Value> {
     // Midjourney proxy autostart is deprecated. Use the visible Playwright
     // driven workflow and the Settings → Capture session flow to obtain a
     // Playwright profile directory (stored as `mj_profile_dir`). This function remains for API compatibility and no

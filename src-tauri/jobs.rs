@@ -1084,7 +1084,7 @@ async fn real_mj(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let mut child = match cmd.spawn() {
+    let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
             db_log(db, job_id, &format!("mj: failed to spawn generator: {}", e)).await;

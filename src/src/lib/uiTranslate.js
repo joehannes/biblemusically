@@ -153,6 +153,24 @@ const emit = () => listeners.forEach((fn) => { try { fn(current); } catch { /* i
 export const subscribeLanguage = (fn) => { listeners.add(fn); fn(current); return () => listeners.delete(fn); };
 export const getUiLanguage = () => current;
 
+/**
+ * The catalog's translation of one string, or the string itself.
+ *
+ * This is for text that never becomes a DOM node and so is never seen by the observer above — the
+ * lines the guide *speaks*. Without it the interface is in German and the assistant's voice is in
+ * English, which reads as a bug even though every label on screen is correct.
+ *
+ * Deliberately lookup-only: it never sends anything, never queues a request and never widens the
+ * daily ledger. A phrase the catalog does not hold comes back unchanged and is spoken as written —
+ * the right trade for a feature whose whole budget belongs to generating songs.
+ */
+export function translateKnown(text) {
+  const key = String(text || "").trim();
+  if (!key || current === "en") return text;
+  const hit = langState.get(current)?.catalog?.[key];
+  return typeof hit === "string" && hit ? hit : text;
+}
+
 // ── Per-language state ───────────────────────────────────────────────────────
 // `requested` is the spend guard: a string goes in when it is sent, not when it comes back, so a
 // provider that omits or mangles an entry still can't make the app ask for it again.
