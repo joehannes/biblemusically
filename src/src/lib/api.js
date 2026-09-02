@@ -268,6 +268,17 @@ export const api = {
   universeDelete: (id) => invokeCommand("universe_delete", { id }),
   universeDerive: (payload) => invokeCommand("universe_derive", { payload }),
   universeRetell: (payload) => invokeCommand("universe_retell", { payload }),
+  // ============ Volumes: many editions bound as one book ============
+  // The manuscript layer — metadata, an ordered contents, front and back matter, and a preflight
+  // that says what stands between a draft and a store.
+  bookMatterKinds: () => invokeCommand("book_matter_kinds"),
+  volumeSave: (payload) => invokeCommand("volume_save", { payload }),
+  volumeList: (projectId) => invokeCommand("volume_list", { projectId: projectId || null }),
+  volumeDelete: (id) => invokeCommand("volume_delete", { id }),
+  volumeAutofill: (payload) => invokeCommand("volume_autofill", { payload }),
+  volumeWriteMatter: (payload) => invokeCommand("volume_write_matter", { payload }),
+  volumePreflight: (id) => invokeCommand("volume_preflight", { id }),
+  buildVolumeEpub: (payload) => invokeCommand("build_volume_epub", { payload }),
   // ============ Print on demand (Printify) ============
   // The one integration here with a real API — shapes taken from its OpenAPI spec.
   printifyStorefronts: () => invokeCommand("printify_storefronts"),

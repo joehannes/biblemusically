@@ -125,6 +125,64 @@ pub fn xml_escape(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+/// What a page *is*, which decides how it is set and what `epub:type` it declares.
+///
+/// A book is not a stack of identical pages. A half-title, a copyright page and a part divider are
+/// typographically nothing like a chapter, and a reader that is told which is which can do the
+/// right thing with each — skip the front matter when resuming, list the parts in its own contents,
+/// read the copyright page in a different voice. Stores check for several of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// An ordinary page of an edition.
+    Body,
+    /// The title page: title, subtitle, author, imprint.
+    TitlePage,
+    /// Copyright, rights and identifiers.
+    Copyright,
+    /// Dedication, epigraph, foreword, preface — set centred and quiet.
+    FrontMatter,
+    /// A part divider: a title alone on a page.
+    Part,
+    /// Afterword, about the author, also-by, colophon.
+    BackMatter,
+}
+
+impl Role {
+    /// The `epub:type` a reading system understands. Structural semantics rather than decoration:
+    /// this is what lets a reader open "the first page of the actual book" rather than the
+    /// copyright notice.
+    pub fn epub_type(self) -> &'static str {
+        match self {
+            Role::Body => "chapter",
+            Role::TitlePage => "titlepage",
+            Role::Copyright => "copyright-page",
+            Role::FrontMatter => "frontmatter",
+            Role::Part => "part",
+            Role::BackMatter => "backmatter",
+        }
+    }
+    pub fn css_class(self) -> &'static str {
+        match self {
+            Role::Body => "body-page",
+            Role::TitlePage => "titlepage",
+            Role::Copyright => "copyright",
+            Role::FrontMatter => "frontmatter",
+            Role::Part => "part",
+            Role::BackMatter => "backmatter",
+        }
+    }
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "title" | "titlepage" => Role::TitlePage,
+            "copyright" => Role::Copyright,
+            "front" | "frontmatter" => Role::FrontMatter,
+            "part" => Role::Part,
+            "back" | "backmatter" => Role::BackMatter,
+            _ => Role::Body,
+        }
+    }
+}
+
 /// One page of a graphic-novel edition.
 pub struct Page {
     /// File stem, e.g. `page-01`.
@@ -150,13 +208,44 @@ pub struct Page {
     pub has_overlay: bool,
     /// The audio range this page covers, in seconds. Only used when `has_overlay`.
     pub span: (f64, f64),
+    /// Which audio file narrates this page, when the book carries more than one.
+    ///
+    /// A single edition has one song and every overlay points at it. A volume of twelve editions has
+    /// twelve, and a page narrated by the wrong one is worse than a page narrated by none — so a
+    /// page may name its own, falling back to the book's first file when it does not.
+    pub audio: Option<String>,
+    /// What this page is. Decides its `epub:type` and how it is set.
+    pub role: Role,
+    /// Where it sits in the table of contents: 0 not listed at all, 1 top level, 2 nested under the
+    /// last top-level entry.
+    ///
+    /// Zero exists because a contents page listing "Title page, Copyright, Dedication" before the
+    /// book starts is the mark of an export rather than of a book, and because a 40-page edition
+    /// whose every page is a top-level entry has a contents page nobody can use.
+    pub nav_depth: u8,
+}
+
+impl Page {
+    /// A plain body page — the shape every caller wanted before roles existed.
+    pub fn body(id: impl Into<String>, heading: impl Into<String>, lines: Vec<String>) -> Self {
+        Page {
+            id: id.into(), heading: heading.into(), lines,
+            image: None, caption: None, dialogue: None,
+            bubble_kind: "speech".into(), speaker_at: (0.5, 0.7),
+            has_overlay: false, span: (0.0, 0.0), audio: None,
+            role: Role::Body, nav_depth: 1,
+        }
+    }
 }
 
 /// The XHTML for one page.
 pub fn page_xhtml(page: &Page, title: &str) -> String {
     let mut body = String::new();
     if !page.heading.is_empty() {
-        body.push_str(&format!("    <h2>{}</h2>\n", xml_escape(&page.heading)));
+        // One <h1> per book, on the title page. Everywhere else the heading is a level down, so a
+        // reading system's outline has a root rather than forty peers.
+        let tag = if page.role == Role::TitlePage { "h1" } else { "h2" };
+        body.push_str(&format!("    <{tag}>{}</{tag}>\n", xml_escape(&page.heading)));
     }
     if let Some(img) = &page.image {
         body.push_str(&format!(
@@ -183,9 +272,50 @@ pub fn page_xhtml(page: &Page, title: &str) -> String {
          xml:lang=\"{lang}\">\n\
          <head>\n  <title>{title}</title>\n  \
          <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/>\n</head>\n\
-         <body>\n  <section epub:type=\"chapter\" id=\"body-{id}\">\n{body}  </section>\n</body>\n</html>\n",
+         <body class=\"{cls}\">\n  <section epub:type=\"{etype}\" id=\"body-{id}\">\n{body}  </section>\n</body>\n</html>\n",
         lang = "en", title = xml_escape(title), body = body, id = xml_escape(&page.id),
+        cls = page.role.css_class(), etype = page.role.epub_type(),
     )
+}
+
+/// Everything about the book that is not the book.
+///
+/// The first four fields are all an EPUB is *required* to carry, and for a long time they were all
+/// this writer produced. That is enough for a file a reader will open and not enough for a book a
+/// store will take: retailers match on ISBN, sort by publisher and pubdate, build category pages
+/// from subjects, and group a series by name and number. A book missing those is not rejected — it
+/// is accepted and then invisible, which is worse.
+#[derive(Debug, Clone, Default)]
+pub struct Metadata {
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub author: String,
+    /// Everybody else, as (role, name). Roles are MARC relators — `ill` illustrator, `trl`
+    /// translator, `edt` editor — because that is what the format and the stores understand.
+    pub contributors: Vec<(String, String)>,
+    pub language: String,
+    /// The `dc:identifier`. A UUID unless there is an ISBN.
+    pub book_id: String,
+    pub isbn: Option<String>,
+    pub publisher: Option<String>,
+    pub description: Option<String>,
+    pub rights: Option<String>,
+    pub subjects: Vec<String>,
+    pub series: Option<String>,
+    pub series_index: Option<i64>,
+    /// `dc:date`, ISO-8601. The publication date, not the build date.
+    pub pubdate: Option<String>,
+}
+
+impl Metadata {
+    pub fn new(title: &str, author: &str, language: &str, book_id: &str) -> Self {
+        Metadata {
+            title: title.into(), author: author.into(),
+            language: if language.is_empty() { "en".into() } else { language.into() },
+            book_id: book_id.into(),
+            ..Default::default()
+        }
+    }
 }
 
 /// The package document: metadata, every file as a manifest item, and the reading order.
@@ -193,10 +323,7 @@ pub fn page_xhtml(page: &Page, title: &str) -> String {
 /// `audio` is the narration or the song itself; when present it is manifested so a reader can play it
 /// and, with `overlays`, follow along.
 pub fn content_opf(
-    title: &str,
-    author: &str,
-    language: &str,
-    book_id: &str,
+    meta: &Metadata,
     pages: &[Page],
     images: &[String],
     audio: &[String],
@@ -240,21 +367,70 @@ pub fn content_opf(
         .map(|i| format!("    <meta name=\"cover\" content=\"img{i}\"/>\n"))
         .unwrap_or_default();
 
+    // The optional half of the metadata, emitted only where there is something to say. An empty
+    // <dc:publisher/> is worse than none: a store reads it as a publisher named "".
+    let mut extra = String::new();
+    if let Some(sub) = meta.subtitle.as_deref().filter(|s| !s.trim().is_empty()) {
+        extra.push_str(&format!(
+            "    <meta property=\"title-type\" refines=\"#title\">main</meta>\n\
+             \x20   <dc:title id=\"subtitle\">{}</dc:title>\n\
+             \x20   <meta property=\"title-type\" refines=\"#subtitle\">subtitle</meta>\n",
+            xml_escape(sub)));
+    }
+    for (i, (role, name)) in meta.contributors.iter().enumerate() {
+        if name.trim().is_empty() { continue; }
+        extra.push_str(&format!(
+            "    <dc:contributor id=\"contrib{i}\">{name}</dc:contributor>\n\
+             \x20   <meta property=\"role\" refines=\"#contrib{i}\" scheme=\"marc:relators\">{role}</meta>\n",
+            name = xml_escape(name), role = xml_escape(role), i = i));
+    }
+    if let Some(isbn) = meta.isbn.as_deref().filter(|s| !s.trim().is_empty()) {
+        extra.push_str(&format!(
+            "    <dc:identifier id=\"isbn\">urn:isbn:{}</dc:identifier>\n", xml_escape(isbn)));
+    }
+    for (key, value) in [
+        ("dc:publisher", meta.publisher.as_deref()),
+        ("dc:description", meta.description.as_deref()),
+        ("dc:rights", meta.rights.as_deref()),
+        ("dc:date", meta.pubdate.as_deref()),
+    ] {
+        if let Some(v) = value.filter(|v| !v.trim().is_empty()) {
+            extra.push_str(&format!("    <{key}>{}</{key}>\n", xml_escape(v)));
+        }
+    }
+    for subject in meta.subjects.iter().filter(|s| !s.trim().is_empty()) {
+        extra.push_str(&format!("    <dc:subject>{}</dc:subject>\n", xml_escape(subject)));
+    }
+    // A series is `belongs-to-collection`, which is what a reading system groups by. The index is
+    // emitted only alongside a name, since a book that is number 3 of nothing sorts nowhere.
+    if let Some(series) = meta.series.as_deref().filter(|s| !s.trim().is_empty()) {
+        extra.push_str(&format!(
+            "    <meta property=\"belongs-to-collection\" id=\"series\">{}</meta>\n\
+             \x20   <meta property=\"collection-type\" refines=\"#series\">series</meta>\n",
+            xml_escape(series)));
+        if let Some(n) = meta.series_index {
+            extra.push_str(&format!(
+                "    <meta property=\"group-position\" refines=\"#series\">{n}</meta>\n"));
+        }
+    }
+
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"bookid\">\n\
-         \x20 <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n\
+         \x20 <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
+         xmlns:opf=\"http://www.idpf.org/2007/opf\">\n\
          \x20   <dc:identifier id=\"bookid\">{id}</dc:identifier>\n\
-         \x20   <dc:title>{title}</dc:title>\n\
+         \x20   <dc:title id=\"title\">{title}</dc:title>\n\
          \x20   <dc:creator>{author}</dc:creator>\n\
          \x20   <dc:language>{language}</dc:language>\n\
-         \x20   <meta property=\"dcterms:modified\">{modified}</meta>\n{cover_meta}\
+         \x20   <meta property=\"dcterms:modified\">{modified}</meta>\n{extra}{cover_meta}\
          \x20 </metadata>\n\
          \x20 <manifest>\n{manifest}  </manifest>\n\
          \x20 <spine>\n{spine}  </spine>\n\
          </package>\n",
-        id = xml_escape(book_id), title = xml_escape(title), author = xml_escape(author),
-        language = xml_escape(language), modified = modified_iso,
+        id = xml_escape(&meta.book_id), title = xml_escape(&meta.title),
+        author = xml_escape(&meta.author), language = xml_escape(&meta.language),
+        modified = modified_iso, extra = extra,
     )
 }
 
@@ -306,21 +482,65 @@ pub fn page_spans(total_seconds: f64, section_starts: &[f64], pages: usize) -> (
 }
 
 /// The navigation document — EPUB 3's table of contents, and a hard requirement.
+///
+/// Nested by `nav_depth`, and a page at depth 0 is not listed at all. Both matter for a book rather
+/// than an export: a contents page that opens with "Title page · Copyright · Dedication" is the
+/// mark of a converter, and a forty-page edition with forty top-level entries has a contents page
+/// nobody can use. A depth-2 page hangs under the last depth-1 entry, which is how a volume's
+/// chapters sit under their part.
+///
+/// The `landmarks` nav is emitted alongside it. It is optional in the spec and expected in practice:
+/// it is how a reading system knows where the book actually begins, and several stores check for it.
 pub fn nav_xhtml(title: &str, pages: &[Page]) -> String {
     let mut items = String::new();
-    for p in pages {
+    let mut open_child = false;
+    for p in pages.iter().filter(|p| p.nav_depth > 0) {
         let label = if p.heading.is_empty() { p.id.clone() } else { p.heading.clone() };
-        items.push_str(&format!(
-            "      <li><a href=\"{}.xhtml\">{}</a></li>\n", xml_escape(&p.id), xml_escape(&label),
-        ));
+        let entry = format!("<a href=\"{}.xhtml\">{}</a>", xml_escape(&p.id), xml_escape(&label));
+        if p.nav_depth >= 2 {
+            // A nested entry with no parent yet would be invalid nesting, so it is promoted rather
+            // than dropped: losing a chapter from the contents is worse than losing its indent.
+            if items.is_empty() { items.push_str(&format!("      <li>{entry}</li>\n")); continue; }
+            if !open_child {
+                // Reopen the parent <li> to hang an <ol> inside it.
+                let cut = items.rfind("</li>\n").map(|i| i).unwrap_or(items.len());
+                items.truncate(cut);
+                items.push_str("\n        <ol>\n");
+                open_child = true;
+            }
+            items.push_str(&format!("          <li>{entry}</li>\n"));
+        } else {
+            if open_child { items.push_str("        </ol>\n      "); open_child = false; }
+            items.push_str(&format!("      <li>{entry}</li>\n"));
+        }
     }
+    if open_child { items.push_str("        </ol>\n      </li>\n"); }
+
+    // Where the book begins: the first page that is not front matter, or the first page there is.
+    let start = pages.iter()
+        .find(|p| matches!(p.role, Role::Body | Role::Part))
+        .or_else(|| pages.first());
+    let mut landmarks = String::new();
+    if let Some(p) = pages.iter().find(|p| p.role == Role::TitlePage) {
+        landmarks.push_str(&format!(
+            "      <li><a epub:type=\"titlepage\" href=\"{}.xhtml\">Title page</a></li>\n",
+            xml_escape(&p.id)));
+    }
+    if let Some(p) = start {
+        landmarks.push_str(&format!(
+            "      <li><a epub:type=\"bodymatter\" href=\"{}.xhtml\">Beginning</a></li>\n",
+            xml_escape(&p.id)));
+    }
+
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\
          <head><title>{title}</title></head>\n<body>\n  \
-         <nav epub:type=\"toc\" id=\"toc\">\n    <h1>{title}</h1>\n    <ol>\n{items}    </ol>\n  </nav>\n\
+         <nav epub:type=\"toc\" id=\"toc\">\n    <h1>{title}</h1>\n    <ol>\n{items}    </ol>\n  </nav>\n  \
+         <nav epub:type=\"landmarks\" id=\"landmarks\" hidden=\"hidden\">\n    \
+         <ol>\n{landmarks}    </ol>\n  </nav>\n\
          </body>\n</html>\n",
-        title = xml_escape(title), items = items,
+        title = xml_escape(title), items = items, landmarks = landmarks,
     )
 }
 
@@ -345,7 +565,21 @@ pub fn stylesheet() -> String {
      figure.panel { margin: 0 0 1em 0; text-align: center; page-break-inside: avoid; }\n\
      figure.panel img { max-width: 100%; height: auto; }\n\
      figcaption { font-size: 0.8em; font-style: italic; opacity: 0.75; margin-top: 0.4em; }\n\
-     p { margin: 0 0 0.8em 0; text-indent: 0; }\n")
+     p { margin: 0 0 0.8em 0; text-indent: 0; }\n\
+     /* Front and back matter. A title page set like a chapter is the clearest sign a book was \n\
+        converted rather than made, and these rules cost nothing on a six-inch screen. */\n\
+     .titlepage, .part { text-align: center; padding-top: 25%; }\n\
+     .titlepage h1 { font-size: 2em; font-weight: normal; letter-spacing: 0.04em; margin: 0 0 0.3em; }\n\
+     .titlepage h2, .part h2 { font-size: 1em; letter-spacing: 0.15em; text-transform: uppercase; \
+          opacity: 0.6; border: 0; }\n\
+     .titlepage p { font-style: italic; opacity: 0.85; }\n\
+     .part h2 { font-size: 1.4em; text-transform: none; letter-spacing: 0.02em; opacity: 1; }\n\
+     .copyright { font-size: 0.8em; opacity: 0.8; }\n\
+     .copyright h2 { display: none; }\n\
+     .frontmatter, .backmatter { text-align: center; }\n\
+     .frontmatter p, .backmatter p { font-style: italic; }\n\
+     .backmatter { text-align: left; }\n\
+     .backmatter p { font-style: normal; }\n")
 }
 
 fn media_type(name: &str) -> &'static str {
@@ -364,12 +598,8 @@ fn media_type(name: &str) -> &'static str {
 /// Assemble the whole book. Returns the EPUB bytes.
 ///
 /// `images` and `audio` are `(file name, bytes)`; the names must match what the pages reference.
-#[allow(clippy::too_many_arguments)]
 pub fn build(
-    title: &str,
-    author: &str,
-    language: &str,
-    book_id: &str,
+    meta: &Metadata,
     pages: &[Page],
     images: &[(String, Vec<u8>)],
     audio: &[(String, Vec<u8>)],
@@ -384,16 +614,19 @@ pub fn build(
     let image_names: Vec<String> = images.iter().map(|(n, _)| n.clone()).collect();
     let audio_names: Vec<String> = audio.iter().map(|(n, _)| n.clone()).collect();
     zip.add("OEBPS/content.opf", content_opf(
-        title, author, language, book_id, pages, &image_names, &audio_names, cover, modified_iso,
+        meta, pages, &image_names, &audio_names, cover, modified_iso,
     ).as_bytes());
-    zip.add("OEBPS/nav.xhtml", nav_xhtml(title, pages).as_bytes());
+    zip.add("OEBPS/nav.xhtml", nav_xhtml(&meta.title, pages).as_bytes());
     zip.add("OEBPS/style.css", stylesheet().as_bytes());
     let audio_name = audio.first().map(|(n, _)| n.clone()).unwrap_or_default();
     for p in pages {
-        zip.add(&format!("OEBPS/{}.xhtml", p.id), page_xhtml(p, title).as_bytes());
-        if p.has_overlay && !audio_name.is_empty() {
+        zip.add(&format!("OEBPS/{}.xhtml", p.id), page_xhtml(p, &meta.title).as_bytes());
+        let narrator = p.audio.as_deref()
+            .filter(|n| audio.iter().any(|(have, _)| have == n))
+            .unwrap_or(&audio_name);
+        if p.has_overlay && !narrator.is_empty() {
             zip.add(&format!("OEBPS/{}.smil", p.id),
-                    page_smil(&p.id, &audio_name, p.span.0, p.span.1).as_bytes());
+                    page_smil(&p.id, narrator, p.span.0, p.span.1).as_bytes());
         }
     }
     for (name, bytes) in images {
@@ -409,6 +642,10 @@ pub fn build(
 mod tests {
     use super::*;
 
+    fn meta(title: &str) -> Metadata {
+        Metadata::new(title, "Lightkid", "en", "urn:uuid:1")
+    }
+
     fn sample_pages() -> Vec<Page> {
         vec![
             Page {
@@ -422,6 +659,9 @@ mod tests {
                 speaker_at: (0.5, 0.7),
                 has_overlay: true,
                 span: (0.0, 30.0),
+                audio: None,
+                role: Role::Body,
+                nav_depth: 1,
             },
             Page {
                 id: "page-02".into(),
@@ -434,6 +674,9 @@ mod tests {
                 speaker_at: (0.5, 0.7),
                 has_overlay: true,
                 span: (30.0, 62.5),
+                audio: None,
+                role: Role::Body,
+                nav_depth: 1,
             },
         ]
     }
@@ -443,7 +686,7 @@ mod tests {
         // The overlay is what makes this read *along* rather than merely carry a file.
         let images = vec![("panel-01.jpg".to_string(), vec![0xFF, 0xD8])];
         let audio = vec![("song.mp3".to_string(), b"ID3".to_vec())];
-        let epub = build("Genesis", "Lightkid", "en", "urn:uuid:1", &sample_pages(),
+        let epub = build(&meta("Genesis"), &sample_pages(),
                          &images, &audio, None, "2026-07-26T00:00:00Z");
         let text = String::from_utf8_lossy(&epub);
         assert!(text.contains("page-01.smil"), "the overlay file is missing from the archive");
@@ -491,7 +734,7 @@ mod tests {
 
     #[test]
     fn mimetype_is_first_and_stored() {
-        let epub = build("Genesis", "Lightkid", "en", "urn:uuid:1", &sample_pages(),
+        let epub = build(&meta("Genesis"), &sample_pages(),
                          &[], &[], None, "2026-07-25T00:00:00Z");
         // Local header at offset 0, method field (offset 8) must be 0 = stored, and the name must
         // follow immediately. Readers check exactly this, and a deflated mimetype fails to open with
@@ -506,7 +749,7 @@ mod tests {
     fn the_archive_ends_with_a_directory_of_every_entry() {
         let images = vec![("panel-01.jpg".to_string(), vec![0xFF, 0xD8, 0xFF])];
         let audio = vec![("song.mp3".to_string(), vec![0x49, 0x44, 0x33])];
-        let epub = build("Genesis", "Lightkid", "en", "urn:uuid:1", &sample_pages(),
+        let epub = build(&meta("Genesis"), &sample_pages(),
                          &images, &audio, Some("panel-01.jpg"), "2026-07-25T00:00:00Z");
         // mimetype, container, opf, nav, css, 2 pages, 2 overlays, 1 image, 1 audio = 11.
         // The overlays are there because both sample pages carry one and there is audio to narrate with.
@@ -520,7 +763,7 @@ mod tests {
         // A file present in the zip but missing from the manifest does not exist to a reader. This is
         // the commonest way a hand-built EPUB silently loses its art.
         let pages = sample_pages();
-        let opf = content_opf("Genesis", "Lightkid", "en", "urn:uuid:1", &pages,
+        let opf = content_opf(&meta("Genesis"), &pages,
                              &["panel-01.jpg".to_string()], &["song.mp3".to_string()],
                              Some("panel-01.jpg"), "2026-07-25T00:00:00Z");
         assert!(opf.contains("href=\"page-01.xhtml\""));
@@ -553,12 +796,118 @@ mod tests {
     fn writes_a_file_an_outside_reader_can_open() {
         let images = vec![("panel-01.jpg".to_string(), vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10])];
         let audio = vec![("song.mp3".to_string(), b"ID3\x03\x00\x00\x00fake".to_vec())];
-        let epub = build("Genesis & Light", "Lightkid", "en", "urn:uuid:test", &sample_pages(),
+        let epub = build(&meta("Genesis & Light"), &sample_pages(),
                          &images, &audio, Some("panel-01.jpg"), "2026-07-25T00:00:00Z");
         let path = std::env::temp_dir().join("bm-epub-selftest.epub");
         std::fs::write(&path, &epub).expect("write");
         eprintln!("EPUB_SELFTEST {}", path.display());
         assert!(epub.len() > 1000);
+    }
+
+    #[test]
+    fn the_metadata_a_store_reads_survives_into_the_package() {
+        // Every one of these is optional in the format and required in practice: a book without
+        // them is accepted by a store and then sorts nowhere and appears in no category.
+        let mut m = meta("Genesis");
+        m.subtitle = Some("A book of beginnings".into());
+        m.publisher = Some("Lightkid Press".into());
+        m.description = Some("Seven days & a garden".into());
+        m.rights = Some("© 2026".into());
+        m.subjects = vec!["Religion".into(), "Poetry".into()];
+        m.series = Some("The Pentateuch".into());
+        m.series_index = Some(1);
+        m.pubdate = Some("2026-07-25".into());
+        m.isbn = Some("9781234567897".into());
+        m.contributors = vec![("ill".into(), "A. Painter".into())];
+        let opf = content_opf(&m, &sample_pages(), &[], &[], None, "2026-07-25T00:00:00Z");
+
+        assert!(opf.contains("<dc:publisher>Lightkid Press</dc:publisher>"));
+        assert!(opf.contains("<dc:rights>© 2026</dc:rights>"));
+        assert!(opf.contains("<dc:date>2026-07-25</dc:date>"));
+        assert!(opf.contains("<dc:subject>Religion</dc:subject>"));
+        assert!(opf.contains("<dc:subject>Poetry</dc:subject>"));
+        assert!(opf.contains("urn:isbn:9781234567897"));
+        assert!(opf.contains("belongs-to-collection"), "a series is how a store groups a set");
+        assert!(opf.contains("group-position"));
+        assert!(opf.contains("<dc:contributor id=\"contrib0\">A. Painter</dc:contributor>"));
+        assert!(opf.contains("scheme=\"marc:relators\">ill<"), "the role must be a relator code");
+        // Description text is escaped like everything else.
+        assert!(opf.contains("Seven days &amp; a garden"));
+    }
+
+    #[test]
+    fn nothing_to_say_means_no_empty_element_rather_than_an_empty_one() {
+        // <dc:publisher/> is read by a store as a publisher named "", which is worse than absent.
+        let opf = content_opf(&meta("Genesis"), &sample_pages(), &[], &[], None, "2026-07-25T00:00:00Z");
+        for tag in ["dc:publisher", "dc:rights", "dc:description", "dc:date", "dc:subject"] {
+            assert!(!opf.contains(&format!("<{tag}>")), "{tag} was emitted with nothing in it");
+        }
+        assert!(!opf.contains("belongs-to-collection"));
+    }
+
+    #[test]
+    fn a_series_number_without_a_series_sorts_nowhere_so_it_is_not_emitted() {
+        let mut m = meta("Genesis");
+        m.series_index = Some(3);
+        let opf = content_opf(&m, &sample_pages(), &[], &[], None, "2026-07-25T00:00:00Z");
+        assert!(!opf.contains("group-position"));
+    }
+
+    #[test]
+    fn front_matter_is_typed_so_a_reader_knows_where_the_book_begins() {
+        let pages = vec![
+            Page { role: Role::TitlePage, nav_depth: 0, ..Page::body("front-title", "Genesis", vec![]) },
+            Page { role: Role::Copyright, nav_depth: 0, ..Page::body("front-copyright", "Copyright", vec!["© 2026".into()]) },
+            Page::body("page-01", "In the beginning", vec!["Light".into()]),
+        ];
+        let title = page_xhtml(&pages[0], "Genesis");
+        assert!(title.contains("epub:type=\"titlepage\""));
+        assert!(title.contains("<h1>Genesis</h1>"), "the book's name is the one h1: {title}");
+        assert!(page_xhtml(&pages[1], "Genesis").contains("epub:type=\"copyright-page\""));
+        assert!(page_xhtml(&pages[2], "Genesis").contains("<h2>In the beginning</h2>"));
+
+        let nav = nav_xhtml("Genesis", &pages);
+        // The contents proper — the landmarks nav below it legitimately names the title page.
+        let toc = &nav[..nav.find("landmarks").expect("a landmarks nav")];
+        assert!(!toc.contains("front-title"), "a contents page does not list its own title page");
+        assert!(!toc.contains("front-copyright"));
+        assert!(toc.contains("page-01.xhtml"));
+        // Landmarks say where the body starts — the first non-front-matter page, not page one of
+        // the file.
+        assert!(nav.contains("epub:type=\"bodymatter\" href=\"page-01.xhtml\""), "{nav}");
+        assert!(nav.contains("epub:type=\"titlepage\" href=\"front-title.xhtml\""));
+    }
+
+    #[test]
+    fn chapters_nest_under_their_part_in_the_contents() {
+        let pages = vec![
+            Page { role: Role::Part, nav_depth: 1, ..Page::body("part-1", "Part One", vec![]) },
+            Page { nav_depth: 2, ..Page::body("ch-1", "Genesis", vec![]) },
+            Page { nav_depth: 2, ..Page::body("ch-2", "Exodus", vec![]) },
+            Page { role: Role::Part, nav_depth: 1, ..Page::body("part-2", "Part Two", vec![]) },
+            Page { nav_depth: 2, ..Page::body("ch-3", "Psalms", vec![]) },
+        ];
+        let nav = nav_xhtml("The Pentateuch", &pages);
+        // Two parts at the top, and each chapter inside a nested list rather than beside them.
+        assert_eq!(nav.matches("<ol>").count(), 4, "toc + two nested + landmarks: {nav}");
+        assert_eq!(nav.matches("</ol>").count(), 4);
+        let part2 = nav.find("part-2.xhtml").expect("part two");
+        let ch2 = nav.find("ch-2.xhtml").expect("exodus");
+        assert!(ch2 < part2, "a chapter of part one must close before part two opens");
+    }
+
+    #[test]
+    fn a_nested_entry_with_no_parent_is_promoted_rather_than_dropped() {
+        // Invalid nesting would make the nav document unparseable; losing a chapter from the
+        // contents is worse than losing its indent.
+        let pages = vec![
+            Page { nav_depth: 2, ..Page::body("ch-1", "Genesis", vec![]) },
+            Page { nav_depth: 1, ..Page::body("ch-2", "Exodus", vec![]) },
+        ];
+        let nav = nav_xhtml("Book", &pages);
+        assert!(nav.contains("ch-1.xhtml"));
+        assert!(nav.contains("ch-2.xhtml"));
+        assert_eq!(nav.matches("<ol>").count(), 2, "toc + landmarks, no orphan nesting: {nav}");
     }
 
     #[test]

@@ -388,6 +388,59 @@ pub struct EpubRequest {
     /// Embed the song itself, so the book plays. The whole reason this is EPUB.
     #[serde(default)]
     pub include_audio: Option<bool>,
+    /// Everything a store reads and a reader never sees. All optional: a book with none of it is
+    /// still a valid EPUB, and still one that sorts nowhere and shows up in no category.
+    #[serde(default)] pub subtitle: Option<String>,
+    #[serde(default)] pub illustrator: Option<String>,
+    #[serde(default)] pub translator: Option<String>,
+    #[serde(default)] pub publisher: Option<String>,
+    #[serde(default)] pub description: Option<String>,
+    #[serde(default)] pub rights: Option<String>,
+    #[serde(default)] pub subjects: Vec<String>,
+    #[serde(default)] pub isbn: Option<String>,
+    #[serde(default)] pub series: Option<String>,
+    #[serde(default)] pub series_index: Option<i64>,
+    #[serde(default)] pub pubdate: Option<String>,
+    /// A dedication, set on its own page before the book starts.
+    #[serde(default)] pub dedication: Option<String>,
+    /// Skip the generated title and copyright pages — for somebody who has made their own.
+    #[serde(default)] pub bare: bool,
+}
+
+/// The pages that turn an export into a book: a title page, a copyright page, and a dedication if
+/// there is one.
+///
+/// None of them are listed in the contents (`nav_depth: 0`) — a contents page whose first three
+/// entries are "Title page · Copyright · Dedication" is the mark of a converter — and all of them
+/// declare their `epub:type`, so a reader knows where the book actually begins.
+pub fn front_matter(
+    title: &str, subtitle: Option<&str>, author: &str, publisher: Option<&str>,
+    rights: Option<&str>, isbn: Option<&str>, dedication: Option<&str>,
+) -> Vec<crate::epub::Page> {
+    use crate::epub::{Page, Role};
+    let mut out = Vec::new();
+
+    let mut lines = Vec::new();
+    if let Some(sub) = subtitle.filter(|s| !s.trim().is_empty()) { lines.push(sub.to_string()); }
+    if !author.trim().is_empty() { lines.push(author.to_string()); }
+    if let Some(pub_) = publisher.filter(|s| !s.trim().is_empty()) { lines.push(pub_.to_string()); }
+    out.push(Page { role: Role::TitlePage, nav_depth: 0,
+                    ..Page::body("front-title", title, lines) });
+
+    let mut c = Vec::new();
+    if let Some(r) = rights.filter(|s| !s.trim().is_empty()) { c.push(r.to_string()); }
+    if let Some(p) = publisher.filter(|s| !s.trim().is_empty()) { c.push(p.to_string()); }
+    if let Some(i) = isbn.filter(|s| !s.trim().is_empty()) { c.push(format!("ISBN {i}")); }
+    if !c.is_empty() {
+        out.push(Page { role: Role::Copyright, nav_depth: 0,
+                        ..Page::body("front-copyright", "Copyright", c) });
+    }
+
+    if let Some(d) = dedication.map(str::trim).filter(|s| !s.is_empty()) {
+        out.push(Page { role: Role::FrontMatter, nav_depth: 0,
+                        ..Page::body("front-dedication", "", vec![d.to_string()]) });
+    }
+    out
 }
 
 /// Assemble the edition into an EPUB 3 file.
@@ -446,6 +499,11 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
             // Filled in below, once it is known whether there is audio to read along with.
             has_overlay: false,
             span: (0.0, 0.0),
+            audio: None,
+            role: crate::epub::Role::Body,
+            // Every page in the contents is unusable past about a dozen; every twelfth page is a
+            // usable set of bookmarks through a long edition, and the first page is always there.
+            nav_depth: if i == 0 || i % 12 == 0 { 1 } else { 0 },
         });
     }
 
@@ -508,20 +566,48 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
             speaker_at: (0.5, 0.7),
             has_overlay: false,
             span: (0.0, 0.0),
+            audio: None,
+            role: crate::epub::Role::FrontMatter,
+            nav_depth: 0,
         });
+    }
+
+    let title = edition["title"].as_str().unwrap_or("Edition");
+    if !payload.bare {
+        let mut front = front_matter(
+            title, payload.subtitle.as_deref(), &payload.author, payload.publisher.as_deref(),
+            payload.rights.as_deref(), payload.isbn.as_deref(), payload.dedication.as_deref(),
+        );
+        front.append(&mut pages);
+        pages = front;
+    }
+
+    let mut meta = crate::epub::Metadata::new(
+        title, &payload.author, edition["language"].as_str().unwrap_or("en"),
+        // An ISBN is the identifier when there is one: it is what a store matches on, and a UUID
+        // beside it means the same book counts as two.
+        &payload.isbn.as_deref().filter(|s| !s.trim().is_empty())
+            .map(|i| format!("urn:isbn:{i}"))
+            .unwrap_or_else(|| format!("urn:uuid:{}", payload.edition_id)),
+    );
+    meta.subtitle = payload.subtitle.clone();
+    meta.publisher = payload.publisher.clone();
+    meta.description = payload.description.clone();
+    meta.rights = payload.rights.clone();
+    meta.subjects = payload.subjects.clone();
+    meta.series = payload.series.clone();
+    meta.series_index = payload.series_index;
+    meta.pubdate = payload.pubdate.clone();
+    meta.isbn = payload.isbn.clone();
+    for (role, who) in [("ill", &payload.illustrator), ("trl", &payload.translator)] {
+        if let Some(name) = who.as_deref().filter(|s| !s.trim().is_empty()) {
+            meta.contributors.push((role.into(), name.into()));
+        }
     }
 
     let cover = images.first().map(|(n, _)| n.clone());
     let bytes = crate::epub::build(
-        edition["title"].as_str().unwrap_or("Edition"),
-        &payload.author,
-        edition["language"].as_str().unwrap_or("en"),
-        &format!("urn:uuid:{}", payload.edition_id),
-        &pages,
-        &images,
-        &audio,
-        cover.as_deref(),
-        &crate::models::now_iso(),
+        &meta, &pages, &images, &audio, cover.as_deref(), &crate::models::now_iso(),
     );
 
     let dir = match crate::project_sync::project_folder(
@@ -530,7 +616,7 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
         None => state.db.global_root().join("ebooks"),
     };
     std::fs::create_dir_all(&dir).map_err(e)?;
-    let file = dir.join(format!("{}.epub", slugify(edition["title"].as_str().unwrap_or("edition"))));
+    let file = dir.join(format!("{}.epub", super::projects::slugify(edition["title"].as_str().unwrap_or("edition"))));
     std::fs::write(&file, &bytes).map_err(e)?;
 
     state.db.collection::<Document>("editions")
@@ -556,12 +642,6 @@ pub async fn build_epub(state: State<'_, AppState>, payload: EpubRequest) -> Res
              so it is worth generating the music first."
         } else { "" },
     }))
-}
-
-fn slugify(s: &str) -> String {
-    s.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect::<String>()
-        .split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-")
 }
 
 // ── Stores ──────────────────────────────────────────────────────────────────

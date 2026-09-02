@@ -9,7 +9,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   BookMarked, Loader2, Sparkles, Image as Img, RefreshCw, Trash2, ExternalLink,
-  Download, Store, AlertTriangle, Music2, DollarSign, Users,
+  Download, Store, AlertTriangle, Music2, DollarSign, Users, Library,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +18,7 @@ import { useBarAction, useSectionAction } from "../lib/pageActions";
 import { novelFlow } from "../lib/guidedFlows";
 import { openLoginUrl } from "../lib/openLogin";
 import AvatarUniverses from "../components/AvatarUniverses";
+import VolumeWorkbench from "../components/VolumeWorkbench";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Graphic novels → ebooks.
@@ -187,10 +188,10 @@ export default function GraphicNovels() {
         </div>
         <div className="flex gap-1">
           {[["write", "Write", Sparkles], ["pages", "Pages", Img], ["readers", "Readers", Users],
-            ["book", "Bind", BookMarked], ["stores", "Stores", Store]]
+            ["volume", "Volume", Library], ["book", "Bind", BookMarked], ["stores", "Stores", Store]]
             .map(([id, label, Icon]) => (
               <Button key={id} variant={tab === id ? "default" : "secondary"} size="sm" onClick={() => setTab(id)}
-                      disabled={id !== "write" && id !== "readers" && !active}>
+                      disabled={!["write", "readers", "volume"].includes(id) && !active}>
                 <Icon className="w-3.5 h-3.5 mr-1.5" />{label}
               </Button>
             ))}
@@ -280,6 +281,9 @@ export default function GraphicNovels() {
           onRetold={(ed) => { setEditions((list) => [...list, ed]); setActive(ed); setTab("pages"); }}
         />
       )}
+
+      {/* ── Volume ───────────────────────────────────────────────────────── */}
+      {tab === "volume" && <VolumeWorkbench projectId={activeProjectId} />}
 
       {/* ── Pages ────────────────────────────────────────────────────────── */}
       {tab === "pages" && active && (
