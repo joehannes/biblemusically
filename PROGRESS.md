@@ -66,7 +66,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ not started · ⛔ blocked (reason g
 | Subscription Worker live | ✅ verified 2026-08-04 — `/` and `/health` 200, `/get` 302 |
 | Marketing site exists + deployed to Cloudflare | ✅ verified 2026-08-04 — served by the same Worker from `server/site/index.html` |
 | Subscription flow works end-to-end (sign-in → entitlement → verify) | ⬜ needs a real test |
-| **Rotate the Ed25519 signing key** | ⬜ ⚠️ the private key was committed to git history up to v0.91.0; anyone with repo access can mint a lifetime entitlement |
+| **Rotate the Ed25519 signing key** | 🔄 ⚠️ **prepared, needs the owner to run one command** — verified 2026-09-02: the leaked `public_key` is byte-identical to the one the app verifies today, so the compromised key is still *in service*, and the admin token leaked with it. The app now accepts a key list with retirement dates, `deploy.py --rotate-key` mints and deploys a replacement, and CI refuses to carry a credential again. Procedure: `docs/SECURITY-KEY-ROTATION.md` |
 | Android build | ✅ 2026-08-05 — **the entry was stale.** `scripts/android-env.sh` already discovers the NDK, forces JDK 17 and repoints `RUSTC` at rustup; all four Android targets are installed and CI built `lightkid_studio_0.114.0.apk` |
 
 ## Next up, in order
@@ -79,7 +79,7 @@ Pick the top unfinished one. Each is bounded; none needs a decision from the own
 These are the ones a coding session should *not* decide by itself:
 
 - **Suno admin switch** — the engine stays disconnected until there is one.
-- **Rotate the Ed25519 signing key** — a production credential operation. ⚠️ still outstanding.
+- **Rotate the Ed25519 signing key** — a production credential operation, and the only step left is `python3 server/deploy.py --rotate-key --rotate-admin-token` plus two lines in `subscription.rs`. ⚠️ still outstanding, and the key is live. See `docs/SECURITY-KEY-ROTATION.md`.
 - **Subscription flow end-to-end** — needs a real account to test against.
 - **Multi-user / team**, **mobile parity** — product questions with no obvious right answer.
 

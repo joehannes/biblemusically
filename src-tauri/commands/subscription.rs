@@ -50,9 +50,42 @@ fn bson_to_value(doc: Document) -> Value {
 /// does not need a rebuild.
 const DEFAULT_BASE: &str = "https://studio-lightkid.johannes-neugschwentner.workers.dev";
 
-/// The server's Ed25519 public key, base64url. Compiled in: a public key in a config file is a public
-/// key an attacker can replace with their own.
-const SUBS_PUBLIC_KEY: &str = "9-9bAxvvDtG98OKRR8xn3OeOHk0S0aruy4UA8FUmQwY";
+/// A public key the server may have signed with, and how long this build keeps accepting it.
+pub struct SubsKey {
+    /// Ed25519 verifying key, base64url, 32 raw bytes.
+    pub b64: &'static str,
+    /// `None` for the key in service. `Some(unix)` for a retired one: still accepted until then, so a
+    /// rotation does not lock out every user at the instant the server switches over.
+    pub accept_until: Option<i64>,
+}
+
+/// The keys an entitlement may be signed with, in service first.
+///
+/// Compiled in rather than configured, because a public key in a config file is a public key an
+/// attacker can replace with their own.
+///
+/// A *list* rather than a constant because rotating a single key is not an operation anyone can
+/// safely perform: entitlements last about a day and are cached on disk for a week's grace, so the
+/// moment the server starts signing with a new key, every token already issued stops verifying and
+/// every user who is offline, or simply has not refreshed yet, is locked out of work they paid for.
+/// Overlapping the old key for a fortnight makes the rotation invisible instead.
+///
+/// **To rotate** (see `docs/SECURITY-KEY-ROTATION.md` for the whole procedure):
+///   1. `python3 server/deploy.py --rotate-key` — mints a new pair, uploads the private half as the
+///      Worker secret, prints the public half. The private key is never printed and never written
+///      anywhere but the gitignored deploy state.
+///   2. Put the printed key at the TOP of this list with `accept_until: None`, and give the entry
+///      that was on top an `accept_until` a fortnight out.
+///   3. Ship a release. After that date the old key stops being accepted and its entry can go.
+pub const SUBS_PUBLIC_KEYS: &[SubsKey] = &[
+    // ⚠️ COMPROMISED, and still the key in service. Its private half was committed to this
+    // repository in v0.88.0 (`server/.deploy-state.json`, removed again in `feee638`) and is still
+    // reachable in the history, together with the admin token. Anyone who has ever cloned this repo
+    // can mint themselves a lifetime entitlement that this app verifies. Rotating it needs the
+    // Cloudflare credentials, so it is the owner's to run — the procedure is one command and is
+    // written down in `docs/SECURITY-KEY-ROTATION.md`.
+    SubsKey { b64: "9-9bAxvvDtG98OKRR8xn3OeOHk0S0aruy4UA8FUmQwY", accept_until: None },
+];
 
 /// How long a stale entitlement keeps working when the server cannot be reached.
 const GRACE_DAYS: i64 = 7;
@@ -66,7 +99,18 @@ fn b64u_decode(s: &str) -> Option<Vec<u8>> {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(s.trim()).ok()
 }
 
-/// Check the signature and the expiry, and return the payload.
+/// Check a token against every key this build accepts, honouring each key's retirement.
+///
+/// Tries them in order, so the key in service is the one that normally answers and a retired key
+/// costs an extra signature check only for a token old enough to need it. A key past its
+/// `accept_until` is not tried at all: that date is the whole point of listing it.
+pub fn verify_with_keys(token: &str, keys: &[SubsKey], now_unix: i64, grace_days: i64) -> Option<Value> {
+    keys.iter()
+        .filter(|k| k.accept_until.is_none_or(|until| now_unix <= until))
+        .find_map(|k| verify_entitlement(token, k.b64, now_unix, grace_days))
+}
+
+/// Check the signature and the expiry against ONE key, and return the payload.
 ///
 /// `None` for anything that does not verify — a tampered, truncated or foreign-signed token is treated
 /// exactly like no token at all, because the alternative is deciding how much of a forgery to believe.
@@ -135,7 +179,7 @@ pub async fn current(state: &AppState) -> Option<Value> {
     let settings = settings_of(state).await;
     let token = settings["subs_entitlement"].as_str().unwrap_or("");
     if token.is_empty() { return None; }
-    verify_entitlement(token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS)
+    verify_with_keys(token, SUBS_PUBLIC_KEYS, chrono::Utc::now().timestamp(), GRACE_DAYS)
 }
 
 /// The account this install belongs to, taken from the stored token WITHOUT verifying it.
@@ -315,7 +359,7 @@ pub async fn redeem_id_token(
     }
     let token = parsed["entitlement"].as_str().unwrap_or("").to_string();
     // Verify what we were just handed. A server that has been replaced cannot grant anything.
-    let verified = verify_entitlement(&token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS)
+    let verified = verify_with_keys(&token, SUBS_PUBLIC_KEYS, chrono::Utc::now().timestamp(), GRACE_DAYS)
         .ok_or("The account server returned an entitlement this app cannot verify.")?;
     store_entitlement(state, &token).await;
     apply_cache_key(state).await;
@@ -347,7 +391,7 @@ pub async fn subs_refresh(state: State<'_, AppState>) -> Res<Value> {
         return Err(parsed["error"].as_str().unwrap_or("could not refresh").to_string());
     }
     let token = parsed["entitlement"].as_str().unwrap_or("").to_string();
-    let verified = verify_entitlement(&token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS)
+    let verified = verify_with_keys(&token, SUBS_PUBLIC_KEYS, chrono::Utc::now().timestamp(), GRACE_DAYS)
         .ok_or("The refreshed entitlement does not verify.")?;
     store_entitlement(&state, &token).await;
     apply_cache_key(&state).await;
@@ -482,7 +526,7 @@ pub async fn subs_redeem(state: State<'_, AppState>, code: String) -> Res<Value>
         return Err(parsed["error"].as_str().unwrap_or("that code did not work").to_string());
     }
     if let Some(token) = parsed["entitlement"].as_str() {
-        if verify_entitlement(token, SUBS_PUBLIC_KEY, chrono::Utc::now().timestamp(), GRACE_DAYS).is_some() {
+        if verify_with_keys(token, SUBS_PUBLIC_KEYS, chrono::Utc::now().timestamp(), GRACE_DAYS).is_some() {
             store_entitlement(&state, token).await;
             apply_cache_key(&state).await;
         }
@@ -689,6 +733,85 @@ mod tests {
         let forged = format!("{}.{sig}", b64.encode(payload.to_string().as_bytes()));
         assert!(verify_entitlement(&forged, &pub_b64, 1_000_000_000, 7).is_none(),
                 "a rewritten payload must not verify");
+    }
+
+    // ── rotating the signing key ────────────────────────────────────────────
+    //
+    // The property that makes a rotation performable at all: for a fortnight, tokens signed by either
+    // key verify. Without that, switching the server's key locks out every user holding a token
+    // issued a minute earlier — which is why the compromised key had not been rotated.
+
+    fn keyed(seed: u8) -> (SigningKey, String) {
+        use base64::Engine;
+        let key = SigningKey::from_bytes(&[seed; 32]);
+        let pub_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(key.verifying_key().to_bytes());
+        (key, pub_b64)
+    }
+
+    #[test]
+    fn during_the_overlap_both_the_new_and_the_retired_key_verify() {
+        let (old_key, old_pub) = keyed(1);
+        let (new_key, new_pub) = keyed(2);
+        let now = 1_000_000_000;
+        let keys = [
+            SubsKey { b64: Box::leak(new_pub.into_boxed_str()), accept_until: None },
+            SubsKey { b64: Box::leak(old_pub.into_boxed_str()), accept_until: Some(now + 14 * 86400) },
+        ];
+
+        // A token minted before the switch still works…
+        let old_token = issue(sample(2_000_000_000), &old_key);
+        assert!(verify_with_keys(&old_token, &keys, now, 7).is_some(), "locked out an existing user");
+        // …and so does one minted after it.
+        let new_token = issue(sample(2_000_000_000), &new_key);
+        assert!(verify_with_keys(&new_token, &keys, now, 7).is_some());
+    }
+
+    #[test]
+    fn past_its_retirement_the_old_key_stops_being_accepted() {
+        let (old_key, old_pub) = keyed(1);
+        let (_, new_pub) = keyed(2);
+        let retires = 1_000_000_000;
+        let keys = [
+            SubsKey { b64: Box::leak(new_pub.into_boxed_str()), accept_until: None },
+            SubsKey { b64: Box::leak(old_pub.into_boxed_str()), accept_until: Some(retires) },
+        ];
+        let token = issue(sample(i64::MAX / 2), &old_key);
+
+        assert!(verify_with_keys(&token, &keys, retires, 7).is_some(), "retired a second too early");
+        assert!(verify_with_keys(&token, &keys, retires + 1, 7).is_none(),
+                "a compromised key must stop verifying once its window closes, whatever the token says");
+    }
+
+    #[test]
+    fn a_key_that_is_on_no_list_never_verifies_however_long_the_window() {
+        let (attacker, _) = keyed(3);
+        let (_, mine) = keyed(2);
+        let keys = [SubsKey { b64: Box::leak(mine.into_boxed_str()), accept_until: None }];
+        let forged = issue(sample(2_000_000_000), &attacker);
+        assert!(verify_with_keys(&forged, &keys, 1_000_000_000, 7).is_none());
+    }
+
+    #[test]
+    fn an_empty_key_list_grants_nothing() {
+        // The state a build would be in if somebody removed the last entry: refuse, never allow.
+        let (key, _) = keyed(1);
+        let token = issue(sample(2_000_000_000), &key);
+        assert!(verify_with_keys(&token, &[], 1_000_000_000, 7).is_none());
+    }
+
+    #[test]
+    fn the_shipped_list_has_exactly_one_key_in_service() {
+        // More than one un-retired key means two live signers, which is not a rotation but a second
+        // way in. Zero means nobody can use the app at all.
+        let in_service = SUBS_PUBLIC_KEYS.iter().filter(|k| k.accept_until.is_none()).count();
+        assert_eq!(in_service, 1, "exactly one key may be in service");
+        for k in SUBS_PUBLIC_KEYS {
+            use base64::Engine;
+            let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(k.b64)
+                .expect("every listed key is base64url");
+            assert_eq!(raw.len(), 32, "an Ed25519 verifying key is 32 bytes");
+        }
     }
 
     #[test]

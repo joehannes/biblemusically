@@ -79,6 +79,11 @@ jobs:
       # and never given a button. Thirty of the last kind were found by hand in 2026-08.
       - name: Every command is reachable, and reaches something
         run: npm run audit:ipc
+      # The signing key that mints entitlements was committed once already (v0.88.0) and is still in
+      # the history. An ignore rule cannot catch a file that is already tracked, so this checks what
+      # git is actually carrying. See docs/SECURITY-KEY-ROTATION.md.
+      - name: No credential is tracked
+        run: npm run audit:secrets
 
   # Made first and separately so every platform job attaches to the same release rather than racing to
   # create it — which is how you end up with five releases for one tag.
