@@ -39,6 +39,7 @@ export const composerFlow = {
       theme: ctx.cfg?.themes?.global || "",
       style_keywords: ctx.cfg?.style_keywords || [],
       chapter: ctx.chapterRef || "",
+      craft: ctx.cfg?.craft || {},
       generate_fields: ctx.cfg?.generate || {},
     },
   }),
@@ -162,6 +163,65 @@ export const composerFlow = {
         );
         return opts;
       },
+    },
+    {
+      id: "faithfulness",
+      title: "Closeness",
+      question: (ctx) => ctx.chapterRef
+        ? `How close should the words stay to ${ctx.chapterRef}?`
+        : "How close should the words stay to your source?",
+      help: "The one decision that changes the result most, and the only one nobody can make for you.",
+      reveals: "craft",
+      // Only worth asking when there is a source to be faithful to.
+      when: (ctx) => Boolean(ctx.chapterText?.trim() || ctx.chapterRef),
+      options: () => [
+        {
+          id: "quote", label: "Use its own words",
+          hint: "Selected and arranged, not rewritten. Nothing invented.",
+          apply: (c) => c.setCfg?.((p) => ({ ...p, craft: { ...(p.craft || {}), faithfulness: "quote" } })),
+        },
+        {
+          id: "close", label: "Say the same thing, singably",
+          hint: "Every image and claim kept; the wording is the song's.",
+          recommended: true,
+          apply: (c) => c.setCfg?.((p) => ({ ...p, craft: { ...(p.craft || {}), faithfulness: "close" } })),
+        },
+        {
+          id: "inspired", label: "Take it somewhere",
+          hint: "A starting point rather than a boundary.",
+          apply: (c) => c.setCfg?.((p) => ({ ...p, craft: { ...(p.craft || {}), faithfulness: "inspired" } })),
+        },
+      ],
+    },
+    {
+      id: "shape",
+      title: "Shape",
+      question: "What shape is the song?",
+      help: (ctx) => lyricTagHint(ctx.settings?.music_engine),
+      reveals: "craft",
+      options: () => [
+        {
+          id: "verse_chorus", label: "Verses and a chorus",
+          hint: "The chorus is the line people leave with.",
+          recommended: true,
+          apply: (c) => c.setCfg?.((p) => ({ ...p, craft: { ...(p.craft || {}), form: "verse_chorus" } })),
+        },
+        {
+          id: "verse_refrain", label: "One line that comes back",
+          hint: "Quieter than a chorus — it ends every verse.",
+          apply: (c) => c.setCfg?.((p) => ({ ...p, craft: { ...(p.craft || {}), form: "verse_refrain" } })),
+        },
+        {
+          id: "litany", label: "A list that builds",
+          hint: "The same frame, filled differently, until it lands.",
+          apply: (c) => c.setCfg?.((p) => ({ ...p, craft: { ...(p.craft || {}), form: "litany" } })),
+        },
+        {
+          id: "through_composed", label: "It never repeats",
+          hint: "A story that only moves forward.",
+          apply: (c) => c.setCfg?.((p) => ({ ...p, craft: { ...(p.craft || {}), form: "through_composed" } })),
+        },
+      ],
     },
     {
       id: "style_depth",

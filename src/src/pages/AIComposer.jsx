@@ -17,6 +17,7 @@ import {
   ClipboardCheck, ListChecks, RefreshCw, SlidersHorizontal, Dices
 } from "lucide-react";
 import { appendDailyFlavor } from "../lib/dailyFlavor";
+import { checkSingability } from "../lib/singability";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useAutoSave, AutoSaveChip, useBackgroundSave, restore } from "../lib/hooks";
@@ -102,12 +103,32 @@ const DEFAULT_CFG = {
   mj_no: "",
   mj_seed: "",
   style_keywords: ["cinematic biblical concept art", "sacred celestial symbolism", "radiant divine light"],
+  // How the song is written, as opposed to what it is about. Ids only — the vocabulary and the
+  // sentences they become live in commands/craft.rs, so the picker cannot offer a value the prompt
+  // builder does not know. Defaults mirror `craft::DEFAULTS`.
+  craft: { form: "verse_chorus", faithfulness: "close", voice: "we", register: "plain", repetition: "balanced" },
   targets: [
     { language: "English", styles: "Messianic Liquid Drum and Bass" },
     { language: "German", styles: "Messianic Alpine Electronic Folk" },
   ],
   sections: [],
 };
+
+// The dials, in the order they constrain each other: faithfulness frames what the source *is* for
+// this run, form decides the shape, and the rest colour it. The options themselves come from the
+// backend (`craft_catalogue`), so this file cannot offer a value the prompt builder does not know.
+const CRAFT_DIALS = [
+  { key: "faithfulness", label: "How close to the source",
+    blurb: "The most consequential choice here, and the one the app had no word for until now." },
+  { key: "form", label: "Shape",
+    blurb: "What comes back and what only happens once." },
+  { key: "voice", label: "Who is speaking",
+    blurb: "A psalm in the first person and the same psalm reported about somebody else are different songs." },
+  { key: "register", label: "How it talks",
+    blurb: "Plain, literary, or deliberately old." },
+  { key: "repetition", label: "How hard the hook works",
+    blurb: "How much returns, and how early." },
+];
 
 const ASSIST_PRESETS = {
   chapter_lens: {
@@ -199,6 +220,34 @@ function CollapsibleSection({ title, titleIcon: TitleIcon, badge, actions, defau
         <div className="p-5">{children}</div>
       </div>
     </Card>
+  );
+}
+
+/**
+ * What the engine will do with these lines, before it does it.
+ *
+ * Shown only when there is something to say. A checker that renders "looks fine" on every song is a
+ * checker people stop reading, and then it is not there for the one song that needed it.
+ */
+function SingabilityNote({ lyrics, craft }) {
+  const text = typeof lyrics === "string" ? lyrics
+    : Array.isArray(lyrics) ? lyrics.map((l) => `[${l?.section || ""}]\n${l?.lines || ""}`).join("\n")
+    : "";
+  const range = Number(craft?.syllables_min) > 0 && Number(craft?.syllables_max) > 0
+    ? [Number(craft.syllables_min), Number(craft.syllables_max)] : null;
+  const r = checkSingability(text, { range });
+  if (r.ok) return null;
+  return (
+    <div className="p-1.5 rounded border border-amber-500/40 bg-amber-500/5 text-[10px] text-amber-500/90
+                    flex items-start gap-1.5" data-testid="singability-note">
+      <Info className="w-3 h-3 shrink-0 mt-0.5" />
+      <span>
+        {r.uneven
+          ? <span>The lines vary so much that there is no metre to sing to — worth a look before rendering.</span>
+          : <><span className="text-mono">{r.outliers.length}</span> <span>line(s) sit outside</span>{" "}
+             <span className="text-mono">{r.low}–{r.high}</span> <span>syllables, where the rest of this song sits. The singer will rush or pad them.</span></>}
+      </span>
+    </div>
   );
 }
 
@@ -315,6 +364,11 @@ export default function AIComposer() {
       toast.error("Failed to save genre preset: " + err);
     }
   };
+  // The craft vocabulary, from the one place that defines it. A failure leaves the section empty
+  // rather than guessing at options the composer would then not understand.
+  const [craftCatalogue, setCraftCatalogue] = useState(null);
+  useEffect(() => { api.craftCatalogue().then(setCraftCatalogue).catch(() => setCraftCatalogue(null)); }, []);
+
   const [assistPreset, setAssistPreset] = useState("chapter_lens");
   const [assistPrompt, setAssistPrompt] = useState("");
   const [assistTemperature, setAssistTemperature] = useState([ASSIST_PRESETS.chapter_lens.temperature]);
@@ -763,6 +817,7 @@ export default function AIComposer() {
         generate: cfg.generate || {},
         title_pattern: cfg.title_pattern,
         artist: cfg.artist,
+        craft: cfg.craft || {},
       });
       if (r.error) return toast.error(r.error);
       if (r.items?.length) {
@@ -845,7 +900,7 @@ export default function AIComposer() {
     stylePacks: STYLE_PACKS,
     generate,
   };
-  const CONFIG_SECTIONS = ["profiles", "fields", "themes", "images", "keywords", "chapter", "sections", "targets", "results"];
+  const CONFIG_SECTIONS = ["profiles", "fields", "themes", "craft", "images", "keywords", "chapter", "sections", "targets", "results"];
   const guide = useGuidedView({
     view: "composer",
     projectId: activeProjectId,
@@ -1068,6 +1123,74 @@ export default function AIComposer() {
               </label>
             ))}
           </div>
+        </CollapsibleSection>
+
+        {/* How the song is written, as opposed to what it is about. Until this existed, everything
+            steering the composer was a free-text theme, a genre CSV and the user's section ideas —
+            so two runs from the same chapter differed by temperature and by nothing anybody chose. */}
+        <CollapsibleSection open={guide.sectionOpen("craft")} onToggle={guide.pinSection("craft")}
+                            status={guide.sectionStatus("craft")} hidden={!guide.sectionVisible("craft")}
+                            title="How it's written" badge="form, faithfulness, voice" titleIcon={PenLine}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {CRAFT_DIALS.map(({ key, label, blurb }) => (
+              <div key={key} className="space-y-1.5">
+                <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">{label}</div>
+                <div className="text-[11px] text-muted-foreground leading-snug">{blurb}</div>
+                <div className="grid gap-1.5">
+                  {(craftCatalogue?.[key] || []).map((o) => {
+                    const active = (cfg.craft?.[key] || "") === o.id;
+                    return (
+                      <button
+                        key={o.id}
+                        data-testid={`craft-${key}-${o.id}`}
+                        onClick={() => setCfg((p) => ({ ...p, craft: { ...(p.craft || {}), [key]: o.id } }))}
+                        className={`text-left rounded-md border p-2 transition-colors ${
+                          active ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                      >
+                        <div className="text-xs font-medium">{o.label}</div>
+                        <div className="text-[10px] text-muted-foreground leading-snug">{o.hint}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Metre. Optional, and off unless somebody asks for it: an unasked-for syllable range is
+              a constraint the composer will fight, and the song's own consistency is usually the
+              better standard. */}
+          <div className="mt-4 pt-4 border-t border-border/60 grid gap-3 sm:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Lines per verse</span>
+              <Input type="number" min={2} max={8} value={cfg.craft?.lines_per_verse ?? ""}
+                     data-testid="craft-lines-per-verse"
+                     onChange={(e) => setCfg((p) => ({ ...p, craft: { ...(p.craft || {}),
+                       lines_per_verse: e.target.value === "" ? undefined : Number(e.target.value) } }))}
+                     placeholder="any" className="h-9 text-xs" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Syllables, fewest</span>
+              <Input type="number" min={2} max={20} value={cfg.craft?.syllables_min ?? ""}
+                     data-testid="craft-syllables-min"
+                     onChange={(e) => setCfg((p) => ({ ...p, craft: { ...(p.craft || {}),
+                       syllables_min: e.target.value === "" ? undefined : Number(e.target.value) } }))}
+                     placeholder="any" className="h-9 text-xs" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">Syllables, most</span>
+              <Input type="number" min={2} max={20} value={cfg.craft?.syllables_max ?? ""}
+                     data-testid="craft-syllables-max"
+                     onChange={(e) => setCfg((p) => ({ ...p, craft: { ...(p.craft || {}),
+                       syllables_max: e.target.value === "" ? undefined : Number(e.target.value) } }))}
+                     placeholder="any" className="h-9 text-xs" />
+            </label>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            The engine sings this text exactly as written, so a line well outside the range is rushed
+            or padded by the singer rather than fixed. Set a range only if you want one — otherwise the
+            song's own consistency is what gets checked.
+          </p>
         </CollapsibleSection>
 
         <CollapsibleSection open={guide.sectionOpen("themes")} onToggle={guide.pinSection("themes")} status={guide.sectionStatus("themes")} hidden={!guide.sectionVisible("themes")} title="Image & Lyrics Flavor Themes" badge="GUI Mode" titleIcon={Settings}>
@@ -1470,6 +1593,10 @@ export default function AIComposer() {
                         <span className="font-semibold text-primary">Prompt:</span> {item.image_prompt}
                       </div>
                     )}
+                    {/* Checked here rather than after a take: the engine sings this verbatim, so a
+                        line well outside the song's own metre costs a whole generation to discover.
+                        A warning, never a block — the counter is a heuristic and says so. */}
+                    <SingabilityNote lyrics={item.lyrics} craft={cfg.craft} />
                   </div>
                 ))}
               </div>

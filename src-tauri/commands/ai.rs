@@ -363,6 +363,11 @@ pub struct ComposeRequest {
     pub title_pattern: String,
     #[serde(default)]
     pub artist: String,
+    /// How this song is written — form, faithfulness to the source, point of view, register,
+    /// repetition, verse length and metre. See `commands::craft`: a closed vocabulary, because a
+    /// dial handed to the model as free text is a dial with no defined effect.
+    #[serde(default)]
+    pub craft: Value,
 }
 
 /// Request for the freeform (non-Bible) topic composer. The user roughly describes a topic
@@ -1084,8 +1089,12 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     // The project brief says what this project is about; this says whose voice it should be in.
     let profile_block = crate::commands::social::taste_profile_block().await;
 
+    // Ahead of the source text on purpose: "use its own words" and "take it somewhere" are
+    // instructions about what the source *is* for this run, so they have to be read before it.
+    let craft_block = crate::commands::craft::craft_prompt_block(&payload.craft);
+
     let user_prompt = format!(
-        "{profile_block}{brief_block}{research_block}{learnings_block}\
+        "{profile_block}{brief_block}{research_block}{learnings_block}{craft_block}\
          Source chapter text:\n{}\n\n\
          User-authored section ideas (apply to bracket prompts when matching lines):\n{}\n\n\
          Global theme: {}\n\

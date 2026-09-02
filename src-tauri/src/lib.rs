@@ -789,6 +789,7 @@ pub fn run() {
             commands::project_interview_next,
             commands::project_interview_save,
             commands::guide_today,
+            commands::craft_catalogue,
             commands::guide_templates,
             commands::get_workflow_state,
             commands::save_workflow_state,
