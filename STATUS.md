@@ -4,6 +4,82 @@ A dated log of observed project state, **newest observation first** (reverse-chr
 
 ---
 
+## 2026-09-02 (later) — What the audit asked for, built: rotation, HTTP Suno, a book engine, and a reader
+
+The implementation pass on top of the audit above. Baseline stayed green throughout — the closing
+figures are **478 Rust tests, 141 JS tests, `npm run build` clean, i18n 100% in all fifteen
+languages, both static audits clean, zero compiler warnings**.
+
+**The compromised signing key is replaceable now, and the audit had understated it.** `SUBS_PUBLIC_KEY`
+was one hard-coded constant, so rotating it would have invalidated every entitlement in the field at
+once. It is `SUBS_PUBLIC_KEYS` — a list, each entry with an optional `accept_until`, so a new key
+ships alongside the old one and the old one expires on a date. `server/deploy.py` gained
+`--rotate-key` and `--rotate-admin-token`, and a `refuse_if_tracked()` that runs before anything
+reads a credential. Verifying it against the repo rather than against the ledger changed the finding:
+the leaked key is the one in service, and a shallow clone had nearly hidden that. `docs/SECURITY-KEY-ROTATION.md`
+has the procedure; the last two steps are the owner's, since they need Cloudflare credentials.
+
+**Two static audits, so the classes of defect the audit found by reading cannot recur.**
+`scripts/audit-secrets.mjs` checks git's *index* by forbidden name and by forbidden content, and was
+verified against the real historical blob — caught by both. `scripts/audit-ipc.mjs` finds invoked
+commands that are not defined, defined commands that are not registered, and wrappers nothing calls.
+Both run in CI, which now also runs on pull requests.
+
+**Suno generates over HTTP; the browser is the fallback.** The HTTP path was implemented and the job
+dispatcher never reached it — every Suno run was intercepted into browser automation before it got
+there. `real_suno_http` is the `"suno"` arm now. The browser path is not gone: a failed HTTP run
+offers it, with the reason on the card.
+
+**Midjourney came back.** It had been hidden behind a flag whose stated reason — that it drives
+Discord — described an integration this app replaced. It drives midjourney.com through a signed-in
+browser. The flag is gone and the risk note now says what actually happens.
+
+**The sidebar folds to the fifteen stops a song passes through**, expanding to all thirty-five on a
+click, defaulting from `audience_level`. Folding rather than filtering, because the app's promise is
+that the audience level never withholds a feature.
+
+**A project is asked what it is, and then told what today is for.** `interview.rs` cascades: the
+model sees every answer so far and picks the next question worth asking, writing only into the
+Brief's own fields, endable at any point, with a fixed fallback set so a spent free tier can still
+start a project. `guide_today` answers "what now" from what the project contains — artefacts
+counted, not statuses trusted — and every step names a route.
+
+**The composer has something to decide beyond the topic.** Six dials in a closed vocabulary — form,
+faithfulness to the source, voice, shape, repetition, register — because a dial handed to a model as
+free text has no defined effect. Faithfulness is stated first: for scripture, "quote it", "keep every
+claim" and "take it as a starting point" are three different products, and the app had no word for
+the difference. A syllable check runs client-side against the song's own median, flagging lines far
+outside it, deliberately generous — a checker that cries wolf gets turned off.
+
+**Avatar universes.** A reader written down: an avatar plus the givens their world supplies, across
+nine axes ordered by how much each changes a telling. Depth takes them from the front, so a sketch is
+three and deepening one later is answering more questions rather than starting over. Neighbours are
+derived by naming the axes that move, with held axes restored from the base when the model drifts and
+identical siblings dropped. An edition is then *retold* through a universe — written again, not
+translated, page for page so the art already made still belongs where it is. The prompt block names
+the avatar as one specific person and forbids generalising from the givens: the failure mode is not a
+model refusing to write for this reader but one cheerfully writing for an idea of them.
+
+**Volumes.** A book was one song; a project with forty songs had forty EPUBs and no way to say they
+belong together. A volume is the manuscript — metadata, an ordered contents of chapters and parts,
+front and back matter — assembled in one action from every song that has an edition and then editable
+as an ordinary list. Preflight names what a retailer rejects separately from what merely makes the
+book worse, and never refuses to build. The EPUB writer grew to match: publisher, description,
+rights, subjects, series, pubdate, ISBN, MARC-coded contributors, typed page roles, a nested
+contents, a landmarks nav, and per-page audio so a twelve-song volume narrates each chapter with its
+own song.
+
+**One section of a lyric can be rewritten** without rolling the song, which is the ordinary move of
+writing and had no button. The whole song goes as context so the rewrite can match the metre and
+rhymes the other sections set; splitting and splicing are pure and leave every other byte alone. The
+composer also takes a universe, so a project's song and its illustrated edition are written for the
+same person.
+
+**Still the owner's to do:** run `python3 server/deploy.py --rotate-key --rotate-admin-token` and
+edit two lines in `subscription.rs` per `docs/SECURITY-KEY-ROTATION.md`.
+
+---
+
 ## 2026-09-02 — Full-app audit: the voice layer, the IPC seam, and what the guide was not reading
 
 A whole-app pass at **v0.142.0**: 82 Rust files (48k lines), 36k lines of frontend outside the shadcn

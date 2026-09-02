@@ -287,8 +287,9 @@ of posts a month).
 
 ## Interface language (2026-07-25)
 
-- **Built-in languages** — German, Spanish, Portuguese and Russian ship as translation catalogs
-  inside the app. Switching is instant and offline; no AI request is made. The picker marks them
+- **Built-in languages** — fifteen languages ship as translation catalogs inside the app (German,
+  Spanish, French, Italian, Portuguese, Dutch, Polish, Russian, Arabic, Hebrew, Hindi, Indonesian,
+  Japanese, Korean and Chinese), each at 100% coverage and gated in CI. Switching is instant and offline; no AI request is made. The picker marks them
   "built-in".
 - **Any other language** — translated once by your AI provider and cached, including panels you have
   not opened yet (tours, dialogs, wizards), so nothing appears in English later. Bounded by a
@@ -307,3 +308,66 @@ of posts a month).
 - **Google OAuth preflight** — "Validate" and every sign-in flow ask Google whether the client and
   redirect URI are acceptable *before* opening a browser, and report the real reason (with the exact
   URI to register) instead of a silent timeout.
+
+## Getting started, and each day (2026-09-02)
+
+- **The project interview** — a new project opens on a conversation rather than eight empty boxes.
+  One question at a time, and the questions cascade: the guide sees every answer so far and picks the
+  next thing worth knowing, so a children's-story project and a grief-poetry project stop sharing a
+  path after the first answer. Every question also takes your own words, spoken or typed, and it can
+  be ended at any point with what you have said kept. Without an AI it falls back to a fixed opening
+  set, so a project can be started on a spent free tier.
+- **Today** — a panel that answers "what should I do now?" from what the project actually contains:
+  the songs at each stage, what is stalled, what was already done today. Each step names a page, so
+  the answer is clickable rather than advisory, and the reason it gives is about your project ("four
+  songs have audio and no images") rather than about the app.
+- **A sidebar that folds** — thirty-five entries fold to the fifteen stops a song passes through,
+  and expand again on one click. Which state you start in comes from the audience level you set on
+  first run. Nothing is ever withheld: folding hides doors, it does not remove them, and the page you
+  are on is always shown.
+
+## How a song is written (2026-09-02)
+
+- **Craft dials** — six decisions that change what comes out, in plain words: the song's **form**
+  (verses and a chorus, a returning line, through-composed, call and answer, a litany), how
+  **faithful** to the source text to stay (quote it, keep every claim, or take it as a starting
+  point), **who is speaking**, its **shape** (lines per verse, a syllable range), how hard the
+  **hook** works, and its **register**. Faithfulness matters most for scripture and the app had no
+  word for it before: "quote it" and "take it somewhere" are different products.
+- **A singability check before the GPU** — lines far outside the metre the rest of the song sets are
+  marked as you write, with the count and the line. It is an estimate and says so, and it never
+  blocks anything: the engines sing the text verbatim, so a line that does not scan costs a whole
+  generation to discover otherwise.
+- **Rewriting one section** — this verse is right and that chorus is not, which is what writing
+  actually is. Pick a section, say what is wrong with it (or say nothing), and get three options
+  back. The whole song goes along as context, so a rewrite matches the metre and the rhymes the other
+  sections already set. Nothing outside that section changes.
+
+## Illustrated books (`/novels`, extended 2026-09-02)
+
+- **An edition** — a song's text re-heard as an illustrated book, in one of five voices (illuminated
+  manuscript, free verse, graphic-novel panels, annotated study edition, or for children) and three
+  page shapes. Page art goes through the same image pipeline as everything else; the finished book is
+  an EPUB 3 that plays the song, with a read-along overlay where the audio has been analysed.
+- **Readers, and universes** — describe one specific reader: who they are, and the givens their world
+  supplies (language, region, cultural background, circumstances, upbringing, era, faith background,
+  means, family shape). As deep as you like — three answers or twelve. From one reader, derive
+  neighbouring ones by naming which axes move; everything you do not pick is held exactly, so what
+  differs between two of them is something you decided.
+- **Retelling** — an edition rewritten *through* a reader: written again in their language and from
+  where they stand, not translated. Page for page, so art already made still belongs where it is.
+  The composer takes a reader too, so a project's song and its book are written for the same person.
+- **Volumes** — many editions bound as one book. Assembled in one action from every song in the
+  project that has an edition, in the project's own song order, optionally one part per language,
+  with the front and back matter a book is expected to have. Everything it produces is then editable:
+  reorder it, drop a chapter, add a part, write your own preface — or have any matter page drafted
+  from the project's brief and the book's own contents.
+- **Before it goes to a store** — a preflight that names what a retailer will reject (no title, no
+  cover, no author, a chapter pointing at a deleted edition) separately from what will merely make
+  the book worse (no description, no subjects, pages whose art was never generated). It never refuses
+  to build: a draft you can hold is worth more than a checklist you cannot get past. It asks every
+  book for a colophon, because that is where the AI assistance is disclosed on the page.
+- **Metadata a store actually reads** — publisher, description, rights, subjects, series and number,
+  publication date, ISBN as the identifier when there is one, illustrator and translator with proper
+  role codes. Emitted only where there is something to say, since an empty publisher field reads to a
+  store as a publisher named "".

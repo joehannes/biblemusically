@@ -41,10 +41,25 @@ Tokens live in a new XChaCha20-Poly1305 vault and never touch `.git/config` or a
 - ~~Mobile: the Mongo→JSON prerequisite~~ — done; what remains is an NDK + JDK 17 install, see
   `TODOS.md`.
 
-## Requested 2026-09-02 — the beginner problem, and what lyrics need
+## Shipped 2026-09-02 — the guided layer, the craft layer, and the book engine
 
-Three things came out of a full-app audit (findings and fixes in `STATUS.md`, 2026-09-02). None is
-started; each is written with the shape it needs, and the reasoning that produced that shape.
+Written as a plan on the morning of 2026-09-02 and largely built the same day. What follows is the
+original plan with the shipped parts struck through, so the reasoning that produced each shape is
+still readable next to what it became. Full write-up in `STATUS.md` (2026-09-02, later).
+
+**Also shipped that day, from the audit's own findings rather than from this plan:** a rotatable
+entitlement signing key with an overlap window (`SUBS_PUBLIC_KEYS`) plus the rotation tooling and
+procedure; two static audits (`npm run audit:secrets`, `npm run audit:ipc`) wired into CI; Suno
+generation over HTTP with the browser path kept as an offered fallback; Midjourney un-hidden.
+
+**And beyond the plan, the book engine:** avatar universes — a reader described across nine axes at
+three depths, neighbouring readers derived by naming the axes that move, and an edition *retold*
+through one of them page-for-page — and volumes, which bind a project's editions into one book with
+store metadata, an ordered contents, front and back matter, and a preflight that separates what a
+retailer rejects from what merely makes the book worse.
+
+**Still open from this plan:** A1 (the cross-page flow), A3 (hands-free conversation), B3 (one lyric
+editor in one place), and all of C.
 
 ### A. A conversation that spans pages, not one per page
 
@@ -54,9 +69,17 @@ capability-gated, spoken aloud, answerable out loud (`docs/GUIDED_WORKFLOW.md`).
 between pages is the sidebar: thirty-five entries in five groups. So the guided experience is
 excellent and the app is still overwhelming, because the overwhelming part is the map, not the pages.
 
+**Partly shipped.** Two of the three pieces that make a journey exist now, at the ends rather than in
+the middle: `project_interview_next` cascades a conversation at project start — the model sees every
+answer so far and picks the next question worth asking, writing only into the Brief's own fields,
+endable at any point, with a fixed fallback so a spent free tier can still start a project — and
+`guide_today` answers "what now" from what the project actually contains, counting artefacts rather
+than trusting statuses, with every step naming a route. What is still missing is the walk *between*
+them: A1 below.
+
 Three specific gaps, each cheap relative to what already exists:
 
-1. **A cross-page flow.** `workflowFlow` asks how far a run should go and then hands off to the batch
+1. **A cross-page flow.** *(Still open.)* `workflowFlow` asks how far a run should go and then hands off to the batch
    runner; nothing walks a person *through* the pages, one at a time, in order, resuming where they
    stopped. Every ingredient exists: `guidedFlows.js` is the step data, `get/save_workflow_state` is
    the per-project persistence, `lib/pageSteps.js` is the pipeline order, and `Tours.jsx`'s
@@ -64,15 +87,15 @@ Three specific gaps, each cheap relative to what already exists:
    a single flow whose steps are *pages*, which mounts each page's own flow as its body, and a
    persistent "you are here, N of M" that survives navigation.
 
-2. **The level the app already asked for is never used.** First run asks whether the user is a
-   beginner (`audience_level`, `guideSteps.jsx`), stores it, and reads it in exactly one place —
-   `welcomeStory.js`, which picks how the welcome text is worded. The sidebar shows all thirty-five
-   entries to everybody. A beginner needs about eight of them: Dashboard, Sources, Composer, Music,
-   Images, Video, Upload, Settings. The rest are studios that refine a stage and tools for people
-   who know they want them. Grouping already exists in `NAV`; a level filter over it is small, and it
-   is the single highest-leverage change for the complaint that started this.
+2. ~~**The level the app already asked for is never used.**~~ **Shipped**, as *folding* rather than
+   filtering. First run asks whether the user is a beginner (`audience_level`), stored it, and read
+   it in exactly one place. The sidebar now folds to the fifteen stops a song actually passes
+   through and expands to all thirty-five on a click, defaulting from `audience_level` and
+   remembered in `nav_focused`. Folding rather than filtering because the app's stated promise is
+   that the audience level never withholds a feature — and the current page is always shown, so
+   arriving somewhere tucked never hides where you are.
 
-3. **Voice is push-to-talk, not conversation.** `GuidedFlow` speaks the question and then waits for a
+3. **Voice is push-to-talk, not conversation.** *(Still open.)* `GuidedFlow` speaks the question and then waits for a
    click on "Say it" before it will listen. For a genuinely hands-free mode the pieces are all
    present after the 2026-09-02 fixes — `speak()` resolves when playback ends, `listen()` now ends on
    silence rather than on a stopwatch, `interpretAnswer` maps the answer and escalates only when
@@ -100,7 +123,7 @@ Underneath that, three different editors disagree about what a lyric is:
 `SectionAnnotator`'s own doc comment says it exists to replace hand-writing JSON. It sits next to the
 JSON box it replaced.
 
-**And there are no craft controls at all.** Everything that decides what kind of song this is comes
+~~**And there are no craft controls at all.**~~ **Shipped** — see item 1. Everything that decided what kind of song this was came
 down to three fields: `themes.global` (free text), `targets[].styles` (a genre CSV) and `sections`
 (user section ideas). `compose_lyrics`'s system prompt asks for section headers in the engine's
 dialect and for imagery that progresses. Nothing anywhere asks about song *form*, point of view,
@@ -109,7 +132,12 @@ distinguishes one lyric from another, and all of it is one prompt block away.
 
 **The plan, in the order it should be built:**
 
-1. **A `craft` block on the compose config**, plumbed through `ComposeRequest` into
+1. ~~**A `craft` block on the compose config**~~ — **shipped** as `commands/craft.rs`: a closed
+   vocabulary of six dials (form, faithfulness, voice, shape, repetition, register), each option
+   carrying the instruction sentence the model is handed, with `craft_prompt_block` inserted ahead
+   of the source text because "use its own words" is a claim about what the source *is* for this
+   run. Faithfulness and shape are guided steps; the rest live in a "How it's written" section.
+   Original plan, for the reasoning: a `craft` block on the compose config, plumbed through `ComposeRequest` into
    `compose_lyrics`'s prompt the way `brief_block` and `learnings_block` already are. Fields worth
    having, each because it changes the output and a person can answer it:
    - **form** — verse/chorus, verse/refrain, through-composed, call-and-response, litany. Bounded by
@@ -124,20 +152,23 @@ distinguishes one lyric from another, and all of it is one prompt block away.
    - **register** — plain and modern / literary / archaic, with a reading level.
    2–4 of these become guided steps; the rest live in a section the guide manifests.
 
-2. **A rewrite loop.** Generation is all-or-nothing per run: N items, import them, and if verse two
-   is weak the choice is to edit by hand or regenerate everything. A `rewrite_section` command
-   (song id, section index, instruction) that returns two or three alternatives for that section
-   alone is the smallest thing that turns lyric-writing from a lottery into work. `compose_assist`
-   is already the right shape for it.
+2. ~~**A rewrite loop.**~~ **Shipped** as `commands/revise.rs`: `lyric_sections` reads a lyric's own
+   `[Header]` structure, `rewrite_section` sends the whole song with one section marked and returns
+   three options each carrying the spliced whole lyric, and splitting/splicing are pure — replacing
+   a section leaves every other byte alone and restores the blank lines that separate it from the
+   next. Reached from the per-song lyric editor in Music Gen; each option is scanned against the
+   song it is going into.
 
-3. **One editor, in one place.** Move `SectionAnnotator` to where lyrics actually are — the composer
+3. **One editor, in one place.** *(Still open.)* Move `SectionAnnotator` to where lyrics actually are — the composer
    and the Music Gen card — and let it be the *only* lyric editor, so an edit cannot break the
    engine dialect the composer chose. `/lyrics` keeps the JSON box and becomes what it is: an import
    tool, named and placed accordingly.
 
-4. **Singability feedback, before the GPU.** Syllable counts per line and a warning when a line is
-   far outside the range the form asks for. Pure, local, free, and it catches the failure that
-   currently costs a take.
+4. ~~**Singability feedback, before the GPU.**~~ **Shipped** as `lib/singability.js`: a syllable
+   heuristic with the three corrections that matter for sung English, checked against the song's own
+   median rather than an absolute range, deliberately generous — a checker that cries wolf is turned
+   off and then catches nothing. It never blocks; it marks lines far outside the metre the rest of
+   the song establishes, and says that it is an estimate.
 
 ### C. Combinations the app measures but never crosses
 
@@ -146,7 +177,7 @@ section × style pack, video is section × transition × overlay, distribution i
 and `performance_report` ranks channel/language/style by median views with a thin-data guard. As of
 2026-09-02 the guide reads that ranking, so what worked can now argue with what is habitual.
 
-What is still uncrossed, in descending value:
+What is still uncrossed, in descending value (**none of C is built** — this section is unchanged):
 
 1. **Publish time × everything.** `publish_time` resolves a channel's local hour and reaches YouTube
    as `status.publishAt`, and `performance_report` never groups by it — so the app schedules by hour
