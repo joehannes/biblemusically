@@ -250,13 +250,26 @@ pub async fn refresh_upload_analytics(state: State<'_, AppState>, channel_id: Op
     Ok(json!({ "ok": true, "updated": updated, "errors": errors }))
 }
 
+/// Below this many videos, a row is a coincidence with a number next to it, and is not reported to
+/// anything that would act on it. Between this and `THIN_ROW` it is reported and labelled thin.
+const MIN_ROW_VIDEOS: usize = 3;
+const THIN_ROW: usize = 5;
+/// Below this many measured videos in total there is no report at all — ranking four uploads against
+/// each other is how a first lucky video becomes a strategy.
+const MIN_MEASURED: usize = 6;
+
 /// Rank channel / language / style combinations by how they actually performed.
 ///
 /// Median, not mean: one video that went unexpectedly wide would otherwise make its whole
 /// combination look like a strategy.
 #[tauri::command]
 pub async fn performance_report(state: State<'_, AppState>, project_id: Option<String>) -> Res<Value> {
+    performance_report_inner(&state, project_id.as_deref().unwrap_or("")).await
+}
+
+async fn performance_report_inner(state: &AppState, project_id: &str) -> Res<Value> {
     use futures_util::StreamExt;
+    let project_id = (!project_id.trim().is_empty()).then(|| project_id.to_string());
 
     // Songs first, so an upload can be attributed to a language/style.
     let song_filter = match project_id.as_deref().filter(|s| !s.is_empty()) {
@@ -341,15 +354,77 @@ pub async fn performance_report(state: State<'_, AppState>, project_id: Option<S
     }
 
     per_video.sort_by(|a, b| b["views"].as_i64().unwrap_or(0).cmp(&a["views"].as_i64().unwrap_or(0)));
+    // Counted before the list is trimmed for display: `measured_videos` is how many uploads carry
+    // real numbers, and truncating first made it stop at 50 however many had actually been measured.
+    let measured = per_video.len();
     per_video.truncate(50);
 
     Ok(json!({
         "ok": true,
-        "measured_videos": per_video.len(),
+        "measured_videos": measured,
         "by": Value::Object(grouped),
         "top_videos": per_video,
         "note": "Ranked by median views — one runaway video shouldn't look like a strategy. Combinations with fewer than ~5 videos are noise, not signal.",
     }))
+}
+
+/// What actually performed, in a few lines, for the guide to weigh when it proposes a run.
+///
+/// The studio has measured which channel/language/style combinations do well since the analytics
+/// feedback loop landed, and it has recommended combinations since the guide landed — but the two
+/// never met. The guide read the brief, the learnings store and the user's past picks, which between
+/// them describe *habits*. A habit and a result are different things, and only one of them is
+/// evidence.
+///
+/// Deliberately conservative about what counts as evidence, because a recommendation carries more
+/// weight than a chart: nothing at all below `MIN_MEASURED` measured videos, no row below
+/// `MIN_ROW_VIDEOS`, and every row states its own sample size so a thin one can be discounted rather
+/// than believed. The worst row is included too — knowing what to stop doing is the cheaper half.
+pub async fn performance_prompt_block(state: &AppState, project_id: &str) -> String {
+    match performance_report_inner(state, project_id).await {
+        Ok(report) => performance_block_from(&report),
+        Err(_) => String::new(),
+    }
+}
+
+/// The block itself, from a `performance_report` value — pure, so the evidence rules are testable.
+fn performance_block_from(report: &Value) -> String {
+    let measured = report["measured_videos"].as_u64().unwrap_or(0) as usize;
+    if measured < MIN_MEASURED { return String::new(); }
+
+    let describe = |row: &Value| {
+        let videos = row["videos"].as_u64().unwrap_or(0);
+        format!(
+            "{} — {} median views over {videos} video{}{}",
+            row["key"].as_str().unwrap_or("?"),
+            row["median_views"].as_i64().unwrap_or(0),
+            if videos == 1 { "" } else { "s" },
+            if (videos as usize) < THIN_ROW { " (thin — treat as a hint, not a finding)" } else { "" },
+        )
+    };
+
+    let mut lines: Vec<String> = Vec::new();
+    for dimension in ["combo", "language", "style"] {
+        let rows: Vec<&Value> = report["by"][dimension].as_array()
+            .map(|a| a.iter().filter(|r| r["videos"].as_u64().unwrap_or(0) as usize >= MIN_ROW_VIDEOS).collect())
+            .unwrap_or_default();
+        if rows.is_empty() { continue; }
+        for row in rows.iter().take(3) {
+            lines.push(format!("- best {dimension}: {}", describe(row)));
+        }
+        // Only worth naming when there is something to compare it against.
+        if rows.len() > 3 {
+            lines.push(format!("- weakest {dimension}: {}", describe(rows[rows.len() - 1])));
+        }
+    }
+    if lines.is_empty() { return String::new(); }
+
+    format!(
+        "WHAT THIS CREATOR'S PUBLISHED VIDEOS ACTUALLY DID ({measured} measured). This is evidence, not \
+         habit — prefer it over past choices when the two disagree, and say so in your reason. Ranked \
+         by median views, so one runaway video is not a strategy:\n{}\n",
+        lines.join("\n"),
+    )
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -492,5 +567,73 @@ mod tests {
         // An unknown or empty status must not vanish from the totals.
         assert_eq!(stage_index("something-new"), 0);
         assert_eq!(stage_index(""), 0);
+    }
+
+    // ── the evidence block the guide reads ──────────────────────────────────
+
+    fn row(key: &str, videos: u64, median: i64) -> Value {
+        json!({ "key": key, "videos": videos, "median_views": median, "total_views": median * videos as i64, "best": median })
+    }
+    fn report(measured: u64, combos: Vec<Value>) -> Value {
+        json!({ "measured_videos": measured, "by": { "combo": combos, "language": [], "style": [] } })
+    }
+
+    #[test]
+    fn too_little_measured_says_nothing_at_all() {
+        // Four uploads ranked against each other is how one lucky video becomes a strategy.
+        let r = report(4, vec![row("A · English · dnb", 3, 900), row("B · German · folk", 1, 10)]);
+        assert_eq!(performance_block_from(&r), "");
+    }
+
+    #[test]
+    fn a_row_with_almost_no_videos_is_not_reported() {
+        let r = report(9, vec![row("A · English · dnb", 6, 500), row("B · German · folk", 2, 4000)]);
+        let block = performance_block_from(&r);
+        assert!(block.contains("A · English · dnb"));
+        // The two-video row has the higher median and is still not evidence of anything.
+        assert!(!block.contains("B · German · folk"), "{block}");
+    }
+
+    #[test]
+    fn a_thin_row_is_reported_but_labelled_as_thin() {
+        let r = report(9, vec![row("A · English · dnb", 3, 500)]);
+        let block = performance_block_from(&r);
+        assert!(block.contains("over 3 videos (thin"), "{block}");
+    }
+
+    #[test]
+    fn a_row_with_enough_behind_it_is_stated_plainly() {
+        let r = report(12, vec![row("A · English · dnb", 7, 500)]);
+        let block = performance_block_from(&r);
+        assert!(block.contains("over 7 videos"), "{block}");
+        assert!(!block.contains("thin"), "{block}");
+    }
+
+    #[test]
+    fn the_weakest_is_named_only_when_there_is_a_field_to_be_last_in() {
+        let three = report(12, vec![row("a", 5, 900), row("b", 5, 500), row("c", 5, 100)]);
+        assert!(!performance_block_from(&three).contains("weakest"));
+
+        let four = report(20, vec![row("a", 5, 900), row("b", 5, 500), row("c", 5, 300), row("d", 5, 20)]);
+        let block = performance_block_from(&four);
+        assert!(block.contains("weakest combo: d"), "{block}");
+        // …and the top three are still the top three, not four.
+        assert_eq!(block.matches("best combo").count(), 3);
+    }
+
+    #[test]
+    fn every_row_carries_its_own_sample_size_so_it_can_be_discounted() {
+        let r = report(12, vec![row("a", 5, 900), row("b", 4, 800)]);
+        let block = performance_block_from(&r);
+        assert!(block.contains("over 5 videos"));
+        assert!(block.contains("over 4 videos (thin"));
+        assert!(block.contains("12 measured"));
+    }
+
+    #[test]
+    fn no_reportable_rows_means_no_block_even_with_plenty_measured() {
+        // Fifty uploads spread one-per-combination is still nothing anyone should act on.
+        let r = report(50, (0..50).map(|i| row(&format!("c{i}"), 1, 100)).collect());
+        assert_eq!(performance_block_from(&r), "");
     }
 }
