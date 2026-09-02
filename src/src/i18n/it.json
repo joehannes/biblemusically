@@ -2775,6 +2775,8 @@
     "Run it in the browser": "Eseguilo nel browser",
     "Suno would not answer over HTTP — usually an expired session.": "Suno non ha risposto via HTTP: di solito una sessione scaduta.",
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "La via del browser accede come te e compila la pagina di Suno, quindi funziona quando la sessione non funziona — ma ha bisogno di questa finestra e procede un brano alla volta.",
-    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno e Midjourney usano account tuoi anziché un'API, quindi ognuno dice di chi è l'account a rischio proprio dove lo scegli. Nessuno dei due è nascosto: un motore che non puoi vedere è un motore che non puoi valutare."
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno e Midjourney usano account tuoi anziché un'API, quindi ognuno dice di chi è l'account a rischio proprio dove lo scegli. Nessuno dei due è nascosto: un motore che non puoi vedere è un motore che non puoi valutare.",
+    "Just the main steps": "Solo i passaggi principali",
+    "Studios and tools": "Studi e strumenti"
   }
 }

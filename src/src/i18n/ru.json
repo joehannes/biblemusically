@@ -2799,7 +2799,9 @@
     "Run it in the browser": "Запустить в браузере",
     "Suno would not answer over HTTP — usually an expired session.": "Suno не ответил по HTTP — обычно это истёкшая сессия.",
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Путь через браузер входит от вашего имени и заполняет собственную страницу Suno, поэтому работает, когда сессия не работает, — но ему нужно это окно, и он обрабатывает по одной песне за раз.",
-    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno и Midjourney работают с вашими собственными аккаунтами, а не через API, поэтому рядом с выбором каждый из них говорит, чей аккаунт под угрозой. Ни один не скрыт: движок, которого не видно, невозможно взвесить."
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno и Midjourney работают с вашими собственными аккаунтами, а не через API, поэтому рядом с выбором каждый из них говорит, чей аккаунт под угрозой. Ни один не скрыт: движок, которого не видно, невозможно взвесить.",
+    "Just the main steps": "Только основные шаги",
+    "Studios and tools": "Студии и инструменты"
   },
   "same_as_english": [
     "DPI —",

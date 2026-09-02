@@ -44,6 +44,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Home,
   User,
   ArrowLeft,
@@ -84,6 +85,7 @@ import { subscribePipeline } from "../lib/genPipeline";
 const NAV = [
   {
     to: "/",
+    stage: true,
     label: "Dashboard",
     icon: LayoutDashboard,
     testid: "nav-dashboard",
@@ -91,6 +93,7 @@ const NAV = [
   },
   {
     to: "/workflow",
+    stage: true,
     label: "Workflow",
     icon: WorkflowIcon,
     testid: "nav-workflow",
@@ -98,6 +101,7 @@ const NAV = [
   },
   {
     to: "/channels",
+    stage: true,
     label: "Channel Manager",
     icon: Tv,
     testid: "nav-channels",
@@ -105,6 +109,7 @@ const NAV = [
   },
   {
     to: "/bible",
+    stage: true,
     label: "Bible Sources",
     icon: BookOpen,
     testid: "nav-bible",
@@ -114,6 +119,7 @@ const NAV = [
   // that the composer then turns into songs — so it belongs upstream in the flow.
   {
     to: "/freeform",
+    stage: true,
     label: "Freeform Composer",
     icon: Sparkles,
     testid: "nav-freeform",
@@ -121,6 +127,7 @@ const NAV = [
   },
   {
     to: "/composer",
+    stage: true,
     label: "AI Composer",
     icon: Bot,
     testid: "nav-composer-ai",
@@ -128,6 +135,7 @@ const NAV = [
   },
   {
     to: "/lyrics",
+    stage: true,
     label: "Lyrics Import",
     icon: FileJson,
     testid: "nav-lyrics",
@@ -142,6 +150,7 @@ const NAV = [
   },
   {
     to: "/music",
+    stage: true,
     label: "Music Gen",
     icon: Mic2,
     testid: "nav-music",
@@ -149,6 +158,7 @@ const NAV = [
   },
   {
     to: "/analysis",
+    stage: true,
     label: "Audio Analysis",
     icon: Waves,
     testid: "nav-analysis",
@@ -163,6 +173,7 @@ const NAV = [
   },
   {
     to: "/sections",
+    stage: true,
     label: "Section Editor",
     icon: Scissors,
     testid: "nav-sections",
@@ -177,6 +188,7 @@ const NAV = [
   },
   {
     to: "/images",
+    stage: true,
     label: "Image Gen",
     icon: ImageIcon,
     testid: "nav-images",
@@ -205,6 +217,7 @@ const NAV = [
   },
   {
     to: "/video",
+    stage: true,
     label: "Video Composer",
     icon: Film,
     testid: "nav-video",
@@ -240,6 +253,7 @@ const NAV = [
   },
   {
     to: "/upload",
+    stage: true,
     label: "Upload",
     icon: UploadCloud,
     testid: "nav-upload",
@@ -296,6 +310,7 @@ const NAV = [
   },
   {
     to: "/jobs",
+    stage: true,
     label: "Jobs Monitor",
     icon: Activity,
     testid: "nav-jobs",
@@ -324,6 +339,7 @@ const NAV = [
   },
   {
     to: "/settings",
+    stage: true,
     label: "Settings",
     icon: Cog,
     testid: "nav-settings",
@@ -697,10 +713,45 @@ export default function Shell({ children }) {
   // Non-christian projects work from freeform material only — Bible Sources disappears for them
   // (and christian-specific musical layers hide elsewhere off the same flag).
   const visibleNav = NAV.filter((n) => n.to !== "/bible" || project?.is_christian !== false);
+
+  // ── Focused navigation ────────────────────────────────────────────────────
+  //
+  // Thirty-five entries is the thing people mean when they call this app overwhelming, and the
+  // overwhelming part is the map rather than any one page — every page already has a guided flow.
+  //
+  // Folded, NOT filtered, and the distinction is the whole design. `audience_level` is asked for at
+  // first run under an explicit promise: "this changes the wording everywhere, not what you are
+  // allowed to do — every feature is available at every level". Hiding a quarter of the app behind
+  // that answer would quietly break that promise. So the fifteen stops a song actually passes
+  // through stay in the rail, the twenty studios and tools that refine one of those stops sit one
+  // click away under a count that says how many there are, and nothing is unreachable at any level.
+  //
+  // The default comes from the level; the switch belongs to the user from then on.
+  const [navFocus, setNavFocus] = useState(null);   // null until settings load
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = (await api.getSettings()) || {};
+        if (typeof s.nav_focused === "boolean") { setNavFocus(s.nav_focused); return; }
+        setNavFocus(["kid", "beginner"].includes(s.audience_level));
+      } catch { setNavFocus(false); }
+    })();
+  }, []);
+  const focused = navFocus === true;
+  const setFocus = (next) => {
+    setNavFocus(next);
+    api.saveSettings({ nav_focused: next }).catch(() => {});
+  };
   const running = jobs.filter(
     (j) => j.status === "running" || j.status === "queued",
   ).length;
   const loc = useLocation();
+  // The page you are on is always in the rail, whatever mode: a nav that drops the entry you are
+  // standing on tells you that you are somewhere you should not be.
+  const railNav = focused
+    ? visibleNav.filter((n) => n.stage || n.to === loc.pathname)
+    : visibleNav;
+  const tuckedCount = visibleNav.length - railNav.length;
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -1103,9 +1154,9 @@ export default function Shell({ children }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3 scroll-thin">
-          {visibleNav.map(({ to, label, icon: Icon, testid, group }) => {
+          {railNav.map(({ to, label, icon: Icon, testid, group }) => {
             const prevGroup =
-              visibleNav[visibleNav.indexOf(visibleNav.find((n) => n.to === to)) - 1]?.group;
+              railNav[railNav.indexOf(railNav.find((n) => n.to === to)) - 1]?.group;
             const showGroupHeader = group !== prevGroup;
             return (
               <div key={to}>
@@ -1132,6 +1183,22 @@ export default function Shell({ children }) {
               </div>
             );
           })}
+
+          {/* Nothing is hidden — this says how much is folded and opens it in one click. */}
+          {!collapsed && (focused ? tuckedCount > 0 : true) && (
+            <button
+              data-testid="nav-focus-toggle"
+              onClick={() => setFocus(!focused)}
+              className="w-full text-left px-5 py-2.5 mt-2 text-[11px] text-sidebar-foreground/50
+                         hover:text-sidebar-foreground border-t border-sidebar-border/40
+                         flex items-center gap-2"
+            >
+              {focused
+                ? <><ChevronDown className="w-3.5 h-3.5 shrink-0" /><span>Studios and tools</span>
+                     <span className="text-mono opacity-70">{tuckedCount}</span></>
+                : <><ChevronUp className="w-3.5 h-3.5 shrink-0" /><span>Just the main steps</span></>}
+            </button>
+          )}
         </nav>
 
       </aside>
@@ -1167,8 +1234,8 @@ export default function Shell({ children }) {
               </button>
             </div>
             <nav className="flex-1 overflow-y-auto py-3 scroll-thin">
-              {visibleNav.map(({ to, label, icon: Icon, testid, group }, idx) => {
-                const prevGroup = visibleNav[idx - 1]?.group;
+              {railNav.map(({ to, label, icon: Icon, testid, group }, idx) => {
+                const prevGroup = railNav[idx - 1]?.group;
                 const showGroupHeader = group !== prevGroup;
                 return (
                   <div key={to}>
@@ -1195,6 +1262,20 @@ export default function Shell({ children }) {
                   </div>
                 );
               })}
+
+              {(focused ? tuckedCount > 0 : true) && (
+                <button
+                  data-testid="nav-focus-toggle-mobile"
+                  onClick={() => setFocus(!focused)}
+                  className="w-full text-left px-5 py-3 mt-2 text-[11px] text-sidebar-foreground/50
+                             border-t border-sidebar-border/40 flex items-center gap-2"
+                >
+                  {focused
+                    ? <><ChevronDown className="w-3.5 h-3.5 shrink-0" /><span>Studios and tools</span>
+                         <span className="text-mono opacity-70">{tuckedCount}</span></>
+                    : <><ChevronUp className="w-3.5 h-3.5 shrink-0" /><span>Just the main steps</span></>}
+                </button>
+              )}
             </nav>
           </div>
         </div>

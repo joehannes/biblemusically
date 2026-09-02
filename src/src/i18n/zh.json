@@ -2795,7 +2795,9 @@
     "Run it in the browser": "在浏览器中运行",
     "Suno would not answer over HTTP — usually an expired session.": "Suno 没有通过 HTTP 响应 —— 通常是会话已过期。",
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "浏览器路径以你的身份登录并填写 Suno 自己的页面，所以在会话失效时仍然可用 —— 但它需要这个窗口，而且一次只处理一首歌。",
-    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno 和 Midjourney 使用的是你自己的账号而非 API，因此在你做选择的地方，各自都会说明有风险的是谁的账号。两者都没有被隐藏：看不见的引擎，就是无法衡量的引擎。"
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno 和 Midjourney 使用的是你自己的账号而非 API，因此在你做选择的地方，各自都会说明有风险的是谁的账号。两者都没有被隐藏：看不见的引擎，就是无法衡量的引擎。",
+    "Just the main steps": "只看主要步骤",
+    "Studios and tools": "工作室与工具"
   },
   "same_as_english": [
     "DPI —",

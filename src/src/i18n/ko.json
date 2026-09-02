@@ -2796,7 +2796,9 @@
     "Run it in the browser": "브라우저에서 실행",
     "Suno would not answer over HTTP — usually an expired session.": "Suno가 HTTP로 응답하지 않았습니다 — 보통 만료된 세션입니다.",
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "브라우저 경로는 사용자로 로그인해 Suno 자체 페이지를 채우므로 세션이 안 될 때도 동작합니다 — 다만 이 창이 필요하고 한 번에 한 곡씩 처리합니다.",
-    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno와 Midjourney는 API가 아니라 사용자 본인의 계정을 사용하므로, 선택하는 자리에서 누구의 계정이 위험한지 각각 알려 줍니다. 둘 다 숨기지 않습니다: 보이지 않는 엔진은 가늠할 수 없는 엔진입니다."
+    "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno와 Midjourney는 API가 아니라 사용자 본인의 계정을 사용하므로, 선택하는 자리에서 누구의 계정이 위험한지 각각 알려 줍니다. 둘 다 숨기지 않습니다: 보이지 않는 엔진은 가늠할 수 없는 엔진입니다.",
+    "Just the main steps": "주요 단계만",
+    "Studios and tools": "스튜디오와 도구"
   },
   "same_as_english": [
     "DPI —",
