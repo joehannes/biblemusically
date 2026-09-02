@@ -238,7 +238,7 @@ files is a repo-history decision, not an audit's call.
 
 ## Part 4 — Additions the audit made look worth wanting
 
-### 4.1 A registration test, so the audit does not need repeating
+### 4.1 A registration test, so the audit does not need repeating — **done 2026-09-02**, see 4.2
 
 The IPC surface is clean today, and [ARCHITECTURE.md](ARCHITECTURE.md) §3 already notes that manual
 registration is easy to desync. A test in [`tests_logic.rs`](src-tauri/tests_logic.rs) that parses
@@ -246,11 +246,17 @@ registration is easy to desync. A test in [`tests_logic.rs`](src-tauri/tests_log
 that class of bug impossible rather than periodically re-discovered. A companion node test could
 assert every `api.*` method resolves to a registered command.
 
-### 4.2 An "unreachable features" check
+### 4.2 An "unreachable features" check — **done 2026-09-02**
 
-The 30 orphans in Part 1 were found by a three-line `comm`. As a `npm run audit:orphans` that prints
-them with a committed allowlist, a feature could never again be built and left unreachable without
-someone saying so out loud. This is the cheapest item in the file and it protects the most.
+`npm run audit:ipc` (`scripts/audit-ipc.mjs`), in CI beside the i18n gates. It covers 4.1 as well:
+BROKEN (api.js invokes a command nothing defines), UNROUTED (defined, missing from
+`generate_handler!`) and ORPHAN (built, wrapped, never called), plus a stale-allowlist check so an
+exemption goes away when the feature gets its button. Verified by introducing each defect in turn.
+Orphans that are decisions live in `scripts/ipc-orphans.json` with a reason each.
+
+It found three that were not decisions: the Kaggle card promising a rotation that had been replaced
+(`rotate_kaggle_account`, removed), `kaggle_account_overview` written for a screen that never called
+it (now wired), and the Section Editor pointing at its own step. See `STATUS.md`, 2026-09-02.
 
 ### 4.3 Route-level code splitting
 
@@ -298,3 +304,8 @@ Not all are defects. `subsSignIn` and `startGoogleIdSignIn` are alternates to th
 redundant because fal.ai is reached through the shared image-API path in
 [image_apis.rs](src-tauri/image_apis.rs); `kaggleQuota` is redundant to `video_advice`. The rest are
 features waiting for a button.
+
+**This list is history now, not a to-do.** `npm run audit:ipc` computes it on every run and fails
+when it grows, and the reasons live next to the names in `scripts/ipc-orphans.json`. Two entries
+there are still marked as gaps rather than decisions: speech bubbles render and no page can place
+one, and the deep-link setup steps have nowhere to be read.

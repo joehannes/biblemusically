@@ -86,6 +86,40 @@ These are the ones a coding session should *not* decide by itself:
 
 ## Session log
 
+- **2026-09-02 · full-app audit** — A pass over everything at v0.142.0, looking for what a test suite
+  cannot see. Baseline was already green, so this found integration defects rather than breakage.
+
+  **The voice layer**, which the guided experience rests on, was the worst of it. Two mic buttons
+  (Freeform Composer, `Tours.jsx`) called `window.SpeechRecognition` directly — absent in WebKitGTK,
+  this app's own desktop webview on Linux — so both could only ever refuse, while `lib/voice.js` two
+  files away already handled that case. The recorder also ran a fixed eight seconds regardless of
+  when somebody stopped talking, no language was ever passed to either listening path (`prefs.language`
+  is written by nothing), and the assistant spoke English over a translated interface because spoken
+  lines never become DOM nodes. All four fixed; the rules extracted to `lib/speech.js` and tested.
+
+  **`performance_report` had never met `guide_proposal`** — the studio measured which combinations get
+  watched, and separately recommended combinations from habit. Now the evidence goes in front of both
+  guide prompts, outranks habit, and has to say so when they disagree. Conservative on purpose:
+  silent below six measured videos, no row below three, thin rows labelled.
+
+  **The one place taste could be stated in words was unreachable**: `preferences` has the last word in
+  `learnings_prompt_block`, the panel displayed it, `update_*_learnings` wrote it, and nothing in the
+  interface called them. Now a textarea — and `forget_learnings` can actually withdraw it, which it
+  could not before.
+
+  **`npm run audit:ipc`** so this class stops being found by hand (WISHLIST 4.1 + 4.2, both closed).
+  It found three real defects behind the deliberate orphans: a Kaggle card promising a rotation that
+  had been replaced, `kaggle_account_overview` written for a screen that never called it, and the
+  Section Editor pointing at its own step.
+
+  **Nineteen compiler warnings to zero**, two of them real hazards (colliding names under the glob
+  re-exports). 403 Rust tests, 127 JS tests, i18n 100% in fifteen languages.
+
+  Not fixed, written up in `BACKLOG.md` under "Requested 2026-09-02": the beginner's map problem (35
+  nav items; `audience_level` is asked for and never used to filter them), the lyric journey (four
+  pages, three editors, no craft controls), and the combinations the app measures but never crosses.
+
+
 - **2026-08-05 · session 2** — The catalogues. The gate was passing vacuously: it measures coverage
   against the committed inventory, and the inventory had not been re-extracted since the newest UI
   landed, so 133 strings were untranslated *and uncounted*. Inventory refreshed (three classes of junk
