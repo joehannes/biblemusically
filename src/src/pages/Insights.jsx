@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { toast } from "sonner";
 import {
-  BarChart3, RefreshCw, Loader2, TrendingUp, Gauge, AlertTriangle, LayoutGrid,
+  BarChart3, RefreshCw, Loader2, TrendingUp, Gauge, AlertTriangle, LayoutGrid, FlaskConical,
 } from "lucide-react";
 
 const humanSize = (n) => {
@@ -64,6 +64,22 @@ function StageBar({ label, counts, stages, total }) {
     </div>
   );
 }
+
+// Readable names for the report's dimensions. The keys are the report's own, and a dimension
+// without an entry falls back to its key rather than disappearing — a new axis added on the Rust
+// side should show up here as itself, not vanish.
+const DIM_LABEL = {
+  combo: "channel · language · style",
+  channel: "channel",
+  language: "language",
+  style: "musical style",
+  image_style: "image style pack",
+  length: "song length",
+  hour: "hour published (channel's own time)",
+  weekday: "day published",
+  title_form: "title shape",
+  title_length: "title length",
+};
 
 export default function Insights() {
   const { activeProjectId, projects } = useStudio();
@@ -186,12 +202,44 @@ export default function Insights() {
           </Button>
         }
       >
+        {/* What has never been tested, which no ranking can ever tell you: an axis set the same way
+            every time has no data behind it and never will, however much is published. */}
+        {performance?.experiment && (
+          <div className="mb-3 rounded-lg border border-primary/40 bg-primary/5 p-2.5 space-y-1">
+            <div className="text-[11px] font-medium flex items-center gap-1.5">
+              <FlaskConical className="h-3.5 w-3.5 text-primary" />
+              <span>Never varied:</span>
+              <span>{DIM_LABEL[performance.experiment.axis] || performance.experiment.axis}</span>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              <span className="text-mono">{performance.experiment.videos}</span>
+              <span> of </span>
+              <span className="text-mono">{performance.experiment.of}</span>
+              <span> measured videos are </span>
+              <span className="text-foreground">{performance.experiment.current}</span>
+              <span>, so the ranking has nothing to compare it against — however many more you publish.</span>
+            </div>
+            {performance.experiment.try && (
+              <div className="text-[11px]">
+                <span className="text-muted-foreground">Try </span>
+                <span className="text-foreground">{performance.experiment.try}</span>
+                <span className="text-muted-foreground"> next, and keep the rest of the run the same.</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {performance?.measured_videos ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            {["combo", "channel", "language", "style"].map((dim) => (
+            {/* The creative axes first, then packaging and timing — the app varies all of these
+                and until now crossed only the first four with what actually got watched. */}
+            {["combo", "channel", "language", "style", "image_style", "length",
+              "hour", "weekday", "title_form", "title_length"].map((dim) => (
               (performance.by?.[dim] || []).length > 0 && (
                 <div key={dim}>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{dim}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                    {DIM_LABEL[dim] || dim}
+                  </div>
                   <div className="space-y-0.5">
                     {performance.by[dim].slice(0, 6).map((row) => (
                       <div key={row.key} className="flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1 text-[11px]">

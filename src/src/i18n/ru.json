@@ -2896,7 +2896,12 @@
     "Rewrite one section": "Переписать один раздел",
     "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "Остальная песня идёт как контекст, чтобы новая версия попала в размер и рифмы, заданные другими разделами. За пределами этого раздела ничего не меняется.",
     "What's wrong with it? Or leave it blank and just see it done differently.": "Что с ним не так? Или оставьте пустым и просто посмотрите, как это выйдет иначе.",
-    "Who it is for": "Для кого это"
+    "Who it is for": "Для кого это",
+    ", so the ranking has nothing to compare it against — however many more you publish.": ", поэтому рейтингу не с чем это сравнить — сколько бы ещё вы ни опубликовали.",
+    "measured videos are": "измеренных видео —",
+    "Never varied:": "Никогда не менялось:",
+    "next, and keep the rest of the run the same.": "в следующий раз, а остальное в прогоне оставьте прежним.",
+    "Try": "Попробуйте"
   },
   "same_as_english": [
     "DPI —",

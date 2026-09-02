@@ -2896,7 +2896,12 @@
     "Rewrite one section": "إعادة كتابة مقطع واحد",
     "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "تُرسل بقية الأغنية كسياق، حتى تتمكن إعادة الكتابة من مجاراة الوزن والقوافي التي أرستها المقاطع الأخرى. لا يتغير شيء خارج هذا المقطع.",
     "What's wrong with it? Or leave it blank and just see it done differently.": "ما الخطأ فيه؟ أو اترك الحقل فارغًا وشاهده ببساطة بصياغة أخرى.",
-    "Who it is for": "لمن هو"
+    "Who it is for": "لمن هو",
+    ", so the ranking has nothing to compare it against — however many more you publish.": "، لذا ليس لدى الترتيب ما يقارنه به — مهما نشرت بعد ذلك.",
+    "measured videos are": "من الفيديوهات المقيسة هي",
+    "Never varied:": "لم يتغيّر قط:",
+    "next, and keep the rest of the run the same.": "في المرة القادمة، وأبقِ بقية الجولة كما هي.",
+    "Try": "جرّب"
   },
   "same_as_english": [
     "Video Gen"

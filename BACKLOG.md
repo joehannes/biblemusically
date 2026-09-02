@@ -59,7 +59,8 @@ store metadata, an ordered contents, front and back matter, and a preflight that
 retailer rejects from what merely makes the book worse.
 
 **Still open from this plan:** A1 (the cross-page flow), A3 (hands-free conversation), B3 (one lyric
-editor in one place), and all of C.
+editor in one place), and the two axes in C that need data the app does not yet record — which
+thumbnail an upload used, and a song's section count joined to its upload.
 
 ### A. A conversation that spans pages, not one per page
 
@@ -177,21 +178,33 @@ section × style pack, video is section × transition × overlay, distribution i
 and `performance_report` ranks channel/language/style by median views with a thin-data guard. As of
 2026-09-02 the guide reads that ranking, so what worked can now argue with what is habitual.
 
-What is still uncrossed, in descending value (**none of C is built** — this section is unchanged):
+**Shipped.** All five axes are dimensions of `performance_report` now, and the guide's evidence block
+reads them. Below is the plan with what each became.
 
-1. **Publish time × everything.** `publish_time` resolves a channel's local hour and reaches YouTube
-   as `status.publishAt`, and `performance_report` never groups by it — so the app schedules by hour
-   and cannot say whether the hour matters.
-2. **Image style pack × performance.** Style packs are the most visible creative choice in the app
-   and are not a dimension of the report at all. The data exists: a song's sections carry their
-   prompts, and its upload carries its views.
-3. **A deliberate A/B.** Every combination today is chosen; none is *varied on purpose*. One flag —
-   "vary this axis across today's targets" — would turn a daily run into an experiment that the
-   ranking then reads, which is the difference between measuring history and learning.
-4. **Thumbnail and title shape.** Neither is a dimension, and both are what a click is decided on.
-5. **Section count and song length.** `pick_duration` already places a length in a range from the
-   lyric's line count; nothing checks whether the ranges that get watched are the ones being asked
-   for.
+1. ~~**Publish time × everything.**~~ Two dimensions now — `hour` in three-hour bands and `weekday`
+   — both resolved in the *channel's own* timezone, since the same instant is breakfast for one
+   channel and midnight for another and "does the hour matter" is only a question about the
+   audience's day. Bands rather than 24 buckets, because thirty videos over twenty-four buckets is a
+   ranking made of coincidences.
+2. ~~**Image style pack × performance.**~~ An `image_style` dimension, from the song's own
+   `image_styles`, counted as a creative axis — so it gets the same room in the evidence block as
+   musical style and language.
+3. ~~**A deliberate A/B.**~~ Built as `experiment_suggestion` rather than as a flag, which turned
+   out to be the more useful half of the same idea: rather than asking the user to remember to vary
+   something, the report finds the axis their own record says *least* about — where one value
+   accounts for four-fifths of everything published — and proposes a specific alternative where the
+   app knows the vocabulary, staying silent where the creator invents it. It ranks by how often a
+   value was used, not by how well it did: the dominant value being the worst performer makes it
+   more worth varying, not less. It appears on Insights and inside the guide's evidence block,
+   because the model proposing a run is the one thing positioned to fill the hole.
+4. ~~**Title shape.**~~ Two dimensions: `title_length`, banded where a search result actually cuts
+   off rather than at round numbers, and `title_form` — a question, has a number, two parts, a
+   colon, plain — one label per title so the buckets are disjoint. *Thumbnails are still not a
+   dimension*: the app does not record which thumbnail an upload used, so there is nothing to group
+   by yet.
+5. ~~**Song length.**~~ A `length` dimension in the bands people choose between. *Section count is
+   still not a dimension* — it would need the sections joined to the upload, which the report does
+   not currently load.
 
 ## Still open
 

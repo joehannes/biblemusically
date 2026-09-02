@@ -2892,7 +2892,12 @@
     "Rewrite one section": "一つのセクションを書き直す",
     "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "曲の残りが文脈として一緒に渡るので、書き直しは他のセクションがすでに定めた韻律と韻に合わせられます。このセクションの外は何も変わりません。",
     "What's wrong with it? Or leave it blank and just see it done differently.": "どこが引っかかりますか？　空欄のままにして、ただ違う形を見ることもできます。",
-    "Who it is for": "誰のためのものか"
+    "Who it is for": "誰のためのものか",
+    ", so the ranking has nothing to compare it against — however many more you publish.": "ため、順位づけには比べる相手がありません——この先いくつ公開しても同じです。",
+    "measured videos are": "本の計測済み動画が",
+    "Never varied:": "一度も変えていません：",
+    "next, and keep the rest of the run the same.": "を次に試して、ほかは同じままにしてください。",
+    "Try": "試す："
   },
   "same_as_english": [
     "DPI —",
