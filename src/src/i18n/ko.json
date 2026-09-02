@@ -2884,7 +2884,16 @@
     "Subjects, comma separated — the categories it is browsable under": "주제(쉼표로 구분) — 이 책이 분류되어 둘러보이는 범주입니다",
     "The book itself": "책 그 자체",
     "The manuscript": "원고",
-    "Untitled volume": "제목 없는 권"
+    "Untitled volume": "제목 없는 권",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "그래픽 노블에서 설명한 독자입니다. 그 사람의 언어와 장소와 처지는, 그를 위해 다시 쓴 판본에서와 똑같이 한 줄 한 줄에 작용합니다.",
+    "Anybody": "누구든",
+    "Applied. Everything else in the song is untouched.": "적용했습니다. 노래의 나머지는 그대로입니다.",
+    "lines outside the song's metre": "줄이 노래의 운율에서 벗어납니다",
+    "Rewrite it": "다시 쓰기",
+    "Rewrite one section": "한 단락 다시 쓰기",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "노래의 나머지가 맥락으로 함께 갑니다. 그래서 다시 쓴 부분이 다른 단락들이 이미 세운 운율과 각운에 맞을 수 있습니다. 이 단락 밖은 아무것도 바뀌지 않습니다.",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "무엇이 마음에 걸리나요? 비워 두고 그냥 다르게 된 모습을 봐도 됩니다.",
+    "Who it is for": "누구를 위한 것인가"
   },
   "same_as_english": [
     "DPI —",

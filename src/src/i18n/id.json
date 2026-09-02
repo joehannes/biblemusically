@@ -2863,7 +2863,16 @@
     "Subjects, comma separated — the categories it is browsable under": "Subjek, dipisahkan koma — kategori tempat buku ini ditelusuri",
     "The book itself": "Bukunya sendiri",
     "The manuscript": "Naskahnya",
-    "Untitled volume": "Jilid tanpa judul"
+    "Untitled volume": "Jilid tanpa judul",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "Seorang pembaca yang dijelaskan di bagian Novel Grafis. Bahasa, tempat, dan keadaan mereka berpengaruh pada setiap baris — sama seperti pengaruhnya pada edisi yang diceritakan ulang untuk mereka.",
+    "Anybody": "Siapa pun",
+    "Applied. Everything else in the song is untouched.": "Diterapkan. Semua yang lain dalam lagu ini tidak tersentuh.",
+    "lines outside the song's metre": "baris di luar birama lagu",
+    "Rewrite it": "Tulis ulang",
+    "Rewrite one section": "Tulis ulang satu bagian",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "Sisa lagunya ikut sebagai konteks, supaya penulisan ulang bisa menyamai birama dan rima yang sudah ditetapkan bagian-bagian lain. Di luar bagian ini tidak ada yang berubah.",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "Apa yang kurang pas? Atau biarkan kosong dan lihat saja hasilnya dengan cara lain.",
+    "Who it is for": "Ini untuk siapa"
   },
   "same_as_english": [
     "DPI —",

@@ -2887,7 +2887,16 @@
     "Subjects, comma separated — the categories it is browsable under": "الموضوعات، مفصولة بفواصل — الفئات التي يُتصفّح تحتها",
     "The book itself": "الكتاب نفسه",
     "The manuscript": "المخطوطة",
-    "Untitled volume": "مجلد بلا عنوان"
+    "Untitled volume": "مجلد بلا عنوان",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "قارئ موصوف في قسم الروايات المصوّرة. لغته ومكانه وظروفه تؤثر في كل سطر — تمامًا كما تؤثر في طبعة أُعيد سردها له.",
+    "Anybody": "أي أحد",
+    "Applied. Everything else in the song is untouched.": "طُبّق. كل ما عدا ذلك في الأغنية لم يُمَسّ.",
+    "lines outside the song's metre": "أسطر خارج وزن الأغنية",
+    "Rewrite it": "أعد كتابته",
+    "Rewrite one section": "إعادة كتابة مقطع واحد",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "تُرسل بقية الأغنية كسياق، حتى تتمكن إعادة الكتابة من مجاراة الوزن والقوافي التي أرستها المقاطع الأخرى. لا يتغير شيء خارج هذا المقطع.",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "ما الخطأ فيه؟ أو اترك الحقل فارغًا وشاهده ببساطة بصياغة أخرى.",
+    "Who it is for": "لمن هو"
   },
   "same_as_english": [
     "Video Gen"

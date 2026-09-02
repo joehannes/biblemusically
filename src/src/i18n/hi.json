@@ -2888,7 +2888,16 @@
     "Subjects, comma separated — the categories it is browsable under": "विषय, अल्पविराम से अलग — वे श्रेणियाँ जिनमें इसे देखा जाता है",
     "The book itself": "किताब स्वयं",
     "The manuscript": "पांडुलिपि",
-    "Untitled volume": "बिना शीर्षक का खंड"
+    "Untitled volume": "बिना शीर्षक का खंड",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "ग्राफ़िक नॉवेल्स में वर्णित एक पाठक। उनकी भाषा, जगह और परिस्थितियाँ हर पंक्ति पर असर डालती हैं — ठीक वैसे ही जैसे उनके लिए दोबारा लिखे संस्करण पर।",
+    "Anybody": "कोई भी",
+    "Applied. Everything else in the song is untouched.": "लागू कर दिया गया। गीत में बाकी सब अछूता है।",
+    "lines outside the song's metre": "पंक्तियाँ गीत की लय से बाहर",
+    "Rewrite it": "इसे दोबारा लिखें",
+    "Rewrite one section": "एक भाग दोबारा लिखें",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "बाकी गीत संदर्भ के रूप में साथ जाता है, ताकि नई रचना उसी लय और तुक को पकड़ सके जो दूसरे भागों ने पहले से तय की है। इस भाग के बाहर कुछ नहीं बदलता।",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "इसमें क्या गड़बड़ है? या खाली छोड़ दीजिए और बस इसे अलग ढंग से बना हुआ देखिए।",
+    "Who it is for": "यह किसके लिए है"
   },
   "same_as_english": [
     "DPI —",

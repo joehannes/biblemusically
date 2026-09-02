@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import GenerationProgress from "../components/GenerationProgress";
+import SectionRewrite from "../components/SectionRewrite";
 import { getStepForPath } from "../lib/pageSteps";
 
 const ENGINE_NAME = { heartmula: "HeartMuLa", acestep: "ACE-Step", suno: "Suno" };
@@ -657,6 +658,12 @@ export default function MusicGen() {
                         placeholder="No lyrics yet — write or paste them here."
                         rows={6}
                         className="text-xs font-mono"
+                      />
+                      {/* Fixing one verse used to mean rolling the whole song and losing the rest. */}
+                      <SectionRewrite
+                        lyrics={draftFor(s).lyrics}
+                        projectId={activeProjectId}
+                        onApply={(next) => updateDraft(s, { lyrics: next })}
                       />
                     </div>
                     <div className="flex justify-end">

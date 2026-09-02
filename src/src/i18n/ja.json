@@ -2883,7 +2883,16 @@
     "Subjects, comma separated — the categories it is browsable under": "主題（カンマ区切り）——閲覧されるカテゴリです",
     "The book itself": "本そのもの",
     "The manuscript": "原稿",
-    "Untitled volume": "無題の巻"
+    "Untitled volume": "無題の巻",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "グラフィックノベルで記述した読み手です。その人の言語・場所・境遇は、その人のために語り直した版と同じように、一行ごとに効いてきます。",
+    "Anybody": "誰でも",
+    "Applied. Everything else in the song is untouched.": "適用しました。曲の他の部分はそのままです。",
+    "lines outside the song's metre": "行が曲の韻律から外れています",
+    "Rewrite it": "書き直す",
+    "Rewrite one section": "一つのセクションを書き直す",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "曲の残りが文脈として一緒に渡るので、書き直しは他のセクションがすでに定めた韻律と韻に合わせられます。このセクションの外は何も変わりません。",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "どこが引っかかりますか？　空欄のままにして、ただ違う形を見ることもできます。",
+    "Who it is for": "誰のためのものか"
   },
   "same_as_english": [
     "DPI —",

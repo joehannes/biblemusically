@@ -2887,7 +2887,16 @@
     "Subjects, comma separated — the categories it is browsable under": "Темы через запятую — категории, в которых книгу листают",
     "The book itself": "Сама книга",
     "The manuscript": "Рукопись",
-    "Untitled volume": "Том без названия"
+    "Untitled volume": "Том без названия",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "Читатель, описанный в разделе «Графические романы». Его язык, место и обстоятельства влияют на каждую строку — так же, как на издание, пересказанное для него.",
+    "Anybody": "Кто угодно",
+    "Applied. Everything else in the song is untouched.": "Применено. Всё остальное в песне не тронуто.",
+    "lines outside the song's metre": "строк вне размера песни",
+    "Rewrite it": "Переписать",
+    "Rewrite one section": "Переписать один раздел",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "Остальная песня идёт как контекст, чтобы новая версия попала в размер и рифмы, заданные другими разделами. За пределами этого раздела ничего не меняется.",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "Что с ним не так? Или оставьте пустым и просто посмотрите, как это выйдет иначе.",
+    "Who it is for": "Для кого это"
   },
   "same_as_english": [
     "DPI —",

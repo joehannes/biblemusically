@@ -369,6 +369,15 @@ export default function AIComposer() {
   const [craftCatalogue, setCraftCatalogue] = useState(null);
   useEffect(() => { api.craftCatalogue().then(setCraftCatalogue).catch(() => setCraftCatalogue(null)); }, []);
 
+  // The readers described for this project, if any. Empty is the ordinary case and the picker
+  // simply does not appear — a chooser with nothing in it teaches people it is broken.
+  const [universes, setUniverses] = useState([]);
+  useEffect(() => {
+    api.universeList(activeProjectId || null)
+      .then((r) => setUniverses(r?.universes || []))
+      .catch(() => setUniverses([]));
+  }, [activeProjectId]);
+
   const [assistPreset, setAssistPreset] = useState("chapter_lens");
   const [assistPrompt, setAssistPrompt] = useState("");
   const [assistTemperature, setAssistTemperature] = useState([ASSIST_PRESETS.chapter_lens.temperature]);
@@ -818,6 +827,9 @@ export default function AIComposer() {
         title_pattern: cfg.title_pattern,
         artist: cfg.artist,
         craft: cfg.craft || {},
+        // The same reader the book engine retells through. Named once, so a project does not end up
+        // with a book written for somebody and a song written for nobody inside the same video.
+        universe_id: cfg.universe_id || null,
       });
       if (r.error) return toast.error(r.error);
       if (r.items?.length) {
@@ -1191,6 +1203,36 @@ export default function AIComposer() {
             or padded by the singer rather than fixed. Set a range only if you want one — otherwise the
             song's own consistency is what gets checked.
           </p>
+
+          {/* Who it is for. The same record the book engine retells an edition through, so the song
+              and its illustrated edition are written for the same person rather than one for
+              somebody and the other for nobody. */}
+          {universes.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-border/60 space-y-1.5">
+              <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">
+                Who it is for
+              </div>
+              <div className="text-[11px] text-muted-foreground leading-snug">
+                A reader described under Graphic Novels. Their language, place and circumstances
+                bear on every line — the same way they bear on an edition retold for them.
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button onClick={() => setCfg((p) => ({ ...p, universe_id: null }))}
+                        className={`text-xs rounded-md border px-2 py-1 transition-colors ${
+                          !cfg.universe_id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                  Anybody
+                </button>
+                {universes.map((u) => (
+                  <button key={u.id} data-testid={`composer-universe-${u.id}`}
+                          onClick={() => setCfg((p) => ({ ...p, universe_id: u.id }))}
+                          className={`text-xs rounded-md border px-2 py-1 transition-colors ${
+                            cfg.universe_id === u.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}>
+                    {u.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </CollapsibleSection>
 
         <CollapsibleSection open={guide.sectionOpen("themes")} onToggle={guide.pinSection("themes")} status={guide.sectionStatus("themes")} hidden={!guide.sectionVisible("themes")} title="Image & Lyrics Flavor Themes" badge="GUI Mode" titleIcon={Settings}>

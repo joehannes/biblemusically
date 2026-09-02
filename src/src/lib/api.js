@@ -279,6 +279,10 @@ export const api = {
   volumeWriteMatter: (payload) => invokeCommand("volume_write_matter", { payload }),
   volumePreflight: (id) => invokeCommand("volume_preflight", { id }),
   buildVolumeEpub: (payload) => invokeCommand("build_volume_epub", { payload }),
+  // Rewriting one section of a lyric rather than the whole song — the ordinary move of writing,
+  // which until now had no button.
+  lyricSections: (lyrics) => invokeCommand("lyric_sections", { lyrics }),
+  rewriteSection: (payload) => invokeCommand("rewrite_section", { payload }),
   // ============ Print on demand (Printify) ============
   // The one integration here with a real API — shapes taken from its OpenAPI spec.
   printifyStorefronts: () => invokeCommand("printify_storefronts"),

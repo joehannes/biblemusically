@@ -368,6 +368,13 @@ pub struct ComposeRequest {
     /// dial handed to the model as free text is a dial with no defined effect.
     #[serde(default)]
     pub craft: Value,
+    /// The reader this is for, when one has been described (see `commands::universe`).
+    ///
+    /// The same universe that retells an edition can write the song, which is the point of naming
+    /// a reader once: otherwise a project ends up with a book written for somebody and a song
+    /// written for nobody, sitting inside the same video.
+    #[serde(default)]
+    pub universe_id: Option<String>,
 }
 
 /// Request for the freeform (non-Bible) topic composer. The user roughly describes a topic
@@ -483,7 +490,7 @@ fn default_assist_temperature() -> f32 { 0.55 }
 /// each one parses structure differently — Suno reads rich bracketed performance tags, ACE-Step
 /// wants plain lowercase structure tags, and HeartMuLa writes the text straight into a lyrics file
 /// where anything but a section header is sung. Emitting the wrong dialect degrades the result.
-fn engine_lyric_annotation_guide(engine: &str) -> &'static str {
+pub(crate) fn engine_lyric_annotation_guide(engine: &str) -> &'static str {
     match engine {
         "suno" => "Target engine: Suno. Put capitalised bracketed structure tags on their own lines: \
                    [Intro], [Verse], [Pre-Chorus], [Chorus], [Bridge], [Outro]. Suno also honours short \
@@ -1093,8 +1100,19 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     // instructions about what the source *is* for this run, so they have to be read before it.
     let craft_block = crate::commands::craft::craft_prompt_block(&payload.craft);
 
+    // Who it is for, when somebody has said. Read from the same record the book engine retells
+    // through, so a project's song and its edition are written for the same person.
+    let universe_block = match payload.universe_id.as_deref().filter(|s| !s.is_empty()) {
+        Some(id) => state.db.collection::<Document>("universes")
+            .find_one(doc! { "id": id }).await.ok().flatten()
+            .map(bson_to_value)
+            .map(|u| crate::commands::universe::universe_prompt_block(&u))
+            .unwrap_or_default(),
+        None => String::new(),
+    };
+
     let user_prompt = format!(
-        "{profile_block}{brief_block}{research_block}{learnings_block}{craft_block}\
+        "{profile_block}{brief_block}{research_block}{learnings_block}{craft_block}{universe_block}\
          Source chapter text:\n{}\n\n\
          User-authored section ideas (apply to bracket prompts when matching lines):\n{}\n\n\
          Global theme: {}\n\

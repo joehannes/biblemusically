@@ -2869,7 +2869,16 @@
     "Subjects, comma separated — the categories it is browsable under": "Assuntos, separados por vírgulas — as categorias em que é navegável",
     "The book itself": "O livro em si",
     "The manuscript": "O manuscrito",
-    "Untitled volume": "Volume sem título"
+    "Untitled volume": "Volume sem título",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "Uma pessoa leitora descrita em Romances Gráficos. A sua língua, o seu lugar e as suas circunstâncias pesam em cada verso — tal como pesam numa edição recontada para ela.",
+    "Anybody": "Qualquer pessoa",
+    "Applied. Everything else in the song is untouched.": "Aplicado. Todo o resto da canção fica intacto.",
+    "lines outside the song's metre": "versos fora da métrica da canção",
+    "Rewrite it": "Reescrever",
+    "Rewrite one section": "Reescrever uma secção",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "O resto da canção vai como contexto, para que uma reescrita possa acertar a métrica e as rimas que as outras secções já fixaram. Fora desta secção nada muda.",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "O que está mal? Ou deixe em branco e veja simplesmente feito de outra maneira.",
+    "Who it is for": "Para quem é"
   },
   "same_as_english": [
     "DPI —",

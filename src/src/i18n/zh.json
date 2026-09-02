@@ -2883,7 +2883,16 @@
     "Subjects, comma separated — the categories it is browsable under": "主题，以逗号分隔——本书可被浏览的分类",
     "The book itself": "书本身",
     "The manuscript": "书稿",
-    "Untitled volume": "未命名的卷"
+    "Untitled volume": "未命名的卷",
+    "A reader described under Graphic Novels. Their language, place and circumstances bear on every line — the same way they bear on an edition retold for them.": "在图像小说中描述过的一位读者。他们的语言、所在与处境会作用于每一行——正如它们作用于为他们重述的那一版。",
+    "Anybody": "任何人",
+    "Applied. Everything else in the song is untouched.": "已应用。这首歌的其余部分原封未动。",
+    "lines outside the song's metre": "行不合这首歌的格律",
+    "Rewrite it": "重写它",
+    "Rewrite one section": "重写某一段",
+    "The rest of the song goes along as context, so a rewrite can match the metre and the rhymes the other sections already set. Nothing outside this section changes.": "整首歌会作为上下文一同送去，好让重写能对上其他段落已经定下的格律和押韵。这一段之外什么都不会变。",
+    "What's wrong with it? Or leave it blank and just see it done differently.": "它哪里不对？或者留空，只是看看换个写法。",
+    "Who it is for": "这是写给谁的"
   },
   "same_as_english": [
     "DPI —",
