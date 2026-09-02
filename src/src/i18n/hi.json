@@ -2791,7 +2791,11 @@
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "आपने ComfyUI के तहत चुना है — इसलिए मास्टर इमेज का एक सेट किसी भी मोशन पैक के तहत चल सकता है, और उन्हें फिर से जनरेट किए बिना प्रति चैनल रीस्टाइल किया जा सकता है।",
     "Your own workers": "आपके अपने वर्कर",
     "In your own words — what you want more of, and what to stay away from.": "अपने शब्दों में — आपको किसकी अधिक चाह है, और किससे दूर रहना है।",
-    "This outranks everything counted below.": "यह नीचे गिनी गई हर चीज़ पर भारी पड़ता है।"
+    "This outranks everything counted below.": "यह नीचे गिनी गई हर चीज़ पर भारी पड़ता है।",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "मुफ़्त GPU समय हर Kaggle खाते के लिए अलग होता है। कई खाते जोड़ें और हर शुरुआत उसी खाते पर जाएगी जिसमें उस इंजन के लिए अब भी जगह है — यह जाँच रन से पहले होती है, उसके विफल हो जाने के बाद नहीं। कुंजियाँ आपकी मशीन पर ही रहती हैं।",
+    "Free GPU time left on this account this week.": "इस सप्ताह इस खाते पर बचा हुआ मुफ़्त GPU समय।",
+    "of free GPU across every account that answered.": "मुफ़्त GPU, उन सभी खातों में जिन्होंने उत्तर दिया।",
+    "quota unknown": "कोटा अज्ञात"
   },
   "same_as_english": [
     "DPI —",

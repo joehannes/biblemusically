@@ -2815,7 +2815,11 @@
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "was unter ComfyUI ausgewählt wurde — so kann ein Satz Master-Bilder unter jedem Motion-Pack laufen und pro Kanal neu gestaltet werden, ohne sie neu zu generieren.",
     "Your own workers": "Eigene Worker",
     "In your own words — what you want more of, and what to stay away from.": "In Ihren eigenen Worten – wovon Sie mehr möchten und wovon Sie sich fernhalten wollen.",
-    "This outranks everything counted below.": "Das hat Vorrang vor allem, was unten gezählt wird."
+    "This outranks everything counted below.": "Das hat Vorrang vor allem, was unten gezählt wird.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Kostenlose GPU-Zeit gilt pro Kaggle-Konto. Verbinden Sie mehrere, und jeder Start geht an das Konto, das für diese Engine noch Platz hat – geprüft vor dem Lauf, nicht erst, nachdem er fehlgeschlagen ist. Die Schlüssel bleiben auf Ihrem Rechner.",
+    "Free GPU time left on this account this week.": "Diese Woche auf diesem Konto verbleibende kostenlose GPU-Zeit.",
+    "of free GPU across every account that answered.": "freie GPU-Zeit über alle Konten, die geantwortet haben.",
+    "quota unknown": "Kontingent unbekannt"
   },
   "same_as_english": [
     "Clips",

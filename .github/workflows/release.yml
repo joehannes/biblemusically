@@ -69,6 +69,11 @@ jobs:
       # {0}, a translation three times the length of its source.
       - name: Translation quality audit
         run: npm run i18n:audit
+      # The seam between Rust and api.js is a pair of strings, so nothing else catches a typo'd
+      # command name, a command missing from generate_handler!, or a whole feature that was built
+      # and never given a button. Thirty of the last kind were found by hand in 2026-08.
+      - name: Every command is reachable, and reaches something
+        run: npm run audit:ipc
 
   # Made first and separately so every platform job attaches to the same release rather than racing to
   # create it — which is how you end up with five releases for one tag.

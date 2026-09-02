@@ -646,7 +646,6 @@ pub fn run() {
             commands::test_video,
             commands::activate_kaggle_account,
             commands::remove_kaggle_account,
-            commands::rotate_kaggle_account,
             commands::pick_directory,
             commands::list_storage_locations,
             commands::fetch_kaggle_url,

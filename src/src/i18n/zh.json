@@ -2786,7 +2786,11 @@
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "您在 ComfyUI 下选择的内容 — 因此一套母版图像可以在任何动态预设包下运行，并可按频道重塑风格而无需重新生成。",
     "Your own workers": "自备 Worker",
     "In your own words — what you want more of, and what to stay away from.": "用你自己的话——你想要更多的是什么，要避开的是什么。",
-    "This outranks everything counted below.": "这优先于下面统计的一切。"
+    "This outranks everything counted below.": "这优先于下面统计的一切。",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "免费 GPU 时间按 Kaggle 账号分别计算。连接多个账号后，每次启动都会交给仍有余量运行该引擎的账号——在运行之前就检查，而不是等它失败之后。密钥始终留在你的机器上。",
+    "Free GPU time left on this account this week.": "本周该账号剩余的免费 GPU 时间。",
+    "of free GPU across every account that answered.": "的免费 GPU（所有作出响应的账号合计）。",
+    "quota unknown": "配额未知"
   },
   "same_as_english": [
     "DPI —",

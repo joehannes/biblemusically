@@ -2766,7 +2766,11 @@
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "yang Anda pilih di bawah ComfyUI — jadi satu set gambar master dapat berjalan di bawah paket gerakan apa pun, dan digaya ulang per saluran tanpa menggenerasinya ulang.",
     "Your own workers": "Worker Anda sendiri",
     "In your own words — what you want more of, and what to stay away from.": "Dengan kata-kata Anda sendiri — apa yang Anda inginkan lebih banyak, dan apa yang harus dihindari.",
-    "This outranks everything counted below.": "Ini mengalahkan semua yang dihitung di bawah."
+    "This outranks everything counted below.": "Ini mengalahkan semua yang dihitung di bawah.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Waktu GPU gratis dihitung per akun Kaggle. Hubungkan beberapa akun dan setiap start akan diarahkan ke akun yang masih punya ruang untuk mesin itu — diperiksa sebelum dijalankan, bukan setelah gagal. Kunci tetap di komputer Anda.",
+    "Free GPU time left on this account this week.": "Sisa waktu GPU gratis pada akun ini minggu ini.",
+    "of free GPU across every account that answered.": "GPU gratis di semua akun yang menjawab.",
+    "quota unknown": "kuota tidak diketahui"
   },
   "same_as_english": [
     "DPI —",

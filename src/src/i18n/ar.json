@@ -2790,7 +2790,11 @@
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "اخترت ضمن ComfyUI — لذا يمكن لمجموعة واحدة من الصور الرئيسية أن تعمل تحت أي حزمة حركة، ويتم إعادة إخراج نمطها لكل قناة دون إعادة إنشائها.",
     "Your own workers": "عمالك الخاصون",
     "In your own words — what you want more of, and what to stay away from.": "بكلماتك الخاصة — ما تريد المزيد منه، وما يجب تجنّبه.",
-    "This outranks everything counted below.": "هذا يتقدّم على كل ما هو محسوب أدناه."
+    "This outranks everything counted below.": "هذا يتقدّم على كل ما هو محسوب أدناه.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "وقت وحدة المعالجة الرسومية المجاني يُحسب لكل حساب Kaggle على حدة. اربط عدة حسابات وسيذهب كل تشغيل إلى الحساب الذي ما زال فيه متسع لهذا المحرّك — يُتحقق من ذلك قبل التشغيل، لا بعد فشله. تبقى المفاتيح على جهازك.",
+    "Free GPU time left on this account this week.": "وقت المعالج الرسومي المجاني المتبقي لهذا الحساب هذا الأسبوع.",
+    "of free GPU across every account that answered.": "من المعالج الرسومي المجاني عبر كل الحسابات التي ردّت.",
+    "quota unknown": "الحصة غير معروفة"
   },
   "same_as_english": [
     "Video Gen"

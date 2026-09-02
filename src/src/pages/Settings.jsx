@@ -520,6 +520,13 @@ const initialSettings = {
   max_concurrent_jobs: 2,
 };
 
+// "3h 20m", the same shape GpuQuotaBanner uses — a figure somebody can act on, not raw minutes.
+const prettyMinutes = (m) => {
+  const mins = Math.max(Number(m) || 0, 0);
+  const h = Math.floor(mins / 60);
+  return h > 0 ? `${h}h ${mins % 60}m` : `${mins}m`;
+};
+
 const SettingsComponent = () => {
   const { activeProjectId } = useStudio();
   const [s, setS] = useState(initialSettings);
@@ -557,12 +564,20 @@ const SettingsComponent = () => {
   const [loginInProgress, setLoginInProgress] = useState(false);
   const [mjGenerating, setMjGenerating] = useState(false);
   const navigate = useNavigate();
-  // Connected Kaggle accounts (GPU quota is per-account; the app rotates between them on
-  // exhaustion). Keys never leave the backend — this only ever shows usernames + which is active.
+  // Connected Kaggle accounts. GPU quota is per-account, and a start picks the account that has room
+  // for that engine (`ensure_account_for_engine`) rather than stepping to the next name in the list.
+  // Keys never leave the backend — this only ever shows usernames, quota and engine load.
   const [kaggleAccounts, setKaggleAccounts] = useState([]);
+  // What each account actually has left, and which engines are parked on it — `kaggle_account_overview`
+  // was written for this card ("why a start went where it went") and had never been called. It asks
+  // Kaggle over the network, so it lands after the list rather than holding it up, and an account it
+  // could not reach reports `quota_known: false` instead of a zero: an unknown is not an empty one.
+  const [kaggleFitness, setKaggleFitness] = useState(null);
   const loadKaggleAccounts = useCallback(async () => {
     try { const r = await api.listKaggleAccounts(); setKaggleAccounts(r?.accounts || []); }
     catch { setKaggleAccounts([]); }
+    try { setKaggleFitness(await api.kaggleAccountOverview()); }
+    catch { setKaggleFitness(null); }
   }, []);
   // Reload on finish: connecting an account through the dialog changes the very list rendered below
   // it, and without this the card still claimed nothing was connected until the page was revisited.
@@ -1200,24 +1215,44 @@ const SettingsComponent = () => {
           <div className="flex items-center gap-2"><UserCog className="w-4 h-4 text-primary" /><h2 className="font-semibold">Kaggle accounts</h2></div>
           <Button size="sm" variant="secondary" data-testid="settings-kaggle-add-account" onClick={switchKaggleAccount}><UserCog className="w-3 h-3 mr-2" />Add another account</Button>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Free GPU time is per Kaggle account. Connect several and the app automatically rotates to the next one when a run is denied a GPU (quota spent). Keys stay on your machine — only usernames are shown here.</p>
+        <p className="text-xs text-muted-foreground mb-3">Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.</p>
         {kaggleAccounts.length === 0 ? (
           <div className="text-xs text-muted-foreground">No Kaggle account connected yet. Use "Add another account" to connect one.</div>
         ) : (
           <div className="space-y-1.5">
-            {kaggleAccounts.map((a) => (
+            {kaggleAccounts.map((a) => {
+              const fit = (kaggleFitness?.accounts || []).find((f) => f.username === a.username);
+              return (
               <div key={a.username} className="flex items-center justify-between gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                   <span className="truncate">{a.username}</span>
                   {a.active && <Badge variant="default" className="text-[9px]">active</Badge>}
+                  {/* The figure alone, with the sentence in the tooltip: a badge reading
+                      "{n}h {m}m left" splits into text nodes that start mid-word, which is not
+                      something fifteen translators can be handed. */}
+                  {fit && (fit.quota_known
+                    ? <Badge variant="secondary" className="text-[9px]"
+                             title="Free GPU time left on this account this week.">
+                        {prettyMinutes(fit.left_minutes)}
+                      </Badge>
+                    : <Badge variant="outline" className="text-[9px]" title={fit.note}>quota unknown</Badge>)}
+                  {fit?.engines?.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground">{fit.engines.join(", ")}</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {!a.active && <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => activateAccount(a.username)}>Use</Button>}
                   <Button size="sm" variant="ghost" className="h-7 text-[11px] text-destructive hover:text-destructive" onClick={() => removeAccount(a.username)}>Remove</Button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
+        )}
+        {kaggleFitness && kaggleAccounts.length > 0 && (
+          <p className="text-[11px] text-muted-foreground mt-2">
+            {prettyMinutes(kaggleFitness.total_left_minutes || 0)} of free GPU across every account that answered.
+          </p>
         )}
         <div className="mt-4 pt-4 border-t border-border/60">
           <KaggleDiagnostics />
