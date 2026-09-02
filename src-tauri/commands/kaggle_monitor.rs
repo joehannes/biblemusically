@@ -23,7 +23,7 @@ use serde_json::Value;
 use tauri::State;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use super::settings::{kaggle_slugs, locate_kaggle};
+use super::settings::kaggle_slugs;
 use crate::state::AppState;
 
 type Res<T> = Result<T, String>;

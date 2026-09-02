@@ -281,11 +281,6 @@ async fn remote_source_url(state: &State<'_, AppState>, song: &Value, source: &s
     ))
 }
 
-/// The ffmpeg to run: whatever the rest of the app resolved, else the one on PATH.
-fn ffmpeg_binary() -> String {
-    which::which("ffmpeg").map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "ffmpeg".into())
-}
-
 /// A font file for the link card. Checked in order of how likely it is to exist on a Linux desktop.
 fn find_font() -> Option<String> {
     for p in [

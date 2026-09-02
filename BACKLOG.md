@@ -41,6 +41,127 @@ Tokens live in a new XChaCha20-Poly1305 vault and never touch `.git/config` or a
 - ~~Mobile: the Mongo→JSON prerequisite~~ — done; what remains is an NDK + JDK 17 install, see
   `TODOS.md`.
 
+## Requested 2026-09-02 — the beginner problem, and what lyrics need
+
+Three things came out of a full-app audit (findings and fixes in `STATUS.md`, 2026-09-02). None is
+started; each is written with the shape it needs, and the reasoning that produced that shape.
+
+### A. A conversation that spans pages, not one per page
+
+The guided layer is real and broad — fourteen flows over fourteen pages, template-first, persisted,
+capability-gated, spoken aloud, answerable out loud (`docs/GUIDED_WORKFLOW.md`). What it is not is
+**one journey**. Every flow starts and ends inside its own page, and the thing that carries a user
+between pages is the sidebar: thirty-five entries in five groups. So the guided experience is
+excellent and the app is still overwhelming, because the overwhelming part is the map, not the pages.
+
+Three specific gaps, each cheap relative to what already exists:
+
+1. **A cross-page flow.** `workflowFlow` asks how far a run should go and then hands off to the batch
+   runner; nothing walks a person *through* the pages, one at a time, in order, resuming where they
+   stopped. Every ingredient exists: `guidedFlows.js` is the step data, `get/save_workflow_state` is
+   the per-project persistence, `lib/pageSteps.js` is the pipeline order, and `Tours.jsx`'s
+   `DailyGuide` already produces an ordered day plan with per-step "Open" buttons. What is missing is
+   a single flow whose steps are *pages*, which mounts each page's own flow as its body, and a
+   persistent "you are here, N of M" that survives navigation.
+
+2. **The level the app already asked for is never used.** First run asks whether the user is a
+   beginner (`audience_level`, `guideSteps.jsx`), stores it, and reads it in exactly one place —
+   `welcomeStory.js`, which picks how the welcome text is worded. The sidebar shows all thirty-five
+   entries to everybody. A beginner needs about eight of them: Dashboard, Sources, Composer, Music,
+   Images, Video, Upload, Settings. The rest are studios that refine a stage and tools for people
+   who know they want them. Grouping already exists in `NAV`; a level filter over it is small, and it
+   is the single highest-leverage change for the complaint that started this.
+
+3. **Voice is push-to-talk, not conversation.** `GuidedFlow` speaks the question and then waits for a
+   click on "Say it" before it will listen. For a genuinely hands-free mode the pieces are all
+   present after the 2026-09-02 fixes — `speak()` resolves when playback ends, `listen()` now ends on
+   silence rather than on a stopwatch, `interpretAnswer` maps the answer and escalates only when
+   ambiguous — and what is missing is the loop that chains them: speak → listen → interpret → apply →
+   speak the next question, with a barge-in that stops the speaking when the microphone hears
+   someone. It must stay opt-in and interruptible; an assistant that keeps talking is worse than one
+   that never starts.
+
+### B. Lyrics: four pages, three editors, and no craft
+
+The lyric journey today is `/bible` or `/freeform` → `/composer` → `/lyrics` → `/music`. Three of
+those four are called "Composer" or "Lyrics", and the one named **Lyrics Import** — sitting seventh
+in the sidebar, right where a beginner looks for "where the words live" — opens on a textarea whose
+placeholder is `[{"title":"...","language":"..."}]`. It is a developer tool with a workflow step's
+name and a workflow step's position.
+
+Underneath that, three different editors disagree about what a lyric is:
+
+| Where | What it can do | What it does not know |
+| --- | --- | --- |
+| AI Composer results panel | read and tweak a generated item | nothing about structure |
+| `SectionAnnotator` (on the *import* page) | structural, engine-aware: sections, headers in the right dialect, per-section image idea | is two pages from where lyrics are made and one from where they are last edited |
+| Music Gen card | a plain textarea | the engine's dialect — an edit here can silently break the tagging the composer produced |
+
+`SectionAnnotator`'s own doc comment says it exists to replace hand-writing JSON. It sits next to the
+JSON box it replaced.
+
+**And there are no craft controls at all.** Everything that decides what kind of song this is comes
+down to three fields: `themes.global` (free text), `targets[].styles` (a genre CSV) and `sections`
+(user section ideas). `compose_lyrics`'s system prompt asks for section headers in the engine's
+dialect and for imagery that progresses. Nothing anywhere asks about song *form*, point of view,
+how close to stay to the source, rhyme, repetition, or reading level — which is most of what
+distinguishes one lyric from another, and all of it is one prompt block away.
+
+**The plan, in the order it should be built:**
+
+1. **A `craft` block on the compose config**, plumbed through `ComposeRequest` into
+   `compose_lyrics`'s prompt the way `brief_block` and `learnings_block` already are. Fields worth
+   having, each because it changes the output and a person can answer it:
+   - **form** — verse/chorus, verse/refrain, through-composed, call-and-response, litany. Bounded by
+     the engine's tag dialect, which `engineCapabilities.js` already knows.
+   - **faithfulness** — quote the source / paraphrase closely / take it as a starting point. For
+     scripture this is the most consequential dial in the app and the one it currently has no word
+     for.
+   - **voice** — who is speaking: the psalmist, a witness, the congregation, God, a child.
+   - **shape** — lines per verse and a syllable range, so the text scans. Engines sing what they are
+     given; a line that does not scan costs a whole GPU take to discover.
+   - **repetition** — how hard the hook works.
+   - **register** — plain and modern / literary / archaic, with a reading level.
+   2–4 of these become guided steps; the rest live in a section the guide manifests.
+
+2. **A rewrite loop.** Generation is all-or-nothing per run: N items, import them, and if verse two
+   is weak the choice is to edit by hand or regenerate everything. A `rewrite_section` command
+   (song id, section index, instruction) that returns two or three alternatives for that section
+   alone is the smallest thing that turns lyric-writing from a lottery into work. `compose_assist`
+   is already the right shape for it.
+
+3. **One editor, in one place.** Move `SectionAnnotator` to where lyrics actually are — the composer
+   and the Music Gen card — and let it be the *only* lyric editor, so an edit cannot break the
+   engine dialect the composer chose. `/lyrics` keeps the JSON box and becomes what it is: an import
+   tool, named and placed accordingly.
+
+4. **Singability feedback, before the GPU.** Syllable counts per line and a warning when a line is
+   far outside the range the form asks for. Pure, local, free, and it catches the failure that
+   currently costs a take.
+
+### C. Combinations the app measures but never crosses
+
+The app is combinatorial by construction — targets are channel × language × style, images are
+section × style pack, video is section × transition × overlay, distribution is video × platform —
+and `performance_report` ranks channel/language/style by median views with a thin-data guard. As of
+2026-09-02 the guide reads that ranking, so what worked can now argue with what is habitual.
+
+What is still uncrossed, in descending value:
+
+1. **Publish time × everything.** `publish_time` resolves a channel's local hour and reaches YouTube
+   as `status.publishAt`, and `performance_report` never groups by it — so the app schedules by hour
+   and cannot say whether the hour matters.
+2. **Image style pack × performance.** Style packs are the most visible creative choice in the app
+   and are not a dimension of the report at all. The data exists: a song's sections carry their
+   prompts, and its upload carries its views.
+3. **A deliberate A/B.** Every combination today is chosen; none is *varied on purpose*. One flag —
+   "vary this axis across today's targets" — would turn a daily run into an experiment that the
+   ranking then reads, which is the difference between measuring history and learning.
+4. **Thumbnail and title shape.** Neither is a dimension, and both are what a click is decided on.
+5. **Section count and song length.** `pick_duration` already places a length in a range from the
+   lyric's line count; nothing checks whether the ranges that get watched are the ones being asked
+   for.
+
 ## Still open
 
 ~~**Let the scheduler optionally progress further than music generation**~~ — **shipped, and this

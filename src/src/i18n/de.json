@@ -963,6 +963,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "Das kann ich noch nicht planen – dafür wird ein KI-Schlüssel benötigt, was der nächste Schritt ist. Die Standardreihenfolge funktioniert ebenfalls.",
     "I could not work something out": "Ich kam an einer Stelle nicht weiter",
     "I didn't catch that — try again, or just click.": "Das habe ich nicht verstanden – versuchen Sie es erneut oder klicken Sie einfach.",
+    "I didn't catch that — try again, or type it.": "Das habe ich nicht verstanden – versuchen Sie es erneut oder tippen Sie es ein.",
     "I do this professionally": "Ich mache das beruflich",
     "I have read these.": "Ich habe das gelesen.",
     "I'll cut it myself": "Selbst schneiden",
@@ -2812,7 +2813,13 @@
     "Upstream revision (blank = latest)": "Upstream-Revision (leer = neueste)",
     "Where the work runs": "Ausführungsort",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "was unter ComfyUI ausgewählt wurde — so kann ein Satz Master-Bilder unter jedem Motion-Pack laufen und pro Kanal neu gestaltet werden, ohne sie neu zu generieren.",
-    "Your own workers": "Eigene Worker"
+    "Your own workers": "Eigene Worker",
+    "In your own words — what you want more of, and what to stay away from.": "In Ihren eigenen Worten – wovon Sie mehr möchten und wovon Sie sich fernhalten wollen.",
+    "This outranks everything counted below.": "Das hat Vorrang vor allem, was unten gezählt wird.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Kostenlose GPU-Zeit gilt pro Kaggle-Konto. Verbinden Sie mehrere, und jeder Start geht an das Konto, das für diese Engine noch Platz hat – geprüft vor dem Lauf, nicht erst, nachdem er fehlgeschlagen ist. Die Schlüssel bleiben auf Ihrem Rechner.",
+    "Free GPU time left on this account this week.": "Diese Woche auf diesem Konto verbleibende kostenlose GPU-Zeit.",
+    "of free GPU across every account that answered.": "freie GPU-Zeit über alle Konten, die geantwortet haben.",
+    "quota unknown": "Kontingent unbekannt"
   },
   "same_as_english": [
     "Clips",

@@ -239,20 +239,12 @@ pub async fn ai_enrich_uploads(state: State<'_, AppState>, body: Value) -> Res<V
         let song = state.db.collection::<Document>("songs")
             .find_one(doc! { "id": song_id }).await.map_err(e)?
             .map(bson_to_value).unwrap_or_default();
-        let ch = if let Some(cid) = u["channel_id"].as_str() {
-            state.db.collection::<Document>("channels")
-                .find_one(doc! { "id": cid })
-                .await
-                .map_err(e)?
-                .map(bson_to_value)
-                .unwrap_or_default()
-        } else {
-            Value::default()
-        };
+        // The channel document and the lyric excerpt used to be read here for a per-upload AI call.
+        // Batching moved both into pass one (`ask`), and this pass now only writes what came back —
+        // so re-reading the channel was a database lookup per upload whose result went nowhere.
 
         let lang  = song["language"].as_str().unwrap_or("English").to_string();
         let style = song["styles"].as_str().unwrap_or("").to_string();
-        let lyrics = song["lyrics"].as_str().unwrap_or("").chars().take(400).collect::<String>();
 
         if !regenerate && !only_empty { continue; }
         let need_title = regenerate || u["title"].as_str().map_or(true, |s| s.is_empty());

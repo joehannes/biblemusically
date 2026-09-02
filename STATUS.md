@@ -4,6 +4,89 @@ A dated log of observed project state, **newest observation first** (reverse-chr
 
 ---
 
+## 2026-09-02 — Full-app audit: the voice layer, the IPC seam, and what the guide was not reading
+
+A whole-app pass at **v0.142.0**: 82 Rust files (48k lines), 36k lines of frontend outside the shadcn
+primitives, 35 routes, 14 guided flows over 14 pages. Baseline before touching anything was green —
+391 Rust tests, 115 JS tests, `npm run build` clean, i18n 100% in all fifteen languages — so this was
+an audit for the things a test suite cannot see, not a rescue.
+
+**The voice layer was built on an API this app's own webview does not have.** Two mic buttons — the
+Freeform Composer's and the daily guide's in `Tours.jsx` — called `window.SpeechRecognition`
+directly, the first under a comment asserting that Tauri's webview is Chromium. On Linux it is
+WebKitGTK, which does not implement it, so on the primary desktop platform both could only ever
+answer "speech recognition isn't available in this webview" — while `lib/voice.js`, two files away,
+already handled exactly that case by recording and transcribing on the backend. Both go through
+`listen()` now.
+
+Three more things in the same layer, each affecting the feature the guided experience is built on:
+
+- **Every spoken answer cost eight seconds.** The recorder waited out the full `maxMs` however
+  briefly somebody spoke, so most of each clip was silence, sent to be transcribed. `createSilenceGate`
+  ends the recording once speech has been heard and then stopped — calibrating a noise floor first so
+  a fan does not read as endless speech, never stopping before `minMs`, never on silence alone,
+  never past `maxMs`.
+- **No language was ever passed.** Both call sites read `voicePrefs().language`, which nothing has
+  ever written. It comes from the interface language now, in the two different shapes the two paths
+  need: a BCP-47 tag for the recogniser, a language *name* for the sentence `stt_transcribe` builds
+  for the model.
+- **The assistant spoke English over a German interface.** Spoken lines never become DOM nodes, so
+  the runtime translator never saw them. `translateKnown` is a lookup-only catalog read — no request,
+  no key, no ledger — and every guide question and option label is already in the shipped inventory.
+
+**The guide read habits and never results.** `guide_proposal` and `guide_templates` read the brief,
+the learnings store and the user's past picks in this flow. `performance_report` has ranked
+channel/language/style by median views since the analytics loop landed. The two had never met, so the
+studio recommended what the user usually picks and never what actually got watched.
+`performance_prompt_block` puts a few lines of the second kind in front of both, and the prompt now
+says to prefer them and to *say so* when they disagree. Deliberately hard to convince: nothing below
+six measured videos, no row below three, rows of three or four labelled thin, every row carrying its
+own sample size. (Found while wiring it: `measured_videos` was counted after the list had been
+truncated to fifty for display, so two hundred measured uploads reported as fifty.)
+
+**The one place taste could be stated in words was permanently empty.** `learnings_prompt_block`
+gives a free-text `preferences` field the last word over every counted tally; the Learnings panel
+displayed it; `update_user_learnings` and `update_project_learnings` wrote it — and nothing called
+them, in the whole interface. It is a textarea with a Save now. Withdrawing it needed a fix too:
+`merge` is a deep merge, so `""` leaves the key in place, and `forget_learnings` only ever touched
+`tally` and `signals`.
+
+**`npm run audit:ipc`**, so the class of defect above stops being found by hand. The seam between
+Rust and `api.js` is a pair of strings: a typo'd command name, a command missing from
+`generate_handler!`, and a feature built and never given a button all compile, pass every test, and
+fail only when somebody presses the button. The check reads all three statically, runs in CI beside
+the i18n gates, and was verified by introducing each defect in turn. Orphans that are decisions live
+in `scripts/ipc-orphans.json` with a reason each. Today: 395 commands, 395 registered, none broken,
+none unrouted. Three of its findings were not decisions:
+
+- The Kaggle accounts card promised the app "automatically rotates to the next account when a run is
+  denied a GPU". It does not — `ensure_account_for_engine` picks an account with room *before* the
+  run, and its own doc comment records that it replaced rotation because rotation only ever happened
+  after eight minutes of failure and then moved to the next name whether or not it had a GPU minute
+  left. `rotate_kaggle_account` was still registered and wrapped, one call from coming back. Removed;
+  the copy now describes what happens.
+- `kaggle_account_overview` — written, per its doc comment, as "what the Settings screen needs to
+  show why a start went where it went" — was never called by that screen, which listed usernames. It
+  now shows each account's remaining GPU time and the engines parked on it, with an unreachable
+  account reading "quota unknown" rather than zero.
+- The Section Editor's empty state said "Generate song audio in Step 8 first!" while the user stood
+  on step 8, pointing at its own page instead of Music Gen.
+
+**Zero compiler warnings**, from nineteen. Two of them were real hazards rather than tidiness:
+`ComposeRequest` and `SignInRequest` each collided under `commands/mod.rs`'s glob re-exports, which
+is a compile error waiting for the first `use commands::*`; `models::ComposeRequest` was a stale
+duplicate of the struct `compose_lyrics` actually takes. Also removed: a per-upload channel lookup
+left behind by the enrichment batching, whose result went nowhere, and a Tokio runtime built in
+`run()` and never entered — a pool of idle threads for the life of the process, while everything
+async there goes through `tauri::async_runtime`.
+
+End state: **403 Rust tests, 127 JS tests**, build clean, i18n 100% in fifteen languages, IPC audit
+clean. What the audit found and did *not* fix — the beginner's map problem, the four-page lyric
+journey, and the combinations the app measures but never crosses — is written up in
+[BACKLOG.md](BACKLOG.md) under "Requested 2026-09-02".
+
+---
+
 ## 2026-07-25 (later) — OAuth preflight, AI overload fallback, offline GUI translation catalogs
 
 Driven by three reports from using the app: YouTube authorization dying on Google's "Access blocked"

@@ -4,6 +4,7 @@ import { useStudio } from "../lib/store";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
+import { Textarea } from "./ui/textarea";
 import { Brain, Trash2, FolderOpen, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,6 +41,7 @@ export default function LearningsPanel() {
   const [data, setData] = useState(null);
   const [locations, setLocations] = useState(null);
   const [busy, setBusy] = useState("");
+  const [prefsDraft, setPrefsDraft] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -47,10 +49,35 @@ export default function LearningsPanel() {
         ? (activeProjectId ? await api.getProjectLearnings(activeProjectId) : {})
         : await api.getUserLearnings();
       setData(d || {});
-    } catch { setData({}); }
+      setPrefsDraft(typeof d?.preferences === "string" ? d.preferences : "");
+    } catch { setData({}); setPrefsDraft(""); }
     try { setLocations(await api.learningsLocations(activeProjectId || null)); } catch { setLocations(null); }
   }, [scope, activeProjectId]);
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * Save the stated preference for the current scope.
+   *
+   * Emptying it needs `forget_learnings`, not an empty patch: `update_*_learnings` deep-merges, so
+   * writing "" would leave the key present and the block would keep quoting an empty preference.
+   */
+  const savePreferences = async () => {
+    const text = prefsDraft.trim();
+    setBusy("prefs");
+    try {
+      if (!text) {
+        await api.forgetLearnings(scope, scope === "project" ? activeProjectId : null, "preferences", null);
+      } else if (scope === "project") {
+        await api.updateProjectLearnings(activeProjectId, { preferences: text });
+      } else {
+        await api.updateUserLearnings({ preferences: text });
+      }
+      await load();
+      toast.success("Saved.");
+    } catch (e) {
+      toast.error(`Could not save that: ${e?.message || e}`);
+    } finally { setBusy(""); }
+  };
 
   const forget = async (kind, key) => {
     const what = key ? `“${key}”` : kind ? `everything under “${kindLabel(kind)}”` : "everything the app has learned";
@@ -99,19 +126,40 @@ export default function LearningsPanel() {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />Reading…
         </div>
-      ) : kinds.length === 0 && !stated ? (
-        <p className="text-xs text-muted-foreground">
-          Nothing learned yet. This fills in as you keep and discard things.
-        </p>
       ) : (
         <div className="space-y-3">
-          {stated && (
-            <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
-              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                What you told it directly
-              </div>
-              <div className="text-sm">{stated}</div>
+          {/* Saying it outright, rather than being inferred from what you clicked.
+              `learnings_prompt_block` already gave this the last word over every counted tally
+              ("the user said it explicitly"), and the panel already displayed it — but nothing in
+              the app could write it, so the one place taste can be stated in words instead of
+              guessed at was permanently empty. */}
+          <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1.5">
+            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              What you told it directly
             </div>
+            <Textarea
+              rows={3}
+              value={prefsDraft}
+              onChange={(e) => setPrefsDraft(e.target.value)}
+              data-testid="learnings-preferences"
+              placeholder="In your own words — what you want more of, and what to stay away from."
+              className="text-sm"
+            />
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[11px] text-muted-foreground">
+                This outranks everything counted below.
+              </span>
+              <Button size="sm" className="h-7 text-[11px]" disabled={busy === "prefs" || prefsDraft.trim() === stated}
+                      onClick={savePreferences}>
+                {busy === "prefs" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+              </Button>
+            </div>
+          </div>
+
+          {kinds.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Nothing learned yet. This fills in as you keep and discard things.
+            </p>
           )}
           {kinds.map((kind) => {
             const entries = Object.entries(tally[kind] || {})

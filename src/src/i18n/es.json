@@ -954,6 +954,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "Aún no puedo planificar esto; se necesita una clave de IA, que es el siguiente paso. El orden estándar también funciona bien.",
     "I could not work something out": "No conseguí entender algo",
     "I didn't catch that — try again, or just click.": "No lo entendí. Inténtalo de nuevo o haz clic.",
+    "I didn't catch that — try again, or type it.": "No lo entendí. Inténtalo de nuevo o escríbelo.",
     "I do this professionally": "Hago esto de forma profesional",
     "I have read these.": "He leído esto.",
     "I'll cut it myself": "Cortarlo yo mismo",
@@ -2772,7 +2773,13 @@
     "Upstream revision (blank = latest)": "Revisión original (en blanco = más reciente)",
     "Where the work runs": "Dónde se ejecuta el trabajo",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "hayas seleccionado en ComfyUI, por lo que un conjunto de imágenes maestras se puede ejecutar bajo cualquier pack de movimiento y rediseñarse por canal sin volver a generarlas.",
-    "Your own workers": "Tus propios workers"
+    "Your own workers": "Tus propios workers",
+    "In your own words — what you want more of, and what to stay away from.": "Con tus propias palabras: de qué quieres más y de qué prefieres alejarte.",
+    "This outranks everything counted below.": "Esto tiene prioridad sobre todo lo que se cuenta abajo.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "El tiempo de GPU gratuito es por cuenta de Kaggle. Conecta varias y cada arranque irá a la cuenta que aún tenga espacio para ese motor, comprobado antes de la ejecución y no después de que haya fallado. Las claves se quedan en tu equipo.",
+    "Free GPU time left on this account this week.": "Tiempo de GPU gratuito que le queda a esta cuenta esta semana.",
+    "of free GPU across every account that answered.": "de GPU gratuita en todas las cuentas que respondieron.",
+    "quota unknown": "cuota desconocida"
   },
   "same_as_english": [
     "Clips",

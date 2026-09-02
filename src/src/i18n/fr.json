@@ -946,6 +946,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "Impossible de planifier pour l'instant — une clé IA est requise (étape suivante). L'ordre standard fonctionne également très bien.",
     "I could not work something out": "Je n'ai pas réussi à comprendre quelque chose",
     "I didn't catch that — try again, or just click.": "Je n'ai pas compris — réessayer ou simplement cliquer.",
+    "I didn't catch that — try again, or type it.": "Je n'ai pas compris — réessayer ou l'écrire.",
     "I do this professionally": "Je fais cela professionnellement",
     "I have read these.": "J'ai lu ceci.",
     "I'll cut it myself": "Découper soi-même",
@@ -2772,7 +2773,13 @@
     "Upstream revision (blank = latest)": "Révision amont (vide = dernière version)",
     "Where the work runs": "Où s'exécute le traitement",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "vous avez choisi sous ComfyUI — ainsi un ensemble d'images master peut fonctionner sous n'importe quel pack de mouvement, et être restylé par chaîne sans les régénérer.",
-    "Your own workers": "Vos propres workers"
+    "Your own workers": "Vos propres workers",
+    "In your own words — what you want more of, and what to stay away from.": "Avec vos propres mots — ce que vous voulez davantage, et ce qu'il faut éviter.",
+    "This outranks everything counted below.": "Cela l'emporte sur tout ce qui est compté ci-dessous.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Le temps GPU gratuit est propre à chaque compte Kaggle. Connectez-en plusieurs et chaque démarrage ira au compte qui a encore de la place pour ce moteur — vérifié avant l'exécution, pas après son échec. Les clés restent sur votre machine.",
+    "Free GPU time left on this account this week.": "Temps GPU gratuit restant sur ce compte cette semaine.",
+    "of free GPU across every account that answered.": "de GPU gratuit sur tous les comptes ayant répondu.",
+    "quota unknown": "quota inconnu"
   },
   "same_as_english": [
     "Clips",

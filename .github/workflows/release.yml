@@ -31,6 +31,11 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Pull requests run `checks` and nothing else — see the `if:` on `draft` below. Without this the
+  # cheap job that guards a release only ran once a tag had been pushed, which is *after* the release
+  # exists: v0.112.0 and v0.113.0 both died in `checks` in under forty seconds and left a published,
+  # asset-less release behind them. A branch should find that out while it is still a branch.
+  pull_request:
   workflow_dispatch:
     inputs:
       tag:
@@ -69,11 +74,21 @@ jobs:
       # {0}, a translation three times the length of its source.
       - name: Translation quality audit
         run: npm run i18n:audit
+      # The seam between Rust and api.js is a pair of strings, so nothing else catches a typo'd
+      # command name, a command missing from generate_handler!, or a whole feature that was built
+      # and never given a button. Thirty of the last kind were found by hand in 2026-08.
+      - name: Every command is reachable, and reaches something
+        run: npm run audit:ipc
 
   # Made first and separately so every platform job attaches to the same release rather than racing to
   # create it — which is how you end up with five releases for one tag.
   draft:
     needs: checks
+    # Everything from here down builds and publishes a release, which a pull request must never do.
+    # Gating this one job is enough: `desktop`, `android` and `ios` all need it, and GitHub skips a
+    # job whose dependency was skipped.
+    if: github.event_name != 'pull_request'
+
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}

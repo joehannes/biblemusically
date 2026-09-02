@@ -946,6 +946,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "Saya belum bisa merencanakannya — itu memerlukan kunci AI, yang merupakan langkah berikutnya. Urutan standar juga berfungsi dengan baik.",
     "I could not work something out": "Ada yang tidak saya pahami",
     "I didn't catch that — try again, or just click.": "Saya tidak menangkapnya — coba lagi, atau cukup klik.",
+    "I didn't catch that — try again, or type it.": "Saya tidak menangkapnya — coba lagi, atau ketik saja.",
     "I do this professionally": "Saya melakukan ini secara profesional",
     "I have read these.": "Saya sudah membacanya.",
     "I'll cut it myself": "Saya akan memotongnya sendiri",
@@ -2763,7 +2764,13 @@
     "Upstream revision (blank = latest)": "Revisi hulu (kosong = terbaru)",
     "Where the work runs": "Tempat proses dijalankan",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "yang Anda pilih di bawah ComfyUI — jadi satu set gambar master dapat berjalan di bawah paket gerakan apa pun, dan digaya ulang per saluran tanpa menggenerasinya ulang.",
-    "Your own workers": "Worker Anda sendiri"
+    "Your own workers": "Worker Anda sendiri",
+    "In your own words — what you want more of, and what to stay away from.": "Dengan kata-kata Anda sendiri — apa yang Anda inginkan lebih banyak, dan apa yang harus dihindari.",
+    "This outranks everything counted below.": "Ini mengalahkan semua yang dihitung di bawah.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Waktu GPU gratis dihitung per akun Kaggle. Hubungkan beberapa akun dan setiap start akan diarahkan ke akun yang masih punya ruang untuk mesin itu — diperiksa sebelum dijalankan, bukan setelah gagal. Kunci tetap di komputer Anda.",
+    "Free GPU time left on this account this week.": "Sisa waktu GPU gratis pada akun ini minggu ini.",
+    "of free GPU across every account that answered.": "GPU gratis di semua akun yang menjawab.",
+    "quota unknown": "kuota tidak diketahui"
   },
   "same_as_english": [
     "DPI —",

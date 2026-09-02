@@ -18,7 +18,7 @@ pub async fn imagery_catalogue() -> Res<Value> {
 }
 
 #[derive(serde::Deserialize)]
-pub struct ComposeRequest {
+pub struct ImageryComposeRequest {
     pub subject: String,
     #[serde(default)]
     pub model: Option<String>,
@@ -37,14 +37,14 @@ pub struct ComposeRequest {
 /// on this model, that restraint was switched off, or that this shape is not what the model is best
 /// at. A preview that only showed the prompt would hide exactly the decisions worth seeing.
 #[tauri::command]
-pub async fn compose_image_prompt(payload: ComposeRequest) -> Res<Value> {
+pub async fn compose_image_prompt(payload: ImageryComposeRequest) -> Res<Value> {
     let (destination, controls, model) = resolve(&payload)?;
     let out = imagery::compose(&model, &destination, &controls, &payload.subject)?;
     Ok(serde_json::to_value(out).unwrap_or_else(|_| json!({})))
 }
 
 /// Resolve an intent (or explicit choices) into the three things `compose` needs.
-fn resolve(payload: &ComposeRequest) -> Res<(String, Controls, String)> {
+fn resolve(payload: &ImageryComposeRequest) -> Res<(String, Controls, String)> {
     if let Some(id) = payload.intent.as_deref().filter(|s| !s.is_empty()) {
         let i = imagery::intent(id).ok_or_else(|| format!("There is no preset called {id:?}."))?;
         let controls = match &payload.controls {

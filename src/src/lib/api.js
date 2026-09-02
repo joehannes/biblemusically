@@ -153,9 +153,9 @@ export const api = {
   kaggleQuota: () => invokeCommand("kaggle_quota"),
   activateKaggleAccount: (username) => invokeCommand("activate_kaggle_account", { username }),
   removeKaggleAccount: (username) => invokeCommand("remove_kaggle_account", { username }),
-  rotateKaggleAccount: () => invokeCommand("rotate_kaggle_account"),
-  // Quota-aware replacement for rotateKaggleAccount: picks the account with room for THIS engine
-  // and puts it in place, instead of stepping to the next name in the list and hoping.
+  // Picks the account with room for THIS engine and puts it in place, instead of stepping to the
+  // next name in the list and hoping — which is what the removed `rotate_kaggle_account` did, after
+  // a run had already spent eight minutes failing.
   pickKaggleAccount: (engine) => invokeCommand("pick_kaggle_account", { engine }),
   kaggleAccountOverview: () => invokeCommand("kaggle_account_overview"),
   listStorageLocations: () => invokeCommand("list_storage_locations"),

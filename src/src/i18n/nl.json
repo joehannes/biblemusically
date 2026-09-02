@@ -973,6 +973,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "Kan dit nog niet plannen — hiervoor is een AI-sleutel nodig, wat de volgende stap is. De standaardvolgorde werkt ook prima.",
     "I could not work something out": "Ik kwam er niet uit",
     "I didn't catch that — try again, or just click.": "Niet verstaan — probeer opnieuw of klik gewoon.",
+    "I didn't catch that — try again, or type it.": "Niet verstaan — probeer opnieuw of typ het.",
     "I do this professionally": "Ik doe dit professioneel",
     "I have read these.": "Ik heb dit gelezen.",
     "I'll cut it myself": "Zelf knippen",
@@ -2774,6 +2775,12 @@
     "→ type": "→ typ",
     "★ recommended": "★ aanbevolen",
     "⚠️ You added Gmail addresses to the discovery field below, but you still need to create an OAuth client above first.": "⚠️ U heeft Gmail-adressen toegevoegd aan het ontdekkingsveld hieronder, maar u moet eerst nog een OAuth-client hierboven aanmaken.",
-    "Takes per run (1–4)": "Opnames per run (1–4)"
+    "Takes per run (1–4)": "Opnames per run (1–4)",
+    "In your own words — what you want more of, and what to stay away from.": "In je eigen woorden — waar je meer van wilt en waar je vandaan wilt blijven.",
+    "This outranks everything counted below.": "Dit gaat boven alles wat hieronder is geteld.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Gratis GPU-tijd geldt per Kaggle-account. Koppel er meerdere en elke start gaat naar het account dat nog ruimte heeft voor die engine — gecontroleerd vóór de run, niet nadat die al mislukt is. De sleutels blijven op je eigen machine.",
+    "Free GPU time left on this account this week.": "Gratis GPU-tijd die dit account deze week nog over heeft.",
+    "of free GPU across every account that answered.": "aan gratis GPU over alle accounts die antwoordden.",
+    "quota unknown": "quotum onbekend"
   }
 }

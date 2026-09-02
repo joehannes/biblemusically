@@ -406,8 +406,8 @@ pub async fn update_channel_overrides(
 ) -> Res<Value> {
     let channels_coll = state.db.collection::<Document>("channels");
     
-    // Verify channel exists
-    let existing = channels_coll
+    // Verify channel exists — the document itself is not needed, only that there is one.
+    channels_coll
         .find_one(doc! { "id": &channel_id })
         .await
         .map_err(e)?

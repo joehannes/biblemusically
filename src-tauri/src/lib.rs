@@ -75,8 +75,10 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
-    
+    // No runtime is constructed here. Everything async in this function goes through
+    // `tauri::async_runtime::block_on`, which uses Tauri's own runtime — so the one that used to be
+    // built on this line was never entered and never spawned on: a pool of idle worker threads kept
+    // alive for the life of the process, doing nothing.
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -644,7 +646,6 @@ pub fn run() {
             commands::test_video,
             commands::activate_kaggle_account,
             commands::remove_kaggle_account,
-            commands::rotate_kaggle_account,
             commands::pick_directory,
             commands::list_storage_locations,
             commands::fetch_kaggle_url,

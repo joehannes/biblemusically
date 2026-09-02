@@ -3,7 +3,7 @@ use bson::{doc, Document};
 use serde_json::Value;
 use std::env;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 use tokio::fs;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
@@ -12,10 +12,6 @@ use warp::Filter;
 
 type Res<T> = Result<T, String>;
 fn e(err: impl std::fmt::Display) -> String { err.to_string() }
-
-fn proj0() -> crate::store::FindOneOptions {
-    crate::store::FindOneOptions::builder().projection(doc! { "_id": 0 }).build()
-}
 
 fn bson_to_value(doc: Document) -> Value {
     let mut m = serde_json::Map::new();
@@ -26,22 +22,6 @@ fn bson_to_value(doc: Document) -> Value {
     Value::Object(m)
 }
 
-
-async fn probe_midjourney_proxy() -> Option<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
-        .build()
-        .ok()?;
-    for port in [8080u16, 8086u16, 8081u16, 8085u16] {
-        let url = format!("http://127.0.0.1:{}", port);
-        if let Ok(res) = client.get(format!("{}/info", url.trim_end_matches('/'))).send().await {
-            if res.status().is_success() {
-                return Some(url);
-            }
-        }
-    }
-    None
-}
 
 async fn get_settings_doc(db: &crate::store::Db) -> Result<Value, String> {
     let doc = db.collection::<Document>("settings")
@@ -208,7 +188,7 @@ pub async fn validate_google_refresh_tokens_internal(db: &crate::store::Db) -> R
     Ok(invalidated)
 }
 
-pub async fn ensure_mj_autostart_internal(db: &crate::store::Db) -> Res<Value> {
+pub async fn ensure_mj_autostart_internal(_db: &crate::store::Db) -> Res<Value> {
     // Midjourney proxy autostart is deprecated. Use the visible Playwright
     // driven workflow and the Settings → Capture session flow to obtain a
     // Playwright profile directory (stored as `mj_profile_dir`). This function remains for API compatibility and no
@@ -1405,7 +1385,7 @@ async fn stored_kaggle_accounts(db: &crate::store::Db) -> Vec<Document> {
 
 /// Save a pasted kaggle.json: write it, verify, and record it in the multi-account store as the
 /// ACTIVE account. Kaggle's free GPU quota is per-account, so the app keeps every account the user
-/// connects and can rotate to the next when one is exhausted (see `rotate_kaggle_account`).
+/// connects and picks the one with quota left before a start (see `ensure_account_for_engine`).
 /// Keys live in the local settings DB only, alongside the app's other credentials, and are never
 /// returned to the UI.
 #[tauri::command]
@@ -1877,47 +1857,6 @@ pub async fn remove_kaggle_account(state: State<'_, AppState>, username: String)
         }
     }
     Ok(serde_json::json!({ "ok": true, "active": new_active }))
-}
-
-/// Rotate to the next stored account after the active one (wraps). Returns the new active username,
-/// or `ok:false` with `only_one:true` when there's nothing to rotate to — the app then prompts the
-/// user to connect another free account. Called automatically when a run is denied a GPU (quota
-/// exhausted), since Kaggle's quota is per-account.
-#[tauri::command]
-pub async fn rotate_kaggle_account(state: State<'_, AppState>) -> Res<Value> {
-    let doc = state.db.collection::<Document>("settings").find_one(doc! { "_id": "singleton" }).await.ok().flatten();
-    let active = doc.as_ref().and_then(|d| d.get_str("kaggle_active").ok()).unwrap_or("").to_string();
-    let accts = stored_kaggle_accounts(&state.db).await;
-    if accts.len() < 2 {
-        return Ok(serde_json::json!({ "ok": false, "only_one": true,
-            "detail": "Only one Kaggle account is connected — connect another free account to rotate to it when quota runs out." }));
-    }
-    let idx = accts.iter().position(|a| a.get_str("username").ok() == Some(active.as_str())).unwrap_or(0);
-    let next = &accts[(idx + 1) % accts.len()];
-    let next_user = next.get_str("username").map_err(|_| "next account missing username".to_string())?.to_string();
-    let key = next.get_str("key").map_err(|_| "next account missing key".to_string())?;
-
-    // Through the same install path as every other switch. Writing the key file directly — which is
-    // what this did — cannot rotate anything while a cached OAuth token outranks it: the caller was
-    // told the account had changed, retried the start, and got another run on the exhausted account.
-    let installed = install_kaggle_credential(&next_user, key).await?;
-    if !installed.ok {
-        return Ok(serde_json::json!({
-            "ok": false, "username": installed.actual, "asked_for": next_user, "rotated_from": active,
-            "detail": format!(
-                "Could not switch to “{next_user}”: this computer is still signed in as “{}”. {}",
-                installed.actual, installed.detail),
-            "next_step": format!(
-                "Create a fresh API token for {next_user} (kaggle.com → Settings → API), or sign the \
-                 other account out with `kaggle auth logout`."),
-        }));
-    }
-    state.db.collection::<Document>("settings").update_one(
-        doc! { "_id": "singleton" },
-        doc! { "$set": { "kaggle_active": &installed.actual, "kaggle_username": &installed.actual,
-                         "kaggle_connected": true } },
-    ).await.map_err(e)?;
-    Ok(serde_json::json!({ "ok": true, "username": installed.actual, "rotated_from": active }))
 }
 
 // ── Choosing an account, rather than rotating blindly ───────────────────────

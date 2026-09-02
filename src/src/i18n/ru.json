@@ -952,6 +952,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "Пока не могу это спланировать — нужен ключ ИИ, это следующий шаг. Стандартный порядок тоже подойдет.",
     "I could not work something out": "Я не смог разобраться",
     "I didn't catch that — try again, or just click.": "Не расслышал — попробуйте еще раз или просто нажмите.",
+    "I didn't catch that — try again, or type it.": "Не расслышал — попробуйте еще раз или введите текст.",
     "I do this professionally": "Я делаю это профессионально",
     "I have read these.": "Я это прочитал.",
     "I'll cut it myself": "Нарезать самостоятельно",
@@ -2787,7 +2788,13 @@
     "Upstream revision (blank = latest)": "Ревизия репозитория (пусто = последняя)",
     "Where the work runs": "Где выполняются задачи",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "выбранного в ComfyUI — поэтому один набор мастер-изображений можно использовать с любым набором движения и стилизовать заново для каждого канала без повторной генерации.",
-    "Your own workers": "Собственные воркеры"
+    "Your own workers": "Собственные воркеры",
+    "In your own words — what you want more of, and what to stay away from.": "Своими словами — чего вы хотите больше и чего лучше избегать.",
+    "This outranks everything counted below.": "Это важнее всего, что подсчитано ниже.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Бесплатное время GPU считается для каждой учётной записи Kaggle отдельно. Подключите несколько, и каждый запуск уйдёт в ту, где ещё есть место для этого движка, — проверка до запуска, а не после того, как он уже провалился. Ключи остаются на вашем компьютере.",
+    "Free GPU time left on this account this week.": "Бесплатное время GPU, оставшееся у этой учётной записи на этой неделе.",
+    "of free GPU across every account that answered.": "бесплатного GPU по всем ответившим учётным записям.",
+    "quota unknown": "квота неизвестна"
   },
   "same_as_english": [
     "DPI —",

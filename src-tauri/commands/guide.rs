@@ -150,6 +150,9 @@ pub async fn guide_templates(state: State<'_, AppState>, payload: GuideTemplateR
     let past = past_choices_block(&state, &project_id, &payload.view).await;
     let research = crate::commands::ai::channel_research_block(&state.db).await;
     let social = social_signal_block(&state.db, &project_id).await;
+    // What was actually watched, where there is enough of it to mean anything. See
+    // `performance_prompt_block` for why this is separate from — and outranks — the habit blocks.
+    let performance = crate::commands::insights::performance_prompt_block(&state, &project_id).await;
 
     let catalogue: Vec<Value> = payload.controls.iter().map(|c| serde_json::json!({
         "id": c.id, "label": c.label, "kind": c.kind, "section": c.section,
@@ -188,7 +191,7 @@ pub async fn guide_templates(state: State<'_, AppState>, payload: GuideTemplateR
     );
 
     let user = format!(
-        "{brief}{learnings}{past}{research}{social}\nDECLARED GOAL: {}\n\nENGINES:\n{}\n\nCONTROL CATALOGUE:\n{}\n\nPOSSIBLE STEPS:\n{}\n\nOTHER CONTEXT:\n{}",
+        "{brief}{learnings}{past}{performance}{research}{social}\nDECLARED GOAL: {}\n\nENGINES:\n{}\n\nCONTROL CATALOGUE:\n{}\n\nPOSSIBLE STEPS:\n{}\n\nOTHER CONTEXT:\n{}",
         if payload.goal.trim().is_empty() { "(not stated — infer from the brief)" } else { payload.goal.trim() },
         serde_json::to_string_pretty(&payload.context["engines"]).unwrap_or_else(|_| "{}".into()),
         serde_json::to_string_pretty(&catalogue).unwrap_or_else(|_| "[]".into()),
@@ -589,6 +592,7 @@ pub async fn guide_proposal(state: State<'_, AppState>, payload: GuideProposalRe
     let brief = crate::commands::ai::project_brief_block(&state.db, &project_id).await;
     let learnings = crate::commands::learnings::learnings_prompt_block(&state, &project_id).await;
     let past = past_choices_block(&state, &project_id, &payload.flow).await;
+    let performance = crate::commands::insights::performance_prompt_block(&state, &project_id).await;
 
     // The options are handed over as a closed list, and the model is told to answer with ids only.
     let steps_json: Vec<Value> = payload.steps.iter().map(|s| serde_json::json!({
@@ -606,17 +610,20 @@ pub async fn guide_proposal(state: State<'_, AppState>, payload: GuideProposalRe
          pick exactly one option id FROM THAT LIST and give a reason of at most 12 words, addressed to \
          the user, referring to something concrete about their project, their engine or their habits \
          (\"your brief asks for warmth\", \"HeartMuLa ignores performance tags\", \"you picked this the \
-         last three times\").\n\n\
+         last three times\", \"this combination doubles your median views\").\n\n\
          Rules: never invent an option id; never suggest a control the selected engine does not support; \
-         prefer the user's past choices unless the brief or today's topic argues against them; if a step \
-         has no meaningful preference, still answer with the safest option and say why it is safe.\n\n\
+         prefer what their published videos actually did over what they habitually pick, and say so when \
+         the two disagree (\"your Spanish uploads out-perform the rest\"); otherwise prefer their past \
+         choices unless the brief or today's topic argues against them; never cite a measurement that was \
+         not given to you, and never treat a row marked thin as settled; if a step has no meaningful \
+         preference, still answer with the safest option and say why it is safe.\n\n\
          Return ONLY this JSON: {{\"greeting\":\"one sentence, ≤20 words, what today's run is about\", \
          \"picks\":[{{\"step\":\"<step id>\",\"option\":\"<option id>\",\"why\":\"…\"}}]}}",
         payload.title,
     );
 
     let user = format!(
-        "{brief}{learnings}{past}\nENGINES AND CAPABILITIES (only offer what these support):\n{}\n\nCURRENT PAGE CONTEXT:\n{}\n\nSTEPS:\n{}",
+        "{brief}{learnings}{past}{performance}\nENGINES AND CAPABILITIES (only offer what these support):\n{}\n\nCURRENT PAGE CONTEXT:\n{}\n\nSTEPS:\n{}",
         serde_json::to_string_pretty(&payload.context["engines"]).unwrap_or_else(|_| "{}".into()),
         serde_json::to_string_pretty(&payload.context).unwrap_or_else(|_| "{}".into()),
         serde_json::to_string_pretty(&steps_json).unwrap_or_else(|_| "[]".into()),

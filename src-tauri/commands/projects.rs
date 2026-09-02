@@ -427,7 +427,7 @@ pub async fn import_project(
     project_obj.insert("id".to_string(), serde_json::Value::String(new_project_id.clone()));
     project_obj.remove("_id");
 
-    let mut project_doc = bson::to_document(&project_obj).map_err(e)?;
+    let project_doc = bson::to_document(&project_obj).map_err(e)?;
     state.db.collection::<Document>("projects").insert_one(project_doc).await.map_err(e)?;
 
     let source_dir_path = source_dir.map(PathBuf::from);
@@ -924,7 +924,9 @@ pub async fn get_project_git_info(state: State<'_, AppState>, project_id: String
 #[tauri::command]
 pub async fn save_project_version(
     state: State<'_, AppState>,
-    app_handle: AppHandle,
+    // Kept in the signature because Tauri resolves it by type and the frontend's argument list is
+    // written against this command; nothing in the body needs the handle any more.
+    _app_handle: AppHandle,
     project_id: String,
     save_type: String,
     branch_to_create: Option<String>

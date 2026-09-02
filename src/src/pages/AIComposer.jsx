@@ -845,14 +845,20 @@ export default function AIComposer() {
     stylePacks: STYLE_PACKS,
     generate,
   };
+  const CONFIG_SECTIONS = ["profiles", "fields", "themes", "images", "keywords", "chapter", "sections", "targets", "results"];
   const guide = useGuidedView({
     view: "composer",
     projectId: activeProjectId,
     flow: composerFlow,
     // Page order, top to bottom — the collapse rule reads this.
-    sectionOrder: ["profiles", "fields", "themes", "images", "keywords", "chapter", "sections", "targets", "results"],
+    sectionOrder: CONFIG_SECTIONS,
     ctx: guideCtx,
   });
+  // Results are shown whenever there are any, guide or no guide — so the wrapper has to count that
+  // the same way the Results section's own `hidden` does, or a generation would land in a card the
+  // page had decided to hide.
+  const anyConfigSectionVisible =
+    CONFIG_SECTIONS.some((id) => guide.sectionVisible(id)) || items.length > 0;
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-4 py-5 sm:py-8 space-y-5 sm:space-y-6">
@@ -862,10 +868,19 @@ export default function AIComposer() {
       </div>
       <p className="text-muted-foreground mb-6 max-w-2xl">Authors a multi-channel <span className="text-mono">lyrics.json</span> from your bible chapter + themes + section ideas. Powered by OpenRouter Qwen (free tier).</p>
 
+      {/* ── Template first, then only the open questions; sections appear as they get settled. ── */}
+      <GuidedHeader guide={guide} flow={composerFlow} ctx={{ ...guideCtx, showAll: () => guide.setShowAll(true) }} />
+
+      {/* The Assist Workbench is a power tool, not a step: seven presets, a temperature slider and a
+          JSON-mode switch were the first thing on the page, above the guide, for someone who had not
+          yet decided what today's song is about. It now waits behind "Show all controls" (or the end
+          of the guide) and opens closed, so the guided page starts with one question. */}
       <CollapsibleSection
         title="Qwen Assist Workbench"
         badge="intermediate AI"
         titleIcon={Bot}
+        hidden={!guide.showAll && guide.phase !== "done" && guide.phase !== "off"}
+        defaultOpen={false}
         actions={
           <Button size="sm" onClick={runAssist} disabled={assistBusy}>
             {assistBusy ? <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-2" />}
@@ -995,11 +1010,11 @@ export default function AIComposer() {
         </div>
       </CollapsibleSection>
 
-      {/* ── Master Toggle: Show/Hide all config sections ── */}
-      {/* Template first, then only the open questions; sections appear as they get settled. */}
-      <GuidedHeader guide={guide} flow={composerFlow} ctx={{ ...guideCtx, showAll: () => guide.setShowAll(true) }} />
-
-      <Card className="overflow-hidden border-primary/30">
+      {/* ── Master Toggle: Show/Hide all config sections ──
+          Hidden entirely while the guide has settled nothing: every section inside is gated on
+          `sectionVisible`, so before the first answer this card was a header, a "Showing" badge and
+          an empty body — chrome announcing controls that were not there. */}
+      <Card className={`overflow-hidden border-primary/30 ${anyConfigSectionVisible ? "" : "hidden"}`}>
         <div
           className="flex items-center justify-between px-5 py-3.5 cursor-pointer select-none bg-primary/5 hover:bg-primary/10 transition-colors border-b border-primary/20"
           onClick={() => setConfigExpanded(!configExpanded)}

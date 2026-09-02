@@ -247,7 +247,7 @@ async fn store_entitlement(state: &AppState, token: &str) {
 // ── Commands ────────────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
-pub struct SignInRequest {
+pub struct SubsSignInRequest {
     /// A Google ID token, from the sign-in the app already does for YouTube.
     pub id_token: String,
     #[serde(default)]
@@ -259,7 +259,7 @@ pub struct SignInRequest {
 
 /// Sign in (creating the account and starting the trial on first sight).
 #[tauri::command]
-pub async fn subs_sign_in(state: State<'_, AppState>, payload: SignInRequest) -> Res<Value> {
+pub async fn subs_sign_in(state: State<'_, AppState>, payload: SubsSignInRequest) -> Res<Value> {
     redeem_id_token(&state, &payload.id_token,
                     payload.username.as_deref(), payload.referral.as_deref()).await
 }

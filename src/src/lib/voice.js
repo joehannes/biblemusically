@@ -1,5 +1,7 @@
 import { api } from "./api";
 import { matchOption } from "./voiceMatch.js";
+import { getUiLanguage, allLanguages, translateKnown } from "./uiTranslate";
+import { resolveSpeechLanguage, createSilenceGate } from "./speech.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Talking and listening.
@@ -93,15 +95,24 @@ export function stopSpeaking() {
   try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
 }
 
-/** Read one line aloud. Resolves when playback ends (or immediately when muted/unavailable). */
-export async function speak(text, { style, force = false } = {}) {
+/**
+ * Read one line aloud. Resolves when playback ends (or immediately when muted/unavailable).
+ *
+ * The line is put through the interface catalog first, so the assistant speaks the language the user
+ * is reading. Guide questions and option labels are all in the shipped inventory, so for the sixteen
+ * bundled languages this is a free lookup — no request, no key, no delay. `translate: false` is for
+ * the caller that already holds the user's own words and must not have them "corrected".
+ */
+export async function speak(text, { style, force = false, translate = true } = {}) {
   const prefs = voicePrefs();
   if (!text || (!prefs.speak && !force) || prefs.engine === "off") return { spoken: false };
   stopSpeaking();
+  const line = translate ? translateKnown(text) : text;
+  const lang = speechLanguage();
 
   if (prefs.engine !== "browser") {
     try {
-      const r = await api.ttsSpeak({ text, voice: prefs.voice, style: style || null });
+      const r = await api.ttsSpeak({ text: line, voice: prefs.voice, style: style || null });
       if (r?.audio) {
         const audio = new Audio(`data:${r.mime || "audio/wav"};base64,${r.audio}`);
         current = audio;
@@ -124,9 +135,12 @@ export async function speak(text, { style, force = false } = {}) {
     // default voice regardless of what was picked.
     await systemVoices();
     return await new Promise((resolve) => {
-      const u = new SpeechSynthesisUtterance(text);
+      const u = new SpeechSynthesisUtterance(line);
       const chosen = prefs.systemVoice ? pickSystemVoice(prefs.systemVoice) : null;
+      // A chosen voice speaks its own language; without one, say which language this is, or the
+      // platform reads a German sentence with an English voice.
       if (chosen) { u.voice = chosen; u.lang = chosen.lang; }
+      else u.lang = lang.code;
       u.rate = 1.0;
       u.pitch = 1.0;
       u.onend = () => resolve({ spoken: true, engine: "browser", voice: chosen?.name });
@@ -148,18 +162,76 @@ function recognition() {
   return rec;
 }
 
+/**
+ * Which language a spoken answer is in, in the two shapes the two listening paths need.
+ *
+ * The rule lives in `speech.js`; this only supplies the live values — the interface language the user
+ * already chose, and the language list behind the picker. A German interface is overwhelmingly
+ * answered in German, and until now neither path was told anything at all, because callers read
+ * `voicePrefs().language`, which nothing has ever written.
+ */
+export const speechLanguage = (explicit) =>
+  resolveSpeechLanguage(explicit, getUiLanguage(), allLanguages());
+
+/**
+ * Wait for the speaker to finish, rather than for a stopwatch.
+ *
+ * The recorder path used to record for the full `maxMs` every time, so every spoken answer cost eight
+ * seconds — most of them silence — before anything was even sent to be transcribed. That is long
+ * enough to feel broken, and it made the guide's fastest input its slowest.
+ *
+ * The decision is `createSilenceGate`'s; this measures loudness and keeps time for it. Where the Web
+ * Audio API is missing, it degrades to the old fixed wait.
+ */
+async function waitForSpeechEnd(stream, { maxMs, silenceMs, minMs }) {
+  const Ctx = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+  if (!Ctx) { await new Promise((r) => setTimeout(r, maxMs)); return; }
+
+  let ctx;
+  try { ctx = new Ctx(); } catch { await new Promise((r) => setTimeout(r, maxMs)); return; }
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  source.connect(analyser);
+  const buf = new Uint8Array(analyser.fftSize);
+
+  const gate = createSilenceGate({ maxMs, silenceMs, minMs });
+  const started = Date.now();
+
+  await new Promise((resolve) => {
+    const tick = () => {
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / buf.length);
+      if (gate.push(Date.now() - started, rms) === "stop") return resolve();
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+
+  try { source.disconnect(); } catch { /* ignore */ }
+  try { await ctx.close(); } catch { /* ignore */ }
+}
+
 /** Record until silence (or `maxMs`) and return the transcript. `null` when nothing could be heard. */
-export async function listen({ language, maxMs = 8000 } = {}) {
+export async function listen({ language, maxMs = 8000, silenceMs = 1200, minMs = 700 } = {}) {
+  const lang = speechLanguage(language);
   const rec = recognition();
   if (rec) {
-    if (language) rec.lang = language;
+    rec.lang = lang.code;
     return await new Promise((resolve) => {
-      const done = (v) => { try { rec.stop(); } catch { /* ignore */ } resolve(v); };
+      let timer = null;
+      const done = (v) => {
+        clearTimeout(timer);
+        try { rec.stop(); } catch { /* ignore */ }
+        resolve(v);
+      };
       rec.onresult = (ev) => done(Array.from(ev.results).map((r) => r[0].transcript).join(" ").trim());
       rec.onerror = () => done(null);
       rec.onend = () => resolve(null);
-      setTimeout(() => done(null), maxMs);
-      try { rec.start(); } catch { resolve(null); }
+      timer = setTimeout(() => done(null), maxMs);
+      try { rec.start(); } catch { clearTimeout(timer); resolve(null); }
     });
   }
 
@@ -178,7 +250,7 @@ export async function listen({ language, maxMs = 8000 } = {}) {
   recorder.ondataavailable = (ev) => { if (ev.data?.size) chunks.push(ev.data); };
   const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
   recorder.start();
-  await new Promise((r) => setTimeout(r, maxMs));
+  await waitForSpeechEnd(stream, { maxMs, silenceMs, minMs });
   try { recorder.stop(); } catch { /* ignore */ }
   await stopped;
   stream.getTracks().forEach((t) => t.stop());
@@ -192,7 +264,7 @@ export async function listen({ language, maxMs = 8000 } = {}) {
   });
   if (!base64) return null;
   try {
-    const r = await api.sttTranscribe({ audio: base64, mime: blob.type, language: language || null });
+    const r = await api.sttTranscribe({ audio: base64, mime: blob.type, language: lang.name });
     return r?.text || null;
   } catch (err) {
     console.warn("[voice] transcription failed:", err);

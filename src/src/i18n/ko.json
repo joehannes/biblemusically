@@ -949,6 +949,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "아직 계획을 세울 수 없습니다. 다음 단계인 AI 키가 필요합니다. 표준 순서로 진행해도 무방합니다.",
     "I could not work something out": "이해하지 못한 것이 있습니다",
     "I didn't catch that — try again, or just click.": "이해하지 못했습니다. 다시 시도하거나 클릭하세요.",
+    "I didn't catch that — try again, or type it.": "이해하지 못했습니다. 다시 시도하거나 직접 입력하세요.",
     "I do this professionally": "저는 이것을 전문적으로 합니다",
     "I have read these.": "이 내용을 읽었습니다.",
     "I'll cut it myself": "직접 자르기",
@@ -2784,7 +2785,13 @@
     "Upstream revision (blank = latest)": "업스트림 리비전 (비워 두면 최신)",
     "Where the work runs": "작업 실행 위치",
     "you picked under ComfyUI — so one set of master images can run under any motion pack, and be restyled per channel without regenerating them.": "ComfyUI에서 선택한 항목에서 가져오므로, 마스터 이미지 세트 하나를 어떤 모션 팩에서도 실행할 수 있으며 재생성 없이 채널별로 스타일을 재적용할 수 있습니다.",
-    "Your own workers": "자체 워커"
+    "Your own workers": "자체 워커",
+    "In your own words — what you want more of, and what to stay away from.": "직접 적어 주세요 — 더 원하는 것과 피하고 싶은 것.",
+    "This outranks everything counted below.": "이것은 아래에 집계된 모든 것보다 우선합니다.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "무료 GPU 시간은 Kaggle 계정마다 따로 주어집니다. 여러 계정을 연결하면 해당 엔진을 받을 여유가 남은 계정으로 실행이 배정됩니다 — 실행이 실패한 뒤가 아니라 실행 전에 확인합니다. 키는 사용자의 컴퓨터에 남습니다.",
+    "Free GPU time left on this account this week.": "이번 주 이 계정에 남은 무료 GPU 시간입니다.",
+    "of free GPU across every account that answered.": "의 무료 GPU (응답한 모든 계정 합계).",
+    "quota unknown": "할당량 알 수 없음"
   },
   "same_as_english": [
     "DPI —",

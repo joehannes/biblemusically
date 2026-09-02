@@ -968,6 +968,7 @@
     "I can't plan this yet — that needs an AI key, which is the next step. The standard order works fine too.": "Impossibile pianificare ora: è necessaria una chiave AI (passaggio successivo). Anche l'ordine standard funziona perfettamente.",
     "I could not work something out": "Non sono riuscito a capire qualcosa",
     "I didn't catch that — try again, or just click.": "Non ho capito: riprova o fai clic.",
+    "I didn't catch that — try again, or type it.": "Non ho capito: riprova o scrivilo.",
     "I do this professionally": "Lo faccio professionalmente",
     "I have read these.": "Ho letto questo.",
     "I'll cut it myself": "Taglia manualmente",
@@ -2763,6 +2764,12 @@
     "→ type": "→ digita",
     "★ recommended": "★ consigliato",
     "⚠️ You added Gmail addresses to the discovery field below, but you still need to create an OAuth client above first.": "⚠️ Ha aggiunto indirizzi Gmail al campo di rilevamento sottostante, ma deve prima creare un client OAuth sopra.",
-    "Cinematic drift": "Deriva cinematografica"
+    "Cinematic drift": "Deriva cinematografica",
+    "In your own words — what you want more of, and what to stay away from.": "Con parole tue: che cosa vuoi di più e da che cosa stare alla larga.",
+    "This outranks everything counted below.": "Questo ha la precedenza su tutto ciò che è conteggiato sotto.",
+    "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Il tempo GPU gratuito è per singolo account Kaggle. Collegane più di uno e ogni avvio andrà all'account che ha ancora spazio per quel motore, verificato prima dell'esecuzione e non dopo che è già fallita. Le chiavi restano sul tuo computer.",
+    "Free GPU time left on this account this week.": "Tempo GPU gratuito rimasto su questo account questa settimana.",
+    "of free GPU across every account that answered.": "di GPU gratuita su tutti gli account che hanno risposto.",
+    "quota unknown": "quota sconosciuta"
   }
 }

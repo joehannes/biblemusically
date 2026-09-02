@@ -17,6 +17,7 @@ It is a layer, not a replacement. "All controls" returns any page to exactly wha
 | `src/src/components/GuidedFlow.jsx` | Presentation: one question at a time, the progress rail, the escape hatch. Knows nothing about any page. |
 | `src/src/components/GuidedPanel.jsx` | What a page mounts. Owns the on/off preference and loads the shared context (brief, channels, engines). |
 | `src-tauri/commands/guide.rs` | `guide_proposal` — picks one option per step and says why, from the brief, today's topic, the learnings store, past choices, and the engines' capabilities. |
+| `src/src/lib/speech.js` | The two rules behind taking a spoken answer — which language it is in, and when the speaker has finished — free of Web Audio, `localStorage` and Tauri so they can be tested directly. |
 | `tests/guided-flows.test.mjs` | Holds the capability promise: no flow may offer a control the selected engine ignores. |
 
 ## What makes a recommendation
@@ -24,7 +25,10 @@ It is a layer, not a replacement. "All controls" returns any page to exactly wha
 In order of authority:
 
 1. **The AI's pick** for that step (`guide_proposal`), which reads the project brief, the daily topic,
-   channel languages/regions, the learnings store, and this user's past choices in this flow.
+   channel languages/regions, the learnings store, this user's past choices in this flow, and — since
+   2026-09-02 — how their published videos actually performed (`performance_prompt_block`). The last
+   of those outranks the others and has to say so when they disagree: a habit and a result are
+   different things, and only one of them is evidence. It stays silent below six measured videos.
 2. **What this user picked last time**, from `localStorage` per flow.
 3. **The step's own `recommended` flag** — a sane static default.
 
@@ -100,6 +104,30 @@ backend's Gemini voices (cached on disk per phrase) to the webview's `speechSynt
 listening cascades from `SpeechRecognition` to `MediaRecorder` plus backend transcription to nothing.
 `lib/voiceMatch.js` maps the answer locally — "yes" takes the suggestion, "the second one" and naming
 an option both work — and only escalates to `guide_interpret` when that is genuinely ambiguous.
+
+**Everything that takes dictation goes through `listen()`**, including the mic buttons outside the
+guide. WebKitGTK — the desktop webview on Linux — has no `SpeechRecognition` at all, so a page that
+calls the Web Speech API itself has a button that cannot work on the app's own primary platform.
+Two did until 2026-09-02.
+
+The rules underneath are in `lib/speech.js` (pure, tested in `tests/speech.test.mjs`):
+
+- `resolveSpeechLanguage` answers in **both** shapes, because the two paths need different ones — a
+  BCP-47 tag for `SpeechRecognition.lang`, a language *name* for the sentence `stt_transcribe` puts
+  in front of the model. It defaults to the interface language; a page that knows the answer will be
+  in the song's language rather than the interface's can pass that instead.
+- `createSilenceGate` ends a recording when the speaker stops rather than when a stopwatch does. It
+  calibrates a noise floor first (a fan must not read as endless speech), never stops before `minMs`
+  (drawing breath is not an empty answer), never stops on silence alone (a pause before starting is
+  not the end), and never runs past `maxMs`.
+
+`speak()` puts its line through the interface catalog first (`translateKnown`, a lookup with no
+request and no key), so the assistant speaks the language the user is reading. Guide questions and
+option labels are all in the shipped inventory, so for the bundled languages this is free.
+
+**Not yet a conversation.** The guide speaks, then waits for a click on "Say it" before it listens.
+A hands-free mode is the loop that chains them — speak, listen, interpret, apply, speak the next —
+plus a barge-in that stops the speaking when the microphone hears somebody. See `BACKLOG.md`.
 
 ## Current flows
 
