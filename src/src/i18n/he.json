@@ -2788,7 +2788,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "זמן GPU חינמי נספר לכל חשבון Kaggle בנפרד. חברו כמה חשבונות וכל הפעלה תעבור לחשבון שעדיין יש בו מקום למנוע הזה — נבדק לפני ההרצה, לא אחרי שכבר נכשלה. המפתחות נשארים במחשב שלכם.",
     "Free GPU time left on this account this week.": "זמן GPU חינמי שנותר בחשבון הזה השבוע.",
     "of free GPU across every account that answered.": "של GPU חינמי בכל החשבונות שהשיבו.",
-    "quota unknown": "מכסה לא ידועה"
+    "quota unknown": "מכסה לא ידועה",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "מרנדר כל שיר במנוע שבחרת, כמשימה בתור שאפשר לעקוב אחריה כאן. Suno עובד ב-HTTP פשוט כמו השאר; אם ההפעלה שלו לא עונה, מוצע מסלול הדפדפן כגיבוי במקום להיבחר במקומך.",
+    "Run it in the browser": "הרץ את זה בדפדפן",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno לא ענה ב-HTTP — לרוב הפעלה שפג תוקפה.",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "מסלול הדפדפן נכנס בשמך וממלא את הדף של Suno עצמו, ולכן הוא עובד כשההפעלה לא — אבל הוא זקוק לחלון הזה, ומטפל בשיר אחד בכל פעם."
   },
   "same_as_english": [
     "DPI —",

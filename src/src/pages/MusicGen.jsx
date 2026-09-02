@@ -42,6 +42,7 @@ import {
   SkipForward,
   HardDriveDownload,
   LogIn,
+  Globe,
 } from "lucide-react";
 import { toast } from "sonner";
 import GenerationProgress from "../components/GenerationProgress";
@@ -187,14 +188,6 @@ export default function MusicGen() {
       expandSong(sid);
       return toast.error(`"${song?.title || "This song"}" has no lyrics yet — expand the card below and add lyrics first.`);
     }
-    // Suno is browser-driven: the pipeline switches to the Browser tab itself, fills the form,
-    // submits, polls for the finished clip(s), and downloads them — see genPipeline.js.
-    if (engine === "suno") {
-      if (pipelineActive) return toast.error("A Suno generation is already running — Suno only runs one song at a time.");
-      toast.message(`Generating "${song.title}" via Suno…`);
-      runPipeline([song], { projectId: activeProjectId, channelId: resolveChannelId, autoAdvance: true });
-      return;
-    }
     try {
       await api.genMusic(sid);
       toast.success(`Music generation queued (${engine})`);
@@ -203,6 +196,49 @@ export default function MusicGen() {
       toast.error(String(err));
     }
   };
+
+  // ── Suno's browser fallback ───────────────────────────────────────────────
+  //
+  // Suno generates over plain HTTP like every other engine, as a queued job. The visible-browser
+  // pipeline is what is left when that cannot work — a cookie Suno has stopped accepting, or a
+  // change to their API that the wrapper has not caught up with. It is a fallback and not the route
+  // because it needs a webview: it cannot run on a phone, cannot run headless, and holds the app on
+  // the Browser tab while it works.
+  //
+  // Offered rather than taken automatically. Opening a window that drives somebody's own Suno
+  // account, unasked, in the middle of a batch, is not a thing to do on their behalf.
+  const [browserOffer, setBrowserOffer] = useState(null);   // { songs, why }
+
+  /** Does this failed job look like something the browser could still do? */
+  const browserCouldHelp = (log) => {
+    const t = String(log || "").toLowerCase();
+    return t.includes("cookie") || t.includes("expired") || t.includes("401")
+        || t.includes("clerk") || t.includes("wrapper");
+  };
+
+  const runInBrowser = (list, why) => {
+    if (pipelineActive) return toast.error("A Suno generation is already running — Suno only runs one song at a time.");
+    setBrowserOffer(null);
+    toast.message(`Running ${list.length === 1 ? `"${list[0].title}"` : `${list.length} songs`} in the browser…`,
+                  { description: why });
+    runPipeline(list, { projectId: activeProjectId, channelId: resolveChannelId, autoAdvance: !pauseBetween });
+  };
+
+  // Watch this project's Suno jobs; when one fails for a reason the browser could get past, offer it.
+  useEffect(() => {
+    if (engine !== "suno" || pipelineActive || browserOffer) return;
+    const failed = (jobs || []).filter(
+      (j) => j.kind === "music" && j.status === "failed" && browserCouldHelp((j.logs || []).join(" ")),
+    );
+    if (!failed.length) return;
+    const stuck = songs.filter((s) => !s.audio_url && failed.some((j) => j.target_id === s.id));
+    if (stuck.length) {
+      setBrowserOffer({
+        songs: stuck,
+        why: "Suno would not answer over HTTP — usually an expired session.",
+      });
+    }
+  }, [jobs, songs, engine, pipelineActive, browserOffer]);
 
   const triggerAll = async () => {
     const pending = songs.filter((x) => !x.audio_url);
@@ -213,12 +249,6 @@ export default function MusicGen() {
     }
     if (!ready.length) return toast.error(skipped.length ? "Every pending song is missing lyrics." : "Nothing to generate.");
 
-    if (engine === "suno") {
-      if (pipelineActive) return toast.error("A Suno generation is already running.");
-      toast.message(`Running the Suno pipeline for ${ready.length} song${ready.length > 1 ? "s" : ""}, one at a time…`);
-      runPipeline(ready, { projectId: activeProjectId, channelId: resolveChannelId, autoAdvance: !pauseBetween });
-      return;
-    }
     let queued = 0;
     for (const s of ready) {
       try {
@@ -397,8 +427,37 @@ export default function MusicGen() {
         <h1 className="text-4xl sm:text-5xl font-bold">Music Studio</h1>
       </div>
       <p className="text-muted-foreground mb-8 max-w-2xl">
-        Generate premium song clips using Suno AI. Listen to studio previews, monitor real-time generation progress, and export files optimized directly for Spotify distribution.
+        Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over
+        plain HTTP like the rest; if its session will not answer, the browser route is offered as a
+        fallback rather than taken on your behalf.
       </p>
+
+      {/* The browser fallback, offered only when the HTTP route has actually failed for a reason it
+          could get past. Dismissible, because "try it in the browser" is not always the answer. */}
+      {browserOffer && (
+        <Card className="p-4 mb-6 border-amber-500/40 bg-amber-500/5">
+          <div className="flex items-start gap-3 flex-wrap">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">
+                {browserOffer.songs.length === 1
+                  ? `"${browserOffer.songs[0].title}" did not generate`
+                  : `${browserOffer.songs.length} songs did not generate`}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {browserOffer.why} The browser route signs in as you and fills Suno's own page, so it
+                works when the session does not — but it needs this window, and it runs one song at a time.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm" variant="ghost" onClick={() => setBrowserOffer(null)}>Not now</Button>
+              <Button size="sm" onClick={() => runInBrowser(browserOffer.songs, browserOffer.why)}>
+                <Globe className="w-3.5 h-3.5 mr-1.5" />Run it in the browser
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Guided path: engine, scope and length as three questions, with the reasons for each. */}
       <div className="mb-6">

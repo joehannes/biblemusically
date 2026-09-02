@@ -2819,7 +2819,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Kostenlose GPU-Zeit gilt pro Kaggle-Konto. Verbinden Sie mehrere, und jeder Start geht an das Konto, das für diese Engine noch Platz hat – geprüft vor dem Lauf, nicht erst, nachdem er fehlgeschlagen ist. Die Schlüssel bleiben auf Ihrem Rechner.",
     "Free GPU time left on this account this week.": "Diese Woche auf diesem Konto verbleibende kostenlose GPU-Zeit.",
     "of free GPU across every account that answered.": "freie GPU-Zeit über alle Konten, die geantwortet haben.",
-    "quota unknown": "Kontingent unbekannt"
+    "quota unknown": "Kontingent unbekannt",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "Rendert jeden Song auf der gewählten Engine, als eingereihter Auftrag, den Sie hier verfolgen können. Suno läuft wie alle anderen über einfaches HTTP; antwortet dessen Sitzung nicht, wird der Browser-Weg als Rückfalloption angeboten, statt ungefragt genommen zu werden.",
+    "Run it in the browser": "Im Browser ausführen",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno hat über HTTP nicht geantwortet — meist eine abgelaufene Sitzung.",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Der Browser-Weg meldet sich als Sie an und füllt Sunos eigene Seite aus, funktioniert also auch dann, wenn die Sitzung es nicht tut — er braucht aber dieses Fenster und läuft immer nur einen Song auf einmal."
   },
   "same_as_english": [
     "Clips",

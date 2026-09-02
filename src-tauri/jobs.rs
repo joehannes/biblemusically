@@ -251,6 +251,114 @@ fn normalize_suno_cookie(raw: &str) -> Option<String> {
     Some(cookie.to_string())
 }
 
+/// Suno over plain HTTP, through `commands::suno_api`.
+///
+/// The whole reason this exists rather than the older `real_suno` below: that one talked to
+/// `studio-api.suno.com` with the raw session cookie as a bearer, which stopped working when Suno
+/// moved to Clerk-issued JWTs. `suno_api` exchanges the cookie for a JWT and refreshes it per call,
+/// carries the wrapper fallback, and flags an expired cookie so the interface can ask for a new one
+/// instead of failing every song in the queue with the same opaque 401.
+///
+/// Two clips are returned, matching every other engine's contract.
+async fn real_suno_http(
+    state: &AppState,
+    song: &Value,
+    job_id: &str,
+    db: &crate::store::Db,
+    cancelled: &CancelSet,
+) -> Option<Vec<Value>> {
+    use crate::commands::suno_api::{self, SunoRequest};
+
+    let settings = suno_api::settings_of(state).await;
+    let lyrics = song["lyrics"].as_str().unwrap_or("").trim().to_string();
+    if lyrics.is_empty() {
+        db_log(db, job_id, "suno: this song has no lyrics yet.").await;
+        return None;
+    }
+    let payload = SunoRequest {
+        prompt: lyrics,
+        tags: song["styles"].as_str().map(|s| s.to_string()),
+        title: song["title"].as_str().map(|s| s.to_string()),
+        custom: Some(true),
+        instrumental: Some(false),
+    };
+
+    db_log(db, job_id, "suno: submitting over HTTP…").await;
+    let started = match suno_api::suno_generate_native(state, &settings, &payload).await {
+        Ok(v) => v,
+        Err(err) => {
+            // A wrapper is somebody else keeping up with Suno's front end, which changes faster than
+            // this app follows it. Worth a try before giving the song back to the browser.
+            let wrapper = settings["suno_wrapper_url"].as_str().unwrap_or("").trim().to_string();
+            if wrapper.is_empty() {
+                db_log(db, job_id, &format!("suno: {err}")).await;
+                if err == "SUNO_COOKIE_EXPIRED" {
+                    db_log(db, job_id, "suno: capture a fresh cookie in Settings → Music engines, or                                         retry this song from Music Gen to run it in the browser.").await;
+                }
+                return None;
+            }
+            match suno_api::suno_generate_wrapper(&wrapper, &payload).await {
+                Ok(clips) => serde_json::json!({
+                    "ids": clips.iter().filter_map(|c| c["id"].as_str()).collect::<Vec<_>>(),
+                }),
+                Err(w) => {
+                    db_log(db, job_id, &format!("suno: direct failed ({err}); the wrapper failed too ({w})")).await;
+                    return None;
+                }
+            }
+        }
+    };
+
+    let ids: Vec<String> = started["ids"].as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    if ids.is_empty() {
+        db_log(db, job_id, "suno: accepted the request but named no clips to wait for.").await;
+        return None;
+    }
+    db_log(db, job_id, &format!("suno: {} clip(s) queued, waiting…", ids.len())).await;
+
+    // Same shape as every other slow integration here: poll on a fixed tick, check cancellation on
+    // every one, and give up rather than hang.
+    for attempt in 0..SUNO_POLL_TICKS {
+        if is_cancelled(cancelled, job_id).await {
+            db_log(db, job_id, "suno: cancelled by user").await;
+            return None;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(SUNO_POLL_SECS)).await;
+
+        let polled = match suno_api::poll_clips(state, &ids).await {
+            Ok(v) => v,
+            Err(err) => {
+                db_log(db, job_id, &format!("suno: poll {}/{SUNO_POLL_TICKS} failed: {err}", attempt + 1)).await;
+                continue;
+            }
+        };
+        // `streaming` already has a playable URL; waiting for `complete` costs another minute or two
+        // per song for a file the composer can already fetch.
+        let ready: Vec<&Value> = polled["clips"].as_array().map(|a| a.iter()
+            .filter(|c| matches!(c["state"].as_str(), Some("complete") | Some("streaming"))
+                        && c["audio_url"].as_str().is_some_and(|u| !u.is_empty()))
+            .collect()).unwrap_or_default();
+        if !ready.is_empty() {
+            db_log(db, job_id, &format!("suno: {} clip(s) ready", ready.len())).await;
+            return Some(ready.iter().take(2).map(|c| serde_json::json!({
+                "audio_url": c["audio_url"],
+                "duration": c["duration"].as_f64().unwrap_or(120.0),
+            })).collect());
+        }
+        set_progress(db, job_id, 15 + (attempt as i32 * 70 / SUNO_POLL_TICKS as i32).min(70)).await;
+    }
+    db_log(db, job_id, &format!("suno: nothing was ready after {}s.", SUNO_POLL_TICKS as u64 * SUNO_POLL_SECS)).await;
+    None
+}
+
+/// How long to wait for Suno, as a tick count and a tick length. Suno takes 1–3 minutes for a pair of
+/// clips; 40 × 5s gives it a little over three before the job gives up and says so.
+const SUNO_POLL_TICKS: u32 = 40;
+const SUNO_POLL_SECS: u64 = 5;
+
+#[allow(dead_code)] // Superseded by `real_suno_http`; kept until the HTTP path has a release behind it.
 async fn real_suno(
     song: &Value,
     settings: &Value,
@@ -2925,7 +3033,14 @@ pub async fn run_job(job_id: &str, state: &Arc<AppState>) {
                         // Suno is named rather than being the fallback arm: as the catch-all it
                         // meant any unrecognised id drove the user's own Suno session, which is the
                         // one thing hiding the engine was meant to prevent.
-                        "suno" => real_suno(&song, &settings_doc, job_id, db, &state.cancelled_jobs).await,
+                        //
+                        // The HTTP module, not the ad-hoc client this file used to carry: it refreshes
+                        // the Clerk JWT (which the old path did not, so a session older than an hour
+                        // simply 401'd), falls back to a configured wrapper, and records whether the
+                        // cookie is still good. The visible-browser path is the frontend's fallback
+                        // for when this fails — the job runner cannot drive a webview, so that
+                        // handover lives in Music Gen.
+                        "suno" => real_suno_http(state, &song, job_id, db, &state.cancelled_jobs).await,
                         // Suno over plain HTTP — the only Suno path that works on a phone, and the
                         // one that risks the user's own account. Refused unless the lock in
                         // Settings has been opened deliberately, so an engine id copied from a

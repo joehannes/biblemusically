@@ -2790,7 +2790,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "免费 GPU 时间按 Kaggle 账号分别计算。连接多个账号后，每次启动都会交给仍有余量运行该引擎的账号——在运行之前就检查，而不是等它失败之后。密钥始终留在你的机器上。",
     "Free GPU time left on this account this week.": "本周该账号剩余的免费 GPU 时间。",
     "of free GPU across every account that answered.": "的免费 GPU（所有作出响应的账号合计）。",
-    "quota unknown": "配额未知"
+    "quota unknown": "配额未知",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "在你选择的引擎上渲染每首歌，作为可以在这里查看的排队任务。Suno 和其他引擎一样走普通 HTTP；如果它的会话没有响应，浏览器路径会作为备用方案提供，而不是替你直接采用。",
+    "Run it in the browser": "在浏览器中运行",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno 没有通过 HTTP 响应 —— 通常是会话已过期。",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "浏览器路径以你的身份登录并填写 Suno 自己的页面，所以在会话失效时仍然可用 —— 但它需要这个窗口，而且一次只处理一首歌。"
   },
   "same_as_english": [
     "DPI —",

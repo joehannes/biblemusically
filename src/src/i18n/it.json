@@ -2770,6 +2770,10 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Il tempo GPU gratuito è per singolo account Kaggle. Collegane più di uno e ogni avvio andrà all'account che ha ancora spazio per quel motore, verificato prima dell'esecuzione e non dopo che è già fallita. Le chiavi restano sul tuo computer.",
     "Free GPU time left on this account this week.": "Tempo GPU gratuito rimasto su questo account questa settimana.",
     "of free GPU across every account that answered.": "di GPU gratuita su tutti gli account che hanno risposto.",
-    "quota unknown": "quota sconosciuta"
+    "quota unknown": "quota sconosciuta",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "Renderizza ogni brano sul motore che hai scelto, come un lavoro in coda che puoi seguire qui. Suno passa da semplice HTTP come gli altri; se la sua sessione non risponde, la via del browser viene proposta come ripiego anziché presa al posto tuo.",
+    "Run it in the browser": "Eseguilo nel browser",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno non ha risposto via HTTP: di solito una sessione scaduta.",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "La via del browser accede come te e compila la pagina di Suno, quindi funziona quando la sessione non funziona — ma ha bisogno di questa finestra e procede un brano alla volta."
   }
 }

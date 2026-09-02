@@ -2770,7 +2770,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Waktu GPU gratis dihitung per akun Kaggle. Hubungkan beberapa akun dan setiap start akan diarahkan ke akun yang masih punya ruang untuk mesin itu — diperiksa sebelum dijalankan, bukan setelah gagal. Kunci tetap di komputer Anda.",
     "Free GPU time left on this account this week.": "Sisa waktu GPU gratis pada akun ini minggu ini.",
     "of free GPU across every account that answered.": "GPU gratis di semua akun yang menjawab.",
-    "quota unknown": "kuota tidak diketahui"
+    "quota unknown": "kuota tidak diketahui",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "Merender setiap lagu pada mesin yang Anda pilih, sebagai pekerjaan antrean yang bisa Anda pantau di sini. Suno lewat HTTP biasa seperti yang lain; kalau sesinya tidak menjawab, jalur peramban ditawarkan sebagai cadangan, bukan diambil atas nama Anda.",
+    "Run it in the browser": "Jalankan di peramban",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno tidak menjawab lewat HTTP — biasanya sesi yang kedaluwarsa.",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Jalur peramban masuk sebagai Anda dan mengisi halaman Suno sendiri, jadi berhasil ketika sesinya tidak — tetapi ia butuh jendela ini, dan mengerjakan satu lagu sekali jalan."
   },
   "same_as_english": [
     "DPI —",

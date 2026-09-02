@@ -37,6 +37,10 @@ export const MUSIC_ENGINES = {
     riskNote: "Reaches Suno by driving your own logged-in session, which Suno's terms restrict to \
 their own interface. The subscription at risk is yours. An official API is reportedly in progress.",
     lyricDialect: "suno",         // [Verse] + performance hints
+    // Generation goes over plain HTTP (commands/suno_api.rs), with a configured community wrapper
+    // behind it and the visible-browser pipeline behind that. The browser is the *fallback* rather
+    // than the route: it needs a webview, so it cannot run on a phone and cannot run headless.
+    browserFallback: true,
     caps: {
       structureTags: "rich",      // [Intro], [Soft female vocal], …
       performanceHints: true,

@@ -2791,7 +2791,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "무료 GPU 시간은 Kaggle 계정마다 따로 주어집니다. 여러 계정을 연결하면 해당 엔진을 받을 여유가 남은 계정으로 실행이 배정됩니다 — 실행이 실패한 뒤가 아니라 실행 전에 확인합니다. 키는 사용자의 컴퓨터에 남습니다.",
     "Free GPU time left on this account this week.": "이번 주 이 계정에 남은 무료 GPU 시간입니다.",
     "of free GPU across every account that answered.": "의 무료 GPU (응답한 모든 계정 합계).",
-    "quota unknown": "할당량 알 수 없음"
+    "quota unknown": "할당량 알 수 없음",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "선택한 엔진에서 각 곡을 렌더링하며, 여기에서 지켜볼 수 있는 대기열 작업으로 실행됩니다. Suno도 나머지와 마찬가지로 일반 HTTP를 사용하고, 세션이 응답하지 않으면 브라우저 경로를 대신 실행하지 않고 대안으로 제안합니다.",
+    "Run it in the browser": "브라우저에서 실행",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno가 HTTP로 응답하지 않았습니다 — 보통 만료된 세션입니다.",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "브라우저 경로는 사용자로 로그인해 Suno 자체 페이지를 채우므로 세션이 안 될 때도 동작합니다 — 다만 이 창이 필요하고 한 번에 한 곡씩 처리합니다."
   },
   "same_as_english": [
     "DPI —",

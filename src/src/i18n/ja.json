@@ -2790,7 +2790,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "無料の GPU 時間は Kaggle アカウントごとです。複数を接続すると、そのエンジンの空きが残っているアカウントに起動が振り分けられます——実行が失敗してからではなく、実行の前に確認されます。キーはお使いのマシンから出ません。",
     "Free GPU time left on this account this week.": "今週このアカウントに残っている無料 GPU 時間。",
     "of free GPU across every account that answered.": "の無料 GPU（応答したすべてのアカウントの合計）。",
-    "quota unknown": "使用量は不明"
+    "quota unknown": "使用量は不明",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "選んだエンジンで各曲をレンダリングします。キューに入ったジョブとして、ここで進行を追えます。Suno も他と同じくプレーンな HTTP を使い、そのセッションが応答しない場合は、代わりに勝手に実行するのではなくブラウザ経路が提案されます。",
+    "Run it in the browser": "ブラウザで実行",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno が HTTP で応答しませんでした——多くは期限切れのセッションです。",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "ブラウザ経路はあなたとしてサインインし、Suno のページを直接入力するため、セッションが使えないときでも動きます——ただしこのウィンドウが必要で、一度に一曲ずつです。"
   },
   "same_as_english": [
     "DPI —",

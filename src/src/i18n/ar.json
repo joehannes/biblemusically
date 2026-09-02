@@ -2794,7 +2794,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "وقت وحدة المعالجة الرسومية المجاني يُحسب لكل حساب Kaggle على حدة. اربط عدة حسابات وسيذهب كل تشغيل إلى الحساب الذي ما زال فيه متسع لهذا المحرّك — يُتحقق من ذلك قبل التشغيل، لا بعد فشله. تبقى المفاتيح على جهازك.",
     "Free GPU time left on this account this week.": "وقت المعالج الرسومي المجاني المتبقي لهذا الحساب هذا الأسبوع.",
     "of free GPU across every account that answered.": "من المعالج الرسومي المجاني عبر كل الحسابات التي ردّت.",
-    "quota unknown": "الحصة غير معروفة"
+    "quota unknown": "الحصة غير معروفة",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "يعالج كل أغنية على المحرّك الذي اخترته، كمهمة في الطابور يمكنك متابعتها هنا. يعمل Suno عبر HTTP عادي مثل البقية؛ وإذا لم تستجب جلسته، يُعرض مسار المتصفّح كبديل بدلاً من اتخاذه نيابةً عنك.",
+    "Run it in the browser": "شغّله في المتصفّح",
+    "Suno would not answer over HTTP — usually an expired session.": "لم يستجب Suno عبر HTTP — غالبًا جلسة منتهية.",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "مسار المتصفّح يسجّل الدخول باسمك ويملأ صفحة Suno نفسها، فيعمل حين لا تعمل الجلسة — لكنه يحتاج هذه النافذة، ويعالج أغنية واحدة في كل مرة."
   },
   "same_as_english": [
     "Video Gen"

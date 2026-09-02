@@ -2782,7 +2782,11 @@
     "Free GPU time is per Kaggle account. Connect several and each start goes to the account that still has room for that engine — checked before the run, not after it has already failed. Keys stay on your machine.": "Darmowy czas GPU liczy się osobno dla każdego konta Kaggle. Podłącz kilka, a każde uruchomienie trafi na konto, które wciąż ma miejsce dla tego silnika — sprawdzane przed uruchomieniem, a nie po tym, jak już się nie powiodło. Klucze zostają na twoim komputerze.",
     "Free GPU time left on this account this week.": "Darmowy czas GPU pozostały na tym koncie w tym tygodniu.",
     "of free GPU across every account that answered.": "darmowego GPU na wszystkich kontach, które odpowiedziały.",
-    "quota unknown": "limit nieznany"
+    "quota unknown": "limit nieznany",
+    "Renders each song on the engine you picked, as a queued job you can watch here. Suno goes over plain HTTP like the rest; if its session will not answer, the browser route is offered as a fallback rather than taken on your behalf.": "Renderuje każdy utwór na wybranym silniku, jako zadanie w kolejce, które możesz tu śledzić. Suno działa przez zwykłe HTTP jak reszta; jeśli jego sesja nie odpowiada, droga przez przeglądarkę jest proponowana jako zapasowa, a nie wybierana za ciebie.",
+    "Run it in the browser": "Uruchom w przeglądarce",
+    "Suno would not answer over HTTP — usually an expired session.": "Suno nie odpowiedziało przez HTTP — zwykle to wygasła sesja.",
+    "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Droga przez przeglądarkę loguje się jako ty i wypełnia własną stronę Suno, więc działa, gdy sesja nie działa — ale potrzebuje tego okna i obsługuje jeden utwór naraz."
   },
   "same_as_english": [
     "DPI —",

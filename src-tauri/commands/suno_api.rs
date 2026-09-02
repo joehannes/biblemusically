@@ -199,7 +199,7 @@ async fn refresh_jwt(cookie: &str, clerk_base: &str) -> Res<String> {
         .ok_or_else(|| "Suno returned no token for this session.".to_string())
 }
 
-async fn settings_of(state: &AppState) -> Value {
+pub(crate) async fn settings_of(state: &AppState) -> Value {
     state.db.collection::<Document>("settings")
         .find_one(doc! { "_id": "singleton" }).await.ok().flatten()
         .map(bson_to_value).unwrap_or_default()
@@ -301,7 +301,7 @@ pub async fn suno_generate(state: State<'_, AppState>, payload: SunoRequest) -> 
     }
 }
 
-async fn suno_generate_native(state: &AppState, settings: &Value, payload: &SunoRequest) -> Res<Value> {
+pub(crate) async fn suno_generate_native(state: &AppState, settings: &Value, payload: &SunoRequest) -> Res<Value> {
     let cookie = crate::vault::get("suno_cookie").map_err(e)?.unwrap_or_default();
     if cookie.trim().is_empty() {
         return Err("No Suno cookie saved yet.".into());
@@ -355,7 +355,7 @@ async fn suno_generate_native(state: &AppState, settings: &Value, payload: &Suno
     }))
 }
 
-async fn suno_generate_wrapper(wrapper: &str, payload: &SunoRequest) -> Res<Vec<Value>> {
+pub(crate) async fn suno_generate_wrapper(wrapper: &str, payload: &SunoRequest) -> Res<Vec<Value>> {
     let base = normalise_base(wrapper, "");
     let http = client()?;
     // The community wrappers agree on these two shapes.
@@ -382,8 +382,16 @@ async fn suno_generate_wrapper(wrapper: &str, payload: &SunoRequest) -> Res<Vec<
 /// Poll clips until they have audio.
 #[tauri::command]
 pub async fn suno_poll(state: State<'_, AppState>, ids: Vec<String>) -> Res<Value> {
+    poll_clips(&state, &ids).await
+}
+
+/// One poll of the feed, native first and the wrapper second.
+///
+/// Split out of the command so the job runner can poll on its own clock, with its own cancellation
+/// checks, without going back through Tauri's `State`.
+pub(crate) async fn poll_clips(state: &AppState, ids: &[String]) -> Res<Value> {
     if ids.is_empty() { return Err("no clip ids to poll".into()); }
-    let settings = settings_of(&state).await;
+    let settings = settings_of(state).await;
     let joined = ids.join(",");
 
     let native = async {
