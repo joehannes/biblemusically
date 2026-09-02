@@ -2786,7 +2786,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "La voie du navigateur se connecte en votre nom et remplit la page de Suno, elle fonctionne donc quand la session ne fonctionne plus — mais elle a besoin de cette fenêtre et traite un morceau à la fois.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno et Midjourney passent par des comptes qui sont les vôtres plutôt que par une API : chacun indique donc à quel compte le risque revient, là où vous le choisissez. Aucun n'est masqué — un moteur qu'on ne voit pas est un moteur qu'on ne peut pas peser.",
     "Just the main steps": "Seulement les étapes principales",
-    "Studios and tools": "Studios et outils"
+    "Studios and tools": "Studios et outils",
+    "A few questions, in your own words. Everything you say goes into the brief.": "Quelques questions, avec vos mots. Tout ce que vous dites va dans le brief.",
+    "answered — every one shapes what gets written from here on.": "répondues — chacune façonne ce qui sera écrit à partir de maintenant.",
+    "Getting to know this project": "Faire connaissance avec ce projet",
+    "Look again": "Regarder à nouveau",
+    "Looking at where this project got to…": "Je regarde où en est ce projet…",
+    "Or say it your own way — this is the answer that gets kept.": "Ou dites-le à votre façon — c'est cette réponse qui est conservée.",
+    "Tell the guide what this project is": "Dites au guide ce qu'est ce projet",
+    "That's enough for now": "Cela suffit pour l'instant",
+    "Thinking about what to ask…": "Je réfléchis à quoi demander…",
+    "Today": "Aujourd'hui",
+    "What this project is waiting on.": "Ce que ce projet attend.",
+    "without audio": "sans audio",
+    "without pictures": "sans images",
+    "without words": "sans paroles"
   },
   "same_as_english": [
     "Clips",

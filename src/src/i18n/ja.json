@@ -2797,7 +2797,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "ブラウザ経路はあなたとしてサインインし、Suno のページを直接入力するため、セッションが使えないときでも動きます——ただしこのウィンドウが必要で、一度に一曲ずつです。",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno と Midjourney は API ではなく、あなた自身のアカウントを使います。そのため、選ぶその場で、どちらも誰のアカウントが危険にさらされるかを示します。どちらも隠されていません——見えないエンジンは、重みを量れないエンジンです。",
     "Just the main steps": "主要なステップだけ",
-    "Studios and tools": "スタジオとツール"
+    "Studios and tools": "スタジオとツール",
+    "A few questions, in your own words. Everything you say goes into the brief.": "いくつか質問します。ご自身の言葉でどうぞ。話したことはすべてブリーフに入ります。",
+    "answered — every one shapes what gets written from here on.": "件に回答——どれもこの先書かれるものを形づくります。",
+    "Getting to know this project": "このプロジェクトを知る",
+    "Look again": "もう一度見る",
+    "Looking at where this project got to…": "このプロジェクトの進み具合を見ています…",
+    "Or say it your own way — this is the answer that gets kept.": "あるいはご自身の言い方で——保存されるのはこの答えです。",
+    "Tell the guide what this project is": "このプロジェクトが何かをガイドに伝える",
+    "That's enough for now": "今はこれで十分です",
+    "Thinking about what to ask…": "何を尋ねるか考えています…",
+    "Today": "今日",
+    "What this project is waiting on.": "このプロジェクトが待っていること。",
+    "without audio": "音声なし",
+    "without pictures": "画像なし",
+    "without words": "歌詞なし"
   },
   "same_as_english": [
     "DPI —",

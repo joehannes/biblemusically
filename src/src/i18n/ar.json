@@ -2801,7 +2801,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "مسار المتصفّح يسجّل الدخول باسمك ويملأ صفحة Suno نفسها، فيعمل حين لا تعمل الجلسة — لكنه يحتاج هذه النافذة، ويعالج أغنية واحدة في كل مرة.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "يصل Suno وMidjourney إلى حسابات تملكها أنت بدلًا من واجهة برمجية، ولذلك يذكر كلٌّ منهما حساب مَن هو المعرَّض للخطر عند نقطة الاختيار. ولا يُخفى أيٌّ منهما: المحرّك الذي لا تراه محرّك لا يمكنك تقديره.",
     "Just the main steps": "الخطوات الأساسية فقط",
-    "Studios and tools": "الاستوديوهات والأدوات"
+    "Studios and tools": "الاستوديوهات والأدوات",
+    "A few questions, in your own words. Everything you say goes into the brief.": "أسئلة قليلة، بكلماتك أنت. كل ما تقوله يدخل في الموجز.",
+    "answered — every one shapes what gets written from here on.": "أُجيب عنها — كل إجابة تشكّل ما سيُكتب من الآن فصاعدًا.",
+    "Getting to know this project": "أتعرّف على هذا المشروع",
+    "Look again": "انظر مرة أخرى",
+    "Looking at where this project got to…": "أنظر إلى أين وصل هذا المشروع…",
+    "Or say it your own way — this is the answer that gets kept.": "أو قلها بطريقتك — هذه هي الإجابة التي تُحفظ.",
+    "Tell the guide what this project is": "أخبر الدليل بما هو هذا المشروع",
+    "That's enough for now": "هذا يكفي الآن",
+    "Thinking about what to ask…": "أفكّر فيما أسأل…",
+    "Today": "اليوم",
+    "What this project is waiting on.": "ما ينتظره هذا المشروع.",
+    "without audio": "بلا صوت",
+    "without pictures": "بلا صور",
+    "without words": "بلا كلمات"
   },
   "same_as_english": [
     "Video Gen"

@@ -2786,7 +2786,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "La ruta del navegador inicia sesión como tú y rellena la propia página de Suno, así que funciona cuando la sesión no lo hace, pero necesita esta ventana y va de una canción en una.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno y Midjourney usan cuentas tuyas en lugar de una API, así que cada uno indica de quién es la cuenta en riesgo justo donde lo eliges. Ninguno está oculto: un motor que no puedes ver es uno que no puedes valorar.",
     "Just the main steps": "Solo los pasos principales",
-    "Studios and tools": "Estudios y herramientas"
+    "Studios and tools": "Estudios y herramientas",
+    "A few questions, in your own words. Everything you say goes into the brief.": "Unas pocas preguntas, con tus palabras. Todo lo que digas pasa al brief.",
+    "answered — every one shapes what gets written from here on.": "respondidas: cada una moldea lo que se escribe a partir de ahora.",
+    "Getting to know this project": "Conociendo este proyecto",
+    "Look again": "Mirar de nuevo",
+    "Looking at where this project got to…": "Viendo hasta dónde llegó este proyecto…",
+    "Or say it your own way — this is the answer that gets kept.": "O dilo a tu manera: esta es la respuesta que se guarda.",
+    "Tell the guide what this project is": "Cuéntale a la guía qué es este proyecto",
+    "That's enough for now": "Con eso basta por ahora",
+    "Thinking about what to ask…": "Pensando qué preguntar…",
+    "Today": "Hoy",
+    "What this project is waiting on.": "Lo que este proyecto está esperando.",
+    "without audio": "sin audio",
+    "without pictures": "sin imágenes",
+    "without words": "sin letra"
   },
   "same_as_english": [
     "Clips",

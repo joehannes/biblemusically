@@ -2801,7 +2801,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Путь через браузер входит от вашего имени и заполняет собственную страницу Suno, поэтому работает, когда сессия не работает, — но ему нужно это окно, и он обрабатывает по одной песне за раз.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno и Midjourney работают с вашими собственными аккаунтами, а не через API, поэтому рядом с выбором каждый из них говорит, чей аккаунт под угрозой. Ни один не скрыт: движок, которого не видно, невозможно взвесить.",
     "Just the main steps": "Только основные шаги",
-    "Studios and tools": "Студии и инструменты"
+    "Studios and tools": "Студии и инструменты",
+    "A few questions, in your own words. Everything you say goes into the brief.": "Несколько вопросов, вашими словами. Всё, что вы скажете, попадёт в бриф.",
+    "answered — every one shapes what gets written from here on.": "отвечено — каждый ответ формирует то, что пишется дальше.",
+    "Getting to know this project": "Знакомлюсь с этим проектом",
+    "Look again": "Посмотреть снова",
+    "Looking at where this project got to…": "Смотрю, до чего дошёл этот проект…",
+    "Or say it your own way — this is the answer that gets kept.": "Или скажите по-своему — сохранится именно этот ответ.",
+    "Tell the guide what this project is": "Расскажите гиду, что это за проект",
+    "That's enough for now": "На сегодня достаточно",
+    "Thinking about what to ask…": "Думаю, что спросить…",
+    "Today": "Сегодня",
+    "What this project is waiting on.": "Чего ждёт этот проект.",
+    "without audio": "без звука",
+    "without pictures": "без картинок",
+    "without words": "без слов"
   },
   "same_as_english": [
     "DPI —",

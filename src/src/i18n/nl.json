@@ -2788,6 +2788,20 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "De browserroute meldt zich als jou aan en vult Suno's eigen pagina in, dus die werkt wanneer de sessie dat niet doet — maar hij heeft dit venster nodig en doet één nummer tegelijk.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno en Midjourney gebruiken accounts van jou in plaats van een API, dus elk vermeldt wiens account risico loopt op de plek waar je kiest. Geen van beide is verborgen: een engine die je niet ziet, kun je niet afwegen.",
     "Just the main steps": "Alleen de hoofdstappen",
-    "Studios and tools": "Studio's en gereedschappen"
+    "Studios and tools": "Studio's en gereedschappen",
+    "A few questions, in your own words. Everything you say goes into the brief.": "Een paar vragen, in je eigen woorden. Alles wat je zegt gaat naar de briefing.",
+    "answered — every one shapes what gets written from here on.": "beantwoord — elk antwoord bepaalt mee wat er vanaf nu geschreven wordt.",
+    "Getting to know this project": "Dit project leren kennen",
+    "Look again": "Opnieuw kijken",
+    "Looking at where this project got to…": "Ik kijk hoe ver dit project is…",
+    "Or say it your own way — this is the answer that gets kept.": "Of zeg het op je eigen manier — dit is het antwoord dat bewaard blijft.",
+    "Tell the guide what this project is": "Vertel de gids wat dit project is",
+    "That's enough for now": "Zo is het genoeg voor nu",
+    "Thinking about what to ask…": "Ik bedenk wat ik zal vragen…",
+    "Today": "Vandaag",
+    "What this project is waiting on.": "Waar dit project op wacht.",
+    "without audio": "zonder audio",
+    "without pictures": "zonder beelden",
+    "without words": "zonder tekst"
   }
 }

@@ -2802,7 +2802,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "ब्राउज़र वाला रास्ता आपके नाम से साइन इन करता है और Suno का अपना पेज भरता है, इसलिए वह तब भी काम करता है जब सत्र नहीं करता — पर उसे यही विंडो चाहिए, और वह एक बार में एक ही गाना करता है।",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno और Midjourney किसी API के बजाय आपके अपने खातों तक पहुँचते हैं, इसलिए जहाँ आप चुनते हैं वहीं हर एक बताता है कि किसका खाता जोखिम में है। कोई भी छिपा नहीं है: जो इंजन आप देख नहीं सकते, उसे आप तौल भी नहीं सकते।",
     "Just the main steps": "केवल मुख्य चरण",
-    "Studios and tools": "स्टूडियो और उपकरण"
+    "Studios and tools": "स्टूडियो और उपकरण",
+    "A few questions, in your own words. Everything you say goes into the brief.": "कुछ सवाल, आपके अपने शब्दों में। आप जो कहेंगे वह सब ब्रीफ़ में जाएगा।",
+    "answered — every one shapes what gets written from here on.": "उत्तर दिए गए — हर एक यह गढ़ता है कि आगे क्या लिखा जाएगा।",
+    "Getting to know this project": "इस परियोजना को जान रहा हूँ",
+    "Look again": "फिर से देखें",
+    "Looking at where this project got to…": "देख रहा हूँ कि यह परियोजना कहाँ तक पहुँची…",
+    "Or say it your own way — this is the answer that gets kept.": "या अपने ढंग से कहें — यही उत्तर सहेजा जाता है।",
+    "Tell the guide what this project is": "गाइड को बताएँ कि यह परियोजना क्या है",
+    "That's enough for now": "अभी के लिए इतना काफ़ी है",
+    "Thinking about what to ask…": "सोच रहा हूँ कि क्या पूछूँ…",
+    "Today": "आज",
+    "What this project is waiting on.": "यह परियोजना किसका इंतज़ार कर रही है।",
+    "without audio": "बिना ऑडियो",
+    "without pictures": "बिना चित्र",
+    "without words": "बिना शब्द"
   },
   "same_as_english": [
     "DPI —",

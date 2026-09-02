@@ -2798,7 +2798,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "브라우저 경로는 사용자로 로그인해 Suno 자체 페이지를 채우므로 세션이 안 될 때도 동작합니다 — 다만 이 창이 필요하고 한 번에 한 곡씩 처리합니다.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno와 Midjourney는 API가 아니라 사용자 본인의 계정을 사용하므로, 선택하는 자리에서 누구의 계정이 위험한지 각각 알려 줍니다. 둘 다 숨기지 않습니다: 보이지 않는 엔진은 가늠할 수 없는 엔진입니다.",
     "Just the main steps": "주요 단계만",
-    "Studios and tools": "스튜디오와 도구"
+    "Studios and tools": "스튜디오와 도구",
+    "A few questions, in your own words. Everything you say goes into the brief.": "몇 가지 질문입니다. 직접 하시는 말씀으로 답해 주세요. 말씀하신 것은 모두 브리프에 들어갑니다.",
+    "answered — every one shapes what gets written from here on.": "개 답변 — 하나하나가 앞으로 쓰일 내용을 만듭니다.",
+    "Getting to know this project": "이 프로젝트를 알아가는 중",
+    "Look again": "다시 보기",
+    "Looking at where this project got to…": "이 프로젝트가 어디까지 왔는지 보는 중…",
+    "Or say it your own way — this is the answer that gets kept.": "또는 원하는 방식으로 말씀하세요 — 저장되는 것은 이 답입니다.",
+    "Tell the guide what this project is": "이 프로젝트가 무엇인지 가이드에게 알려 주세요",
+    "That's enough for now": "지금은 이 정도면 충분합니다",
+    "Thinking about what to ask…": "무엇을 물을지 생각하는 중…",
+    "Today": "오늘",
+    "What this project is waiting on.": "이 프로젝트가 기다리고 있는 것.",
+    "without audio": "오디오 없음",
+    "without pictures": "그림 없음",
+    "without words": "가사 없음"
   },
   "same_as_english": [
     "DPI —",

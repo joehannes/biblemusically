@@ -2789,7 +2789,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Droga przez przeglądarkę loguje się jako ty i wypełnia własną stronę Suno, więc działa, gdy sesja nie działa — ale potrzebuje tego okna i obsługuje jeden utwór naraz.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno i Midjourney korzystają z twoich własnych kont, a nie z API, więc każdy podaje, czyje konto jest zagrożone, dokładnie tam, gdzie dokonujesz wyboru. Żaden nie jest ukryty: silnika, którego nie widzisz, nie da się ocenić.",
     "Just the main steps": "Tylko główne kroki",
-    "Studios and tools": "Studia i narzędzia"
+    "Studios and tools": "Studia i narzędzia",
+    "A few questions, in your own words. Everything you say goes into the brief.": "Kilka pytań, własnymi słowami. Wszystko, co powiesz, trafia do briefu.",
+    "answered — every one shapes what gets written from here on.": "odpowiedzi — każda kształtuje to, co powstanie od teraz.",
+    "Getting to know this project": "Poznaję ten projekt",
+    "Look again": "Sprawdź ponownie",
+    "Looking at where this project got to…": "Sprawdzam, na czym stanął ten projekt…",
+    "Or say it your own way — this is the answer that gets kept.": "Albo powiedz po swojemu — to ta odpowiedź zostaje zapisana.",
+    "Tell the guide what this project is": "Powiedz przewodnikowi, czym jest ten projekt",
+    "That's enough for now": "Na razie wystarczy",
+    "Thinking about what to ask…": "Zastanawiam się, o co zapytać…",
+    "Today": "Dzisiaj",
+    "What this project is waiting on.": "Na co czeka ten projekt.",
+    "without audio": "bez dźwięku",
+    "without pictures": "bez obrazów",
+    "without words": "bez słów"
   },
   "same_as_english": [
     "DPI —",

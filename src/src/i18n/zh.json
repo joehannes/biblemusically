@@ -2797,7 +2797,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "浏览器路径以你的身份登录并填写 Suno 自己的页面，所以在会话失效时仍然可用 —— 但它需要这个窗口，而且一次只处理一首歌。",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno 和 Midjourney 使用的是你自己的账号而非 API，因此在你做选择的地方，各自都会说明有风险的是谁的账号。两者都没有被隐藏：看不见的引擎，就是无法衡量的引擎。",
     "Just the main steps": "只看主要步骤",
-    "Studios and tools": "工作室与工具"
+    "Studios and tools": "工作室与工具",
+    "A few questions, in your own words. Everything you say goes into the brief.": "几个问题，用你自己的话回答。你说的一切都会写进项目简介。",
+    "answered — every one shapes what gets written from here on.": "个已回答——每一个都在塑造之后写出来的东西。",
+    "Getting to know this project": "正在了解这个项目",
+    "Look again": "再看一次",
+    "Looking at where this project got to…": "正在查看这个项目进行到哪里…",
+    "Or say it your own way — this is the answer that gets kept.": "或者用你自己的说法——被保存下来的是这个回答。",
+    "Tell the guide what this project is": "告诉向导这个项目是什么",
+    "That's enough for now": "现在这样就够了",
+    "Thinking about what to ask…": "正在想该问什么…",
+    "Today": "今天",
+    "What this project is waiting on.": "这个项目正在等待什么。",
+    "without audio": "没有音频",
+    "without pictures": "没有图片",
+    "without words": "没有歌词"
   },
   "same_as_english": [
     "DPI —",

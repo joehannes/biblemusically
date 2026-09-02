@@ -2777,7 +2777,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Jalur peramban masuk sebagai Anda dan mengisi halaman Suno sendiri, jadi berhasil ketika sesinya tidak — tetapi ia butuh jendela ini, dan mengerjakan satu lagu sekali jalan.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno dan Midjourney memakai akun milik Anda, bukan sebuah API, jadi masing-masing menyebutkan akun siapa yang berisiko tepat di tempat Anda memilihnya. Tak satu pun disembunyikan: mesin yang tak bisa Anda lihat adalah mesin yang tak bisa Anda timbang.",
     "Just the main steps": "Hanya langkah utama",
-    "Studios and tools": "Studio dan perkakas"
+    "Studios and tools": "Studio dan perkakas",
+    "A few questions, in your own words. Everything you say goes into the brief.": "Beberapa pertanyaan, dengan kata-kata Anda sendiri. Semua yang Anda katakan masuk ke brief.",
+    "answered — every one shapes what gets written from here on.": "terjawab — masing-masing membentuk apa yang ditulis mulai sekarang.",
+    "Getting to know this project": "Mengenal proyek ini",
+    "Look again": "Lihat lagi",
+    "Looking at where this project got to…": "Melihat sampai mana proyek ini…",
+    "Or say it your own way — this is the answer that gets kept.": "Atau katakan dengan cara Anda — jawaban inilah yang disimpan.",
+    "Tell the guide what this project is": "Beri tahu pemandu apa proyek ini",
+    "That's enough for now": "Cukup segitu dulu",
+    "Thinking about what to ask…": "Memikirkan apa yang harus ditanyakan…",
+    "Today": "Hari ini",
+    "What this project is waiting on.": "Yang sedang ditunggu proyek ini.",
+    "without audio": "tanpa audio",
+    "without pictures": "tanpa gambar",
+    "without words": "tanpa lirik"
   },
   "same_as_english": [
     "DPI —",

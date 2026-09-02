@@ -204,6 +204,11 @@ export const api = {
   guideProposal: (payload) => invokeCommand("guide_proposal", { payload }),
   // Live-aggregated starter templates for a view, validated against its control catalogue.
   guideTemplates: (payload) => invokeCommand("guide_templates", { payload }),
+  // The cascading project interview: one question at a time, chosen from what has been answered.
+  projectInterviewNext: (payload) => invokeCommand("project_interview_next", { payload }),
+  projectInterviewSave: (projectId, answers) => invokeCommand("project_interview_save", { projectId, answers }),
+  // Today, for one project, grounded in what it actually contains.
+  guideToday: (projectId) => invokeCommand("guide_today", { projectId }),
   getWorkflowState: (projectId, view) => invokeCommand("get_workflow_state", { projectId, view }),
   saveWorkflowState: (projectId, view, patch) => invokeCommand("save_workflow_state", { projectId, view, patch }),
   resetWorkflowState: (projectId, view) => invokeCommand("reset_workflow_state", { projectId, view }),

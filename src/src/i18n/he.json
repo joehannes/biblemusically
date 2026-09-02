@@ -2795,7 +2795,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "מסלול הדפדפן נכנס בשמך וממלא את הדף של Suno עצמו, ולכן הוא עובד כשההפעלה לא — אבל הוא זקוק לחלון הזה, ומטפל בשיר אחד בכל פעם.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "‏Suno ו-Midjourney פונים לחשבונות שלך ולא ל-API, ולכן כל אחד מציין של מי החשבון שבסיכון, במקום שבו בוחרים. אף אחד מהם אינו מוסתר: מנוע שאינך רואה הוא מנוע שאינך יכול לשקול.",
     "Just the main steps": "רק השלבים העיקריים",
-    "Studios and tools": "אולפנים וכלים"
+    "Studios and tools": "אולפנים וכלים",
+    "A few questions, in your own words. Everything you say goes into the brief.": "כמה שאלות, במילים שלך. כל מה שתגיד נכנס לבריף.",
+    "answered — every one shapes what gets written from here on.": "נענו — כל אחת מעצבת את מה שייכתב מכאן והלאה.",
+    "Getting to know this project": "מכיר את הפרויקט הזה",
+    "Look again": "להסתכל שוב",
+    "Looking at where this project got to…": "בודק לאן הגיע הפרויקט הזה…",
+    "Or say it your own way — this is the answer that gets kept.": "או אמור בדרך שלך — זו התשובה שנשמרת.",
+    "Tell the guide what this project is": "ספר למדריך מה הפרויקט הזה",
+    "That's enough for now": "זה מספיק לעכשיו",
+    "Thinking about what to ask…": "חושב מה לשאול…",
+    "Today": "היום",
+    "What this project is waiting on.": "למה הפרויקט הזה מחכה.",
+    "without audio": "בלי אודיו",
+    "without pictures": "בלי תמונות",
+    "without words": "בלי מילים"
   },
   "same_as_english": [
     "DPI —",

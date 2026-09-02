@@ -14,6 +14,8 @@ import presets from "../lib/templates";
 import presetStore from "../lib/presetStore";
 import TemplatesManager from "../components/TemplatesManager";
 import ProjectBrief from "../components/ProjectBrief";
+import ProjectInterview from "../components/ProjectInterview";
+import TodayPanel from "../components/TodayPanel";
 import StyleSampleStudio from "../components/StyleSampleStudio";
 
 export default function Dashboard() {
@@ -297,6 +299,14 @@ export default function Dashboard() {
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
+  // The interview runs itself on a project whose brief is still empty, and can be re-opened from
+  // Today. `null` means "decide from the brief"; a boolean is the user having said so.
+  const [interviewing, setInterviewing] = useState(null);
+  const briefIsEmpty = activeProject
+    ? !Object.values(activeProject.brief || {}).some((v) => String(v || "").trim())
+    : false;
+  const showInterview = interviewing ?? briefIsEmpty;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto fade-in">
       <div className="mb-10">
@@ -304,6 +314,22 @@ export default function Dashboard() {
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">Projects</h1>
         <p className="mt-3 text-muted-foreground max-w-2xl">Each project orchestrates a topic across multiple channels, languages and music styles — from lyrics to scheduled upload.</p>
       </div>
+
+      {/* Today first: on a project that already knows itself, this is the whole answer to "what now",
+          and it is the one panel that reads what the project actually contains. */}
+      {activeProject && !showInterview && (
+        <TodayPanel projectId={activeProjectId} onStartInterview={() => setInterviewing(true)} />
+      )}
+
+      {/* On a project whose brief is still empty, the questions come before the boxes. Eight empty
+          fields is the wall this exists to remove. */}
+      {activeProject && showInterview && (
+        <ProjectInterview
+          project={activeProject}
+          onSaved={refreshProjects}
+          onDone={() => { setInterviewing(false); refreshProjects(); }}
+        />
+      )}
 
       {/* The active project's creative DNA — steers lyrics, per-channel styles, translations and
           characters everywhere downstream. */}

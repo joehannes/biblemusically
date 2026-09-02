@@ -2826,7 +2826,21 @@
     "The browser route signs in as you and fills Suno's own page, so it works when the session does not — but it needs this window, and it runs one song at a time.": "Der Browser-Weg meldet sich als Sie an und füllt Sunos eigene Seite aus, funktioniert also auch dann, wenn die Sitzung es nicht tut — er braucht aber dieses Fenster und läuft immer nur einen Song auf einmal.",
     "Suno and Midjourney reach accounts you hold rather than an API, so each says whose account is at risk next to where you choose it. Neither is hidden: an engine you cannot see is one you cannot weigh.": "Suno und Midjourney greifen auf Konten zu, die Ihnen gehören, statt auf eine API — deshalb steht bei jeder Auswahl dabei, wessen Konto im Risiko steht. Verborgen ist keines: Eine Engine, die man nicht sieht, kann man nicht abwägen.",
     "Just the main steps": "Nur die Hauptschritte",
-    "Studios and tools": "Studios und Werkzeuge"
+    "Studios and tools": "Studios und Werkzeuge",
+    "A few questions, in your own words. Everything you say goes into the brief.": "Ein paar Fragen, in Ihren eigenen Worten. Alles, was Sie sagen, geht in das Briefing.",
+    "answered — every one shapes what gets written from here on.": "beantwortet – jede einzelne prägt, was von hier an geschrieben wird.",
+    "Getting to know this project": "Dieses Projekt kennenlernen",
+    "Look again": "Erneut nachsehen",
+    "Looking at where this project got to…": "Schaue nach, wo dieses Projekt steht …",
+    "Or say it your own way — this is the answer that gets kept.": "Oder sagen Sie es auf Ihre Art – diese Antwort wird gespeichert.",
+    "Tell the guide what this project is": "Sagen Sie dem Assistenten, worum es geht",
+    "That's enough for now": "Das reicht fürs Erste",
+    "Thinking about what to ask…": "Überlege, was ich fragen soll …",
+    "Today": "Heute",
+    "What this project is waiting on.": "Worauf dieses Projekt wartet.",
+    "without audio": "ohne Ton",
+    "without pictures": "ohne Bilder",
+    "without words": "ohne Text"
   },
   "same_as_english": [
     "Clips",
