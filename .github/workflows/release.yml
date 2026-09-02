@@ -31,6 +31,11 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Pull requests run `checks` and nothing else — see the `if:` on `draft` below. Without this the
+  # cheap job that guards a release only ran once a tag had been pushed, which is *after* the release
+  # exists: v0.112.0 and v0.113.0 both died in `checks` in under forty seconds and left a published,
+  # asset-less release behind them. A branch should find that out while it is still a branch.
+  pull_request:
   workflow_dispatch:
     inputs:
       tag:
@@ -79,6 +84,11 @@ jobs:
   # create it — which is how you end up with five releases for one tag.
   draft:
     needs: checks
+    # Everything from here down builds and publishes a release, which a pull request must never do.
+    # Gating this one job is enough: `desktop`, `android` and `ios` all need it, and GitHub skips a
+    # job whose dependency was skipped.
+    if: github.event_name != 'pull_request'
+
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
