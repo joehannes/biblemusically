@@ -2909,7 +2909,13 @@
     "I'm not following — have a look and pick one.": "따라가지 못했어요 — 보시고 하나 골라 주세요.",
     "listening…": "듣고 있어요…",
     "Sorry — which one?": "죄송해요 — 어느 쪽인가요?",
-    "working out what you meant…": "무슨 뜻이었는지 헤아리는 중…"
+    "working out what you meant…": "무슨 뜻이었는지 헤아리는 중…",
+    "Hide the section editor": "구획 편집기 숨기기",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "이제 Music Gen의 각 곡에, 편집 대상 가사 바로 옆에 있습니다 — 다른 곳에서의 편집으로 엔진의 태그 방언이 깨지지 않습니다.",
+    "Open Music Gen": "Music Gen 열기",
+    "Sections saved.": "구획을 저장했습니다.",
+    "Sections, structure tags and per-section imagery": "구획, 구조 태그, 구획별 이미지",
+    "Sections, tags and per-section imagery": "구획, 태그, 구획별 이미지"
   },
   "same_as_english": [
     "DPI —",

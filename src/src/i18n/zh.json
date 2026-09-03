@@ -2908,7 +2908,13 @@
     "I'm not following — have a look and pick one.": "我没跟上——看一下，选一个。",
     "listening…": "在听…",
     "Sorry — which one?": "抱歉——哪一个？",
-    "working out what you meant…": "正在弄清你的意思…"
+    "working out what you meant…": "正在弄清你的意思…",
+    "Hide the section editor": "隐藏段落编辑器",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "现在就在 Music Gen 里每首歌上，紧挨着它要编辑的歌词——这样引擎的标签方言就不会被别处的改动弄坏。",
+    "Open Music Gen": "打开 Music Gen",
+    "Sections saved.": "段落已保存。",
+    "Sections, structure tags and per-section imagery": "段落、结构标签与每段配图",
+    "Sections, tags and per-section imagery": "段落、标签与每段配图"
   },
   "same_as_english": [
     "DPI —",

@@ -2913,7 +2913,13 @@
     "I'm not following — have a look and pick one.": "मैं समझ नहीं पा रहा — देखकर एक चुन लीजिए।",
     "listening…": "सुन रहा हूँ…",
     "Sorry — which one?": "माफ़ कीजिए — कौन सा?",
-    "working out what you meant…": "समझ रहा हूँ कि आपका क्या मतलब था…"
+    "working out what you meant…": "समझ रहा हूँ कि आपका क्या मतलब था…",
+    "Hide the section editor": "सेक्शन संपादक छिपाइए",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "अब Music Gen में हर गीत के साथ, उसी बोल के बगल में जिसे वह संपादित करता है — ताकि किसी इंजन की टैग-बोली कहीं और किए गए बदलाव से न टूटे।",
+    "Open Music Gen": "Music Gen खोलिए",
+    "Sections saved.": "सेक्शन सहेजे गए।",
+    "Sections, structure tags and per-section imagery": "सेक्शन, संरचना टैग और प्रति-सेक्शन चित्र",
+    "Sections, tags and per-section imagery": "सेक्शन, टैग और प्रति-सेक्शन चित्र"
   },
   "same_as_english": [
     "DPI —",

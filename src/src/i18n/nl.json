@@ -2899,6 +2899,12 @@
     "I'm not following — have a look and pick one.": "Ik volg het niet — kijk even en kies er een.",
     "listening…": "ik luister…",
     "Sorry — which one?": "Sorry — welke?",
-    "working out what you meant…": "ik zoek uit wat je bedoelde…"
+    "working out what you meant…": "ik zoek uit wat je bedoelde…",
+    "Hide the section editor": "Verberg de sectie-editor",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "Nu bij elk lied in Music Gen, naast de tekst die hij bewerkt — zo kan het tagdialect van een engine niet stukgaan door een wijziging ergens anders.",
+    "Open Music Gen": "Music Gen openen",
+    "Sections saved.": "Secties opgeslagen.",
+    "Sections, structure tags and per-section imagery": "Secties, structuurtags en beelden per sectie",
+    "Sections, tags and per-section imagery": "Secties, tags en beelden per sectie"
   }
 }

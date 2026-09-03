@@ -2906,7 +2906,13 @@
     "I'm not following — have a look and pick one.": "אני לא עוקב — תסתכל ותבחר אחד.",
     "listening…": "מקשיב…",
     "Sorry — which one?": "סליחה — איזה?",
-    "working out what you meant…": "מנסה להבין למה התכוונת…"
+    "working out what you meant…": "מנסה להבין למה התכוונת…",
+    "Hide the section editor": "הסתר את עורך הקטעים",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "עכשיו אצל כל שיר ב-Music Gen, לצד הטקסט שהוא עורך — כך שניב התגיות של מנוע לא יכול להישבר משינוי שנעשה במקום אחר.",
+    "Open Music Gen": "פתח את Music Gen",
+    "Sections saved.": "הקטעים נשמרו.",
+    "Sections, structure tags and per-section imagery": "קטעים, תגיות מבנה ותמונות לכל קטע",
+    "Sections, tags and per-section imagery": "קטעים, תגיות ותמונות לכל קטע"
   },
   "same_as_english": [
     "DPI —",

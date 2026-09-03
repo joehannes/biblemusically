@@ -2912,7 +2912,13 @@
     "I'm not following — have a look and pick one.": "لم أفهم — انظر واختر واحدًا.",
     "listening…": "أستمع…",
     "Sorry — which one?": "عذرًا — أيّها؟",
-    "working out what you meant…": "أحاول فهم ما قصدته…"
+    "working out what you meant…": "أحاول فهم ما قصدته…",
+    "Hide the section editor": "إخفاء محرّر المقاطع",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "صار الآن مع كل أغنية في Music Gen، بجوار النص الذي يحرّره — فلا يمكن أن تُفسد لهجة وسوم المحرّك بتعديل يجري في مكان آخر.",
+    "Open Music Gen": "افتح Music Gen",
+    "Sections saved.": "حُفظت المقاطع.",
+    "Sections, structure tags and per-section imagery": "المقاطع ووسوم البنية وصور كل مقطع",
+    "Sections, tags and per-section imagery": "المقاطع والوسوم وصور كل مقطع"
   },
   "same_as_english": [
     "Video Gen"

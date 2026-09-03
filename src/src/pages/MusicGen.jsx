@@ -43,10 +43,12 @@ import {
   HardDriveDownload,
   LogIn,
   Globe,
+  PenLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import GenerationProgress from "../components/GenerationProgress";
 import SectionRewrite from "../components/SectionRewrite";
+import SectionAnnotator from "../components/SectionAnnotator";
 import { getStepForPath } from "../lib/pageSteps";
 
 const ENGINE_NAME = { heartmula: "HeartMuLa", acestep: "ACE-Step", suno: "Suno" };
@@ -113,6 +115,12 @@ export default function MusicGen() {
   const updateDraft = (song, patch) => {
     setDrafts((prev) => ({ ...prev, [song.id]: { ...draftFor(song), ...patch } }));
   };
+
+  // The structural editor, opened per song. It lived two pages away on the JSON import screen, so
+  // the one editor that knows the engine's tag dialect was nowhere near the last place a lyric is
+  // edited before it is sung — and a plain-textarea edit here could silently break the tagging the
+  // composer produced.
+  const [structuralFor, setStructuralFor] = useState(null);
 
   const saveDraft = async (song) => {
     const d = draftFor(song);
@@ -665,6 +673,39 @@ export default function MusicGen() {
                         projectId={activeProjectId}
                         onApply={(next) => updateDraft(s, { lyrics: next })}
                       />
+
+                      <button
+                        onClick={() => setStructuralFor(structuralFor === s.id ? null : s.id)}
+                        data-testid={`song-structure-${s.id}`}
+                        className="text-[9px] uppercase tracking-widest text-muted-foreground
+                                   hover:text-foreground flex items-center gap-1.5"
+                      >
+                        <PenLine className="w-3 h-3" />
+                        {structuralFor === s.id
+                          ? <span>Hide the section editor</span>
+                          : <span>Sections, tags and per-section imagery</span>}
+                      </button>
+                      {structuralFor === s.id && (
+                        <div className="rounded-lg border border-border p-2.5">
+                          {/* Engine-aware, from this page's own engine: the lyric reaches the engine
+                              verbatim and each one reads section structure differently. */}
+                          <SectionAnnotator
+                            song={{ ...s, lyrics: draftFor(s).lyrics }}
+                            engine={engine}
+                            saving={savingId === s.id}
+                            onSave={async ({ lyrics, annotations }) => {
+                              updateDraft(s, { lyrics });
+                              setSavingId(s.id);
+                              try {
+                                await api.updateSong(s.id, { lyrics, annotations });
+                                await refreshSongs();
+                                toast.success("Sections saved.");
+                              } catch (err) { toast.error(`Failed to save: ${err}`); }
+                              finally { setSavingId(null); }
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                     <div className="flex justify-end">
                       <Button

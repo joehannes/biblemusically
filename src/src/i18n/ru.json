@@ -2912,7 +2912,13 @@
     "I'm not following — have a look and pick one.": "Я не улавливаю — посмотрите и выберите одно.",
     "listening…": "слушаю…",
     "Sorry — which one?": "Простите — какое?",
-    "working out what you meant…": "разбираюсь, что вы имели в виду…"
+    "working out what you meant…": "разбираюсь, что вы имели в виду…",
+    "Hide the section editor": "Скрыть редактор разделов",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "Теперь у каждой песни в Music Gen, рядом с текстом, который он правит, — так диалект тегов движка нельзя сломать правкой в другом месте.",
+    "Open Music Gen": "Открыть Music Gen",
+    "Sections saved.": "Разделы сохранены.",
+    "Sections, structure tags and per-section imagery": "Разделы, теги структуры и картинки по разделам",
+    "Sections, tags and per-section imagery": "Разделы, теги и картинки по разделам"
   },
   "same_as_english": [
     "DPI —",

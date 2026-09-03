@@ -2908,7 +2908,13 @@
     "I'm not following — have a look and pick one.": "わかりませんでした——見て一つ選んでください。",
     "listening…": "聞いています…",
     "Sorry — which one?": "すみません——どれですか？",
-    "working out what you meant…": "おっしゃったことを考えています…"
+    "working out what you meant…": "おっしゃったことを考えています…",
+    "Hide the section editor": "セクション編集を隠す",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "Music Gen の各曲に、編集対象の歌詞のすぐ隣にあります——別の場所での編集でエンジンのタグ方言が壊れることはありません。",
+    "Open Music Gen": "Music Gen を開く",
+    "Sections saved.": "セクションを保存しました。",
+    "Sections, structure tags and per-section imagery": "セクション、構造タグ、セクションごとの画像",
+    "Sections, tags and per-section imagery": "セクション、タグ、セクションごとの画像"
   },
   "same_as_english": [
     "DPI —",

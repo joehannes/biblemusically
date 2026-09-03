@@ -2894,7 +2894,13 @@
     "I'm not following — have a look and pick one.": "Não estou a acompanhar — veja e escolha um.",
     "listening…": "a ouvir…",
     "Sorry — which one?": "Desculpe — qual?",
-    "working out what you meant…": "a perceber o que quis dizer…"
+    "working out what you meant…": "a perceber o que quis dizer…",
+    "Hide the section editor": "Ocultar o editor de secções",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "Agora em cada canção no Music Gen, ao lado da letra que edita — assim o dialeto de etiquetas de um motor não pode ser quebrado por uma alteração feita noutro sítio.",
+    "Open Music Gen": "Abrir o Music Gen",
+    "Sections saved.": "Secções guardadas.",
+    "Sections, structure tags and per-section imagery": "Secções, etiquetas de estrutura e imagens por secção",
+    "Sections, tags and per-section imagery": "Secções, etiquetas e imagens por secção"
   },
   "same_as_english": [
     "DPI —",

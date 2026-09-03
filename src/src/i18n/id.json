@@ -2888,7 +2888,13 @@
     "I'm not following — have a look and pick one.": "Saya tidak mengikuti — lihat dan pilih satu.",
     "listening…": "mendengarkan…",
     "Sorry — which one?": "Maaf — yang mana?",
-    "working out what you meant…": "mencari tahu maksud Anda…"
+    "working out what you meant…": "mencari tahu maksud Anda…",
+    "Hide the section editor": "Sembunyikan editor bagian",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "Sekarang ada di setiap lagu di Music Gen, di samping lirik yang disuntingnya — sehingga dialek tag sebuah mesin tidak bisa rusak oleh perubahan di tempat lain.",
+    "Open Music Gen": "Buka Music Gen",
+    "Sections saved.": "Bagian tersimpan.",
+    "Sections, structure tags and per-section imagery": "Bagian, tag struktur, dan gambar per bagian",
+    "Sections, tags and per-section imagery": "Bagian, tag, dan gambar per bagian"
   },
   "same_as_english": [
     "DPI —",

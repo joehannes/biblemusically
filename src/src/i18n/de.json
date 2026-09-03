@@ -2937,7 +2937,13 @@
     "I'm not following — have a look and pick one.": "Ich komme nicht mit — schau es dir an und wähle eins.",
     "listening…": "höre zu…",
     "Sorry — which one?": "Nochmal — welches?",
-    "working out what you meant…": "überlege, was du gemeint hast…"
+    "working out what you meant…": "überlege, was du gemeint hast…",
+    "Hide the section editor": "Abschnitts-Editor ausblenden",
+    "Now on each song in Music Gen, next to the lyric it edits — so an engine's tag dialect cannot be broken by an edit somewhere else.": "Jetzt bei jedem Lied in Music Gen, direkt neben dem Text, den er bearbeitet — so kann der Tag-Dialekt einer Engine nicht durch eine Änderung an anderer Stelle kaputtgehen.",
+    "Open Music Gen": "Music Gen öffnen",
+    "Sections saved.": "Abschnitte gespeichert.",
+    "Sections, structure tags and per-section imagery": "Abschnitte, Struktur-Tags und Bilder je Abschnitt",
+    "Sections, tags and per-section imagery": "Abschnitte, Tags und Bilder je Abschnitt"
   },
   "same_as_english": [
     "Clips",
