@@ -209,6 +209,9 @@ export const api = {
   projectInterviewSave: (projectId, answers) => invokeCommand("project_interview_save", { projectId, answers }),
   // Today, for one project, grounded in what it actually contains.
   guideToday: (projectId) => invokeCommand("guide_today", { projectId }),
+  // Where you are in the whole thing, computed from what the project contains rather than from
+  // where anybody has clicked.
+  projectJourney: (projectId) => invokeCommand("project_journey", { projectId }),
   // The lyric-craft vocabulary — one source of truth, so a picker cannot offer a value the
   // prompt builder does not know.
   craftCatalogue: () => invokeCommand("craft_catalogue"),

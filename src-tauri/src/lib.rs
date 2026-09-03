@@ -807,6 +807,7 @@ pub fn run() {
             commands::build_volume_epub,
             commands::lyric_sections,
             commands::rewrite_section,
+            commands::project_journey,
             commands::guide_templates,
             commands::get_workflow_state,
             commands::save_workflow_state,

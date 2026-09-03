@@ -9,6 +9,7 @@ import { useRequireGuideStep } from "./GuideStepDialog";
 import ToursFab from "./Tours";
 import AccountFab from "./AccountFab";
 import HealthBanner from "./HealthBanner";
+import JourneyBar from "./JourneyBar";
 import UpdateBanner from "./UpdateBanner";
 import AiBudgetBanner from "./AiBudgetBanner";
 import GpuQuotaBanner from "./GpuQuotaBanner";
@@ -1605,6 +1606,10 @@ export default function Shell({ children }) {
             actions provider so any page below can publish controls into the header above via
             usePageActions() — e.g. a page-wide "Generate" button next to the running-jobs
             indicator instead of buried in the page body. */}
+        {/* Where you are in the whole thing. Above the page rather than inside one, because a
+            journey that unmounted on navigation could not survive being followed. */}
+        <JourneyBar projectId={activeProjectId} />
+
         {/* Engine health: only speaks up when the engines this setup actually uses are failing. */}
         <HealthBanner />
 

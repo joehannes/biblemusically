@@ -261,7 +261,7 @@ pub async fn project_interview_save(state: State<'_, AppState>, project_id: Stri
 /// Read from the songs rather than from a status field alone: a song can carry `status: "draft"` and
 /// still have audio, because the status is set by whichever step last finished and a manual import
 /// sets none at all. Counting the artefacts is what makes "four songs have audio and no images" true.
-async fn shape_of(state: &AppState, project_id: &str) -> Res<Value> {
+pub(crate) async fn shape_of(state: &AppState, project_id: &str) -> Res<Value> {
     use futures_util::StreamExt;
     let filter = if project_id.trim().is_empty() { doc! {} } else { doc! { "project_id": project_id } };
     let mut cursor = state.db.collection::<Document>("songs").find(filter).await.map_err(e)?;
