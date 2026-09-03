@@ -7,7 +7,7 @@ A dated log of observed project state, **newest observation first** (reverse-chr
 ## 2026-09-02 (later) — What the audit asked for, built: rotation, HTTP Suno, a book engine, and a reader
 
 The implementation pass on top of the audit above. Baseline stayed green throughout — the closing
-figures are **478 Rust tests, 141 JS tests, `npm run build` clean, i18n 100% in all fifteen
+figures are **503 Rust tests, 156 JS tests, `npm run build` clean, i18n 100% in all fifteen
 languages, both static audits clean, zero compiler warnings**.
 
 **The compromised signing key is replaceable now, and the audit had understated it.** `SUBS_PUBLIC_KEY`
@@ -74,6 +74,29 @@ writing and had no button. The whole song goes as context so the rewrite can mat
 rhymes the other sections set; splitting and splicing are pure and leave every other byte alone. The
 composer also takes a universe, so a project's song and its illustrated edition are written for the
 same person.
+
+**The map, not just the pages.** Nine stops in the order a song passes through them, each naming a
+route, with every stop's doneness computed from what the project contains rather than from having
+visited a page — so a journey resumed after a month is correct without having remembered anything,
+and a stop reopens by itself when a song is added. Where you are is the first thing unfinished, not
+the furthest reached. The strip lives above the page rather than inside one, because a journey that
+unmounted on navigation could not survive being followed, and it closes for good on one click.
+
+**The guide is a conversation now.** speak → listen → interpret → apply → speak the next, with
+barge-in that stops it the moment somebody talks over it — a grace window first, since the speaker
+feeds the microphone and without it the loop talks over itself forever. Two misses on a question and
+it hands the question back rather than asking a third time; declining is an answer, not a failure.
+Everything it says outside a question lives in a prose catalogue so it ships translated, rather than
+asking in German and apologising in English.
+
+**One lyric editor, next to the lyric.** `SectionAnnotator` — the only editor that knows the
+engine's tag dialect — sat on the JSON import screen, next to the JSON box it exists to replace and
+two pages from where lyrics are made. It is on the song in Music Gen now.
+
+**And the axes closed.** Section count joined the report — the sections collection just was not being
+loaded — so nine of C's ten crossings are live. The tenth, thumbnails, is the one thing in the whole
+plan that needs new data rather than new code: the app generates thumbnails but never records which
+one an upload went out with.
 
 **Still the owner's to do:** run `python3 server/deploy.py --rotate-key --rotate-admin-token` and
 edit two lines in `subscription.rs` per `docs/SECURITY-KEY-ROTATION.md`.

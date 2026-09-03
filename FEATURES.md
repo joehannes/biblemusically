@@ -321,6 +321,14 @@ of posts a month).
   the songs at each stage, what is stalled, what was already done today. Each step names a page, so
   the answer is clickable rather than advisory, and the reason it gives is about your project ("four
   songs have audio and no images") rather than about the app.
+- **Where you are in the whole thing** — a strip above the page showing the nine stops a song passes
+  through, which one you are at, and one button to it. Every stop's doneness comes from what the
+  project actually contains, never from having opened a page, so it is right after a month away and
+  a stop reopens by itself when you add a song. It closes for good on one click; the sidebar still
+  has everything.
+- **Hands-free** — the guide asks, you answer out loud, and it moves on. Start talking and it stops
+  talking. If it mishears twice it hands the question back rather than asking again. Off by default,
+  offered only where there is a microphone, and one click ends it.
 - **A sidebar that folds** — thirty-five entries fold to the fifteen stops a song passes through,
   and expand again on one click. Which state you start in comes from the audience level you set on
   first run. Nothing is ever withheld: folding hides doors, it does not remove them, and the page you
@@ -338,6 +346,8 @@ of posts a month).
   marked as you write, with the count and the line. It is an estimate and says so, and it never
   blocks anything: the engines sing the text verbatim, so a line that does not scan costs a whole
   generation to discover otherwise.
+- **One section editor, on the song** — sections, structure tags in the engine's own dialect, and a
+  per-section image idea, next to the lyric it edits rather than two pages away on the import screen.
 - **Rewriting one section** — this verse is right and that chorus is not, which is what writing
   actually is. Pick a section, say what is wrong with it (or say nothing), and get three options
   back. The whole song goes along as context, so a rewrite matches the metre and the rhymes the other

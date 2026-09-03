@@ -75,6 +75,7 @@ const DIM_LABEL = {
   style: "musical style",
   image_style: "image style pack",
   length: "song length",
+  sections: "how many sections",
   hour: "hour published (channel's own time)",
   weekday: "day published",
   title_form: "title shape",
@@ -233,7 +234,7 @@ export default function Insights() {
           <div className="grid gap-3 sm:grid-cols-2">
             {/* The creative axes first, then packaging and timing — the app varies all of these
                 and until now crossed only the first four with what actually got watched. */}
-            {["combo", "channel", "language", "style", "image_style", "length",
+            {["combo", "channel", "language", "style", "image_style", "length", "sections",
               "hour", "weekday", "title_form", "title_length"].map((dim) => (
               (performance.by?.[dim] || []).length > 0 && (
                 <div key={dim}>

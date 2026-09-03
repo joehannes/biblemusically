@@ -320,6 +320,21 @@ pub fn length_band(seconds: f64) -> Option<String> {
     }.to_string())
 }
 
+/// How many sections a song was cut into, in the bands that are actually a choice.
+///
+/// A section is one image and one stretch of song, so this is simultaneously "how many pictures does
+/// this video have" and "how fast does it move" — which makes it the one axis here that a creator
+/// can change on the next song without changing anything else about it.
+pub fn section_band(n: usize) -> Option<String> {
+    if n == 0 { return None; }
+    Some(match n {
+        1..=4 => "up to 4 sections",
+        5..=6 => "5–6 sections",
+        7..=9 => "7–9 sections",
+        _ => "10 or more sections",
+    }.to_string())
+}
+
 /// How long the title is, in the bands a search result actually cuts at.
 ///
 /// YouTube truncates around 60 characters in most surfaces and around 40 on a phone's home feed, so
@@ -370,6 +385,16 @@ async fn performance_report_inner(state: &AppState, project_id: &str) -> Res<Val
         let song = crate::store::doc_to_json(&d);
         if let Some(id) = song["id"].as_str() {
             songs.insert(id.to_string(), song);
+        }
+    }
+
+    // Sections per song. Loaded here rather than left out, which is why "how many pictures does this
+    // video have" was the one axis in the plan that could be crossed with views and never was.
+    let mut section_counts: HashMap<String, usize> = HashMap::new();
+    let mut sec_cursor = state.db.collection::<Document>("sections").find(doc! {}).await.map_err(e)?;
+    while let Some(Ok(d)) = sec_cursor.next().await {
+        if let Ok(sid) = d.get_str("song_id") {
+            if songs.contains_key(sid) { *section_counts.entry(sid.to_string()).or_default() += 1; }
         }
     }
 
@@ -427,6 +452,7 @@ async fn performance_report_inner(state: &AppState, project_id: &str) -> Res<Val
             ("weekday", weekday(published_at, &zone)),
             ("image_style", first_of(song["image_styles"].as_str().unwrap_or(""))),
             ("length", length_band(song["duration"].as_f64().unwrap_or(0.0))),
+            ("sections", section_band(section_counts.get(song_id).copied().unwrap_or(0))),
             ("title_length", title_length_band(title)),
             ("title_form", title_form(title)),
         ] {
@@ -450,7 +476,8 @@ async fn performance_report_inner(state: &AppState, project_id: &str) -> Res<Val
 
     let mut grouped: Map<String, Value> = Map::new();
     for dimension in ["channel", "language", "style", "combo",
-                      "hour", "weekday", "image_style", "length", "title_length", "title_form"] {
+                      "hour", "weekday", "image_style", "length", "sections",
+                      "title_length", "title_form"] {
         let mut rows: Vec<Value> = buckets
             .iter()
             .filter_map(|(key, values)| {
@@ -522,6 +549,7 @@ const KNOWN_VALUES: &[(&str, &[&str])] = &[
                "12:00–15:00", "15:00–18:00", "18:00–21:00", "21:00–24:00"]),
     ("weekday", &["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]),
     ("length", &["under 1:30", "1:30–2:30", "2:30–3:30", "3:30–5:00", "over 5:00"]),
+    ("sections", &["up to 4 sections", "5–6 sections", "7–9 sections", "10 or more sections"]),
     ("title_length", &["≤40 chars", "41–60 chars", "over 60 chars"]),
     ("title_form", &["a question", "has a number", "two parts", "a colon", "plain"]),
 ];
@@ -591,7 +619,7 @@ pub fn experiment_suggestion(report: &Value) -> Option<Value> {
 /// The axes about the work itself, as opposed to how it was packaged and when it went out. They get
 /// more room in the block, because a creator can act on them and because a block that reads as
 /// scheduling advice is weighed as scheduling advice.
-const CREATIVE: &[&str] = &["combo", "language", "style", "image_style", "length"];
+const CREATIVE: &[&str] = &["combo", "language", "style", "image_style", "length", "sections"];
 
 /// The block itself, from a `performance_report` value — pure, so the evidence rules are testable.
 fn performance_block_from(report: &Value) -> String {
@@ -613,7 +641,7 @@ fn performance_block_from(report: &Value) -> String {
     // The creative axes first, then the ones about packaging and timing. Two rows each for the
     // latter rather than three: they are weaker signals and a block that is mostly scheduling advice
     // is a block the model weighs as scheduling advice.
-    for dimension in ["combo", "language", "style", "image_style", "length",
+    for dimension in ["combo", "language", "style", "image_style", "length", "sections",
                       "hour", "weekday", "title_form", "title_length"] {
         let rows: Vec<&Value> = report["by"][dimension].as_array()
             .map(|a| a.iter().filter(|r| r["videos"].as_u64().unwrap_or(0) as usize >= MIN_ROW_VIDEOS).collect())
@@ -858,6 +886,16 @@ mod tests {
     }
 
     #[test]
+    fn section_counts_land_in_the_bands_that_are_actually_a_choice() {
+        assert_eq!(section_band(3).unwrap(), "up to 4 sections");
+        assert_eq!(section_band(6).unwrap(), "5–6 sections");
+        assert_eq!(section_band(8).unwrap(), "7–9 sections");
+        assert_eq!(section_band(14).unwrap(), "10 or more sections");
+        // A song that was never cut into sections is not a finding about section counts.
+        assert!(section_band(0).is_none());
+    }
+
+    #[test]
     fn title_bands_sit_where_the_text_actually_gets_cut_off() {
         assert_eq!(title_length_band("Psalm 23").unwrap(), "≤40 chars");
         assert_eq!(title_length_band(&"x".repeat(50)).unwrap(), "41–60 chars");
@@ -1033,6 +1071,11 @@ mod tests {
         for secs in [30.0, 100.0, 180.0, 250.0, 400.0] {
             let band = length_band(secs).unwrap();
             assert!(lengths.contains(&band.as_str()), "{band} is not in the offered set");
+        }
+        let sections: &[&str] = KNOWN_VALUES.iter().find(|(a, _)| *a == "sections").unwrap().1;
+        for n in [1usize, 4, 5, 6, 7, 9, 10, 25] {
+            let band = section_band(n).unwrap();
+            assert!(sections.contains(&band.as_str()), "{band} is not in the offered set");
         }
         let forms: &[&str] = KNOWN_VALUES.iter().find(|(a, _)| *a == "title_form").unwrap().1;
         for t in ["Who?", "Psalm 23", "A | B", "A: b", "plain words"] {

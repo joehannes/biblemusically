@@ -58,9 +58,10 @@ through one of them page-for-page — and volumes, which bind a project's editio
 store metadata, an ordered contents, front and back matter, and a preflight that separates what a
 retailer rejects from what merely makes the book worse.
 
-**Still open from this plan:** A1 (the cross-page flow), A3 (hands-free conversation), B3 (one lyric
-editor in one place), and the two axes in C that need data the app does not yet record — which
-thumbnail an upload used, and a song's section count joined to its upload.
+**Everything in this plan is now built** except one thing that needs new data rather than new code:
+crossing thumbnails with performance, which first needs the app to record which thumbnail an upload
+went out with (see C4). A1, A2, A3, B1–B4 and C1–C3, C5 all shipped the same day; the strikethroughs
+below say what each became.
 
 ### A. A conversation that spans pages, not one per page
 
@@ -70,17 +71,22 @@ capability-gated, spoken aloud, answerable out loud (`docs/GUIDED_WORKFLOW.md`).
 between pages is the sidebar: thirty-five entries in five groups. So the guided experience is
 excellent and the app is still overwhelming, because the overwhelming part is the map, not the pages.
 
-**Partly shipped.** Two of the three pieces that make a journey exist now, at the ends rather than in
-the middle: `project_interview_next` cascades a conversation at project start — the model sees every
+**Shipped, all three.** `project_interview_next` cascades a conversation at project start — the model sees every
 answer so far and picks the next question worth asking, writing only into the Brief's own fields,
 endable at any point, with a fixed fallback so a spent free tier can still start a project — and
 `guide_today` answers "what now" from what the project actually contains, counting artefacts rather
-than trusting statuses, with every step naming a route. What is still missing is the walk *between*
-them: A1 below.
+than trusting statuses, with every step naming a route; A1 below is the walk between them, and A3 the
+loop that makes it answerable out loud.
 
 Three specific gaps, each cheap relative to what already exists:
 
-1. **A cross-page flow.** *(Still open.)* `workflowFlow` asks how far a run should go and then hands off to the batch
+1. ~~**A cross-page flow.**~~ **Shipped** as `commands/journey.rs` plus a strip in the Shell: nine
+   stops in the order a song passes through them, each naming a route, with doneness computed from
+   what the project contains rather than from having visited a page — so it is correct after a month
+   away and a stop reopens by itself when a song is added. Where you are is the first thing
+   unfinished, not the furthest reached. It lives above the page rather than inside one, because a
+   journey that unmounted on navigation could not survive being followed, and it closes for good on
+   one click. Original plan: `workflowFlow` asks how far a run should go and then hands off to the batch
    runner; nothing walks a person *through* the pages, one at a time, in order, resuming where they
    stopped. Every ingredient exists: `guidedFlows.js` is the step data, `get/save_workflow_state` is
    the per-project persistence, `lib/pageSteps.js` is the pipeline order, and `Tours.jsx`'s
@@ -96,7 +102,12 @@ Three specific gaps, each cheap relative to what already exists:
    that the audience level never withholds a feature — and the current page is always shown, so
    arriving somewhere tucked never hides where you are.
 
-3. **Voice is push-to-talk, not conversation.** *(Still open.)* `GuidedFlow` speaks the question and then waits for a
+3. ~~**Voice is push-to-talk, not conversation.**~~ **Shipped** as `lib/conversation.js` (the pure
+   decisions) and `lib/useConversation.js` (the plumbing): speak → listen → interpret → apply →
+   speak the next, with barge-in that stops it the moment somebody talks over it, and a hard bound
+   of two misses per question before it hands the question back. Everything it says outside a
+   question ships translated. Opt-in, off by default, one click ends it. Original plan: `GuidedFlow`
+   speaks the question and then waits for a
    click on "Say it" before it will listen. For a genuinely hands-free mode the pieces are all
    present after the 2026-09-02 fixes — `speak()` resolves when playback ends, `listen()` now ends on
    silence rather than on a stopwatch, `interpretAnswer` maps the answer and escalates only when
@@ -160,7 +171,10 @@ distinguishes one lyric from another, and all of it is one prompt block away.
    next. Reached from the per-song lyric editor in Music Gen; each option is scanned against the
    song it is going into.
 
-3. **One editor, in one place.** *(Still open.)* Move `SectionAnnotator` to where lyrics actually are — the composer
+3. ~~**One editor, in one place.**~~ **Shipped**: `SectionAnnotator` is on the song in the Music Gen
+   card now, seeded from the draft being edited and taking its dialect from the engine that will
+   actually sing it, and `/lyrics` keeps the import job its name says and points at where the editor
+   went. Original plan: move `SectionAnnotator` to where lyrics actually are — the composer
    and the Music Gen card — and let it be the *only* lyric editor, so an edit cannot break the
    engine dialect the composer chose. `/lyrics` keeps the JSON box and becomes what it is: an import
    tool, named and placed accordingly.
@@ -199,12 +213,16 @@ reads them. Below is the plan with what each became.
    because the model proposing a run is the one thing positioned to fill the hole.
 4. ~~**Title shape.**~~ Two dimensions: `title_length`, banded where a search result actually cuts
    off rather than at round numbers, and `title_form` — a question, has a number, two parts, a
-   colon, plain — one label per title so the buckets are disjoint. *Thumbnails are still not a
-   dimension*: the app does not record which thumbnail an upload used, so there is nothing to group
-   by yet.
-5. ~~**Song length.**~~ A `length` dimension in the bands people choose between. *Section count is
-   still not a dimension* — it would need the sections joined to the upload, which the report does
-   not currently load.
+   colon, plain — one label per title so the buckets are disjoint. **Thumbnails are still not a
+   dimension**, and this is the one thing in C that needs new data rather than new code: the app
+   generates thumbnails (`imagery.rs` has the destination, with its own aspect and composition
+   rules) but nothing records which image an upload actually went out with, so there is nothing to
+   group by. Recording it at upload time is the prerequisite, and it is small.
+5. ~~**Section count and song length.**~~ Both are dimensions now: `length` in the bands people
+   choose between, and `sections` in the bands that are actually a choice. The report loads the
+   sections collection to get the second — "how many pictures does this video have" is
+   simultaneously "how fast does it move", and it is the one axis here a creator can change on the
+   next song without changing anything else about it.
 
 ## Still open
 
