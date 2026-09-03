@@ -2945,7 +2945,9 @@
     "What kind of shop this is": "Qué clase de tienda es esta",
     "What things cost": "Cuánto cuestan las cosas",
     "Who prints it": "Quién lo imprime",
-    "words on the object, priced at": "palabras en el objeto, con un margen de"
+    "words on the object, priced at": "palabras en el objeto, con un margen de",
+    ". Type anything above to search the whole catalogue instead.": ". Escribe algo arriba para buscar en todo el catálogo en su lugar.",
+    "Narrowed to what this shop carries:": "Reducido a lo que esta tienda vende:"
   },
   "same_as_english": [
     "Clips",

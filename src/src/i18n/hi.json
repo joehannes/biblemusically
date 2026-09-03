@@ -2961,7 +2961,9 @@
     "What kind of shop this is": "यह किस तरह की दुकान है",
     "What things cost": "चीज़ों की कीमत क्या है",
     "Who prints it": "इसे कौन छापता है",
-    "words on the object, priced at": "शब्द वस्तु पर, कीमत"
+    "words on the object, priced at": "शब्द वस्तु पर, कीमत",
+    ". Type anything above to search the whole catalogue instead.": "। पूरे कैटलॉग में खोजने के लिए ऊपर कुछ भी लिखिए।",
+    "Narrowed to what this shop carries:": "इस दुकान में जो है, उसी तक सीमित:"
   },
   "same_as_english": [
     "DPI —",

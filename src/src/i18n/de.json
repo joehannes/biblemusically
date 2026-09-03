@@ -2985,7 +2985,9 @@
     "What kind of shop this is": "Was für ein Shop das ist",
     "What things cost": "Was die Dinge kosten",
     "Who prints it": "Wer es druckt",
-    "words on the object, priced at": "Wörter auf dem Objekt, kalkuliert mit"
+    "words on the object, priced at": "Wörter auf dem Objekt, kalkuliert mit",
+    ". Type anything above to search the whole catalogue instead.": ". Tippe oben etwas ein, um stattdessen den ganzen Katalog zu durchsuchen.",
+    "Narrowed to what this shop carries:": "Eingegrenzt auf das, was dieser Shop führt:"
   },
   "same_as_english": [
     "Clips",

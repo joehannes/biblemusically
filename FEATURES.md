@@ -381,3 +381,57 @@ of posts a month).
   publication date, ISBN as the identifier when there is one, illustrator and translator with proper
   role codes. Emitted only where there is something to say, since an empty publisher field reads to a
   store as a publisher named "".
+
+## Whose voice it is written in (2026-09-03)
+
+- **Traditions, not impersonations** — 56 bodies of writing and oratory technique, each with a place
+  and a history: the King James cadence, American plain, the ballad, the preached line; Weimar
+  classicism, the flat uncanny, Brecht's interrupted scene, Rilke's thing-poem; the wandering
+  Cervantine narrator, the marvellous reported plainly, Andalusian deep song, Latin American
+  testimonio; French clarity, the symbolists, the chanson; Dante's vernacular sublime, masks and
+  asides, neorealism; saudade, cordel, devouring modernism; Dutch plainness, picture-and-motto,
+  Flemish nature lyric, the life-song; the rambling gawęda, the examined ordinary, the suffering
+  nation; skaz, the argument through people, the chastushka; saj' rhymed prose, the qasida, modern
+  Arabic free verse; biblical parallelism, piyyut, the sacred in the kitchen; katha, bhakti, the
+  ghazal; pantun, the puppeteer's voice, hikayat; ma, season-and-cut, rakugo; pansori, sijo, held
+  sorrow; parallel prose, regulated verse, the storyteller's serial.
+- **Every one of the sixteen languages has at least three of its own.** Choosing a language is no
+  longer only choosing a vocabulary — Andalusian deep song and Latin American testimonio are both
+  Spanish and are not each other. A tradition written in the language you are working in is offered
+  before the ones that work anywhere.
+- **Named where it can be heard, never as somebody to be** — each tradition lists the writers and
+  forms it comes from, because that is how you recognise what you are choosing and because a name
+  carries information a description cannot. The instruction sent alongside it is technique a writer
+  could act on, which is what keeps the name from collapsing into a caricature. Nobody's voice is
+  imitated and no name reaches the page.
+- **Four surface dials** — how the sentences go, how much is said in images, things or ideas, how
+  raised the voice is. They work with a tradition or without one, and anything left unset is silence
+  rather than a default.
+- **The same voice everywhere** — a lyric, an illustrated edition and a retelling all describe it the
+  same way, and a retelling inherits the edition's voice rather than reverting to the model's own.
+
+## The shop (2026-09-03)
+
+- **What kind of shop this is** — devotional gifts, art prints, things people wear, for children,
+  memorial and keepsake. One choice sets the register the listings are written in, which products are
+  worth carrying, whether art fills a print area or fits inside it, the markup, and how many words
+  may go on the object. Every default it sets can still be changed.
+- **The shop's own words** — its name, who buys there, the line under every listing, and house rules
+  the copy must obey. Used in every listing and in the prompt that writes the printed phrase; without
+  them two people selling completely different things got identical copy.
+- **The right picture for the right product** — a 2:3 poster and a square mug get different images
+  rather than different crops of one. Chosen by whether it can print at that size first, then by how
+  near its shape is to the print area, then by size. Uploaded once each however many products use it.
+- **The art goes on straight** — a design bigger than the print area now covers it instead of being
+  shrunk into the middle with white around it. Whether it fills the area or fits inside it follows
+  the product: a poster is the art, a mug wraps. What filling costs is shown, because a square design
+  in a wide banner loses three quarters of itself.
+- **Prices that look deliberate** — rounded up to a charm ending, never down, with a floor so a
+  markup on a cheap item cannot price under the platform's own cut. The margin is shown as a share of
+  the price and stated to be the whole of what reaches you.
+- **The catalogue opens on what you sell** — over a thousand blueprints narrowed to the categories
+  this shop carries, said out loud so a short list reads as a filter. Type anything and you search
+  the lot.
+- **Who prints it** — Printify works today. Printful, Gelato and Gooten are listed with what each is
+  actually for and what wiring it up would take, rather than omitted: Gelato prints near the buyer,
+  which is the argument for it when an audience is spread over several countries.

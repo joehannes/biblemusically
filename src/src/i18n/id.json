@@ -2936,7 +2936,9 @@
     "What kind of shop this is": "Toko macam apa ini",
     "What things cost": "Berapa harga barangnya",
     "Who prints it": "Siapa yang mencetaknya",
-    "words on the object, priced at": "kata pada objek, dengan harga"
+    "words on the object, priced at": "kata pada objek, dengan harga",
+    ". Type anything above to search the whole catalogue instead.": ". Ketik apa saja di atas untuk mencari di seluruh katalog.",
+    "Narrowed to what this shop carries:": "Dipersempit ke apa yang dijual toko ini:"
   },
   "same_as_english": [
     "DPI —",

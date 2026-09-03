@@ -2956,7 +2956,9 @@
     "What kind of shop this is": "これはどんな店か",
     "What things cost": "ものの値段",
     "Who prints it": "どこが印刷するか",
-    "words on the object, priced at": "語まで、掛け率は"
+    "words on the object, priced at": "語まで、掛け率は",
+    ". Type anything above to search the whole catalogue instead.": "。カタログ全体を検索するには、上に何か入力してください。",
+    "Narrowed to what this shop carries:": "この店が扱うものに絞り込みました："
   },
   "same_as_english": [
     "DPI —",

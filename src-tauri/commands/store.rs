@@ -230,6 +230,37 @@ pub fn flavour(id: &str) -> &'static Flavour {
     FLAVOURS.iter().find(|f| f.id == id).unwrap_or(&FLAVOURS[0])
 }
 
+/// Whether a blueprint's title belongs to a flavour's categories.
+///
+/// Printify has over a thousand blueprints and the catalogue call filters by a substring of the
+/// title. A flavour already knows which categories are worth carrying, so a shop that has said it
+/// sells art prints should not have to type "poster" to find one — but it must still be able to,
+/// because a category list is a starting point and not a fence.
+///
+/// Matched on words rather than on a raw substring: "Hat" as a substring also matches "Hatchback"
+/// and, less absurdly, "Whatnot" — and a category filter that quietly drops the product somebody
+/// wanted is worse than no filter.
+pub fn suits_flavour(title: &str, categories: &[&str]) -> bool {
+    if categories.is_empty() { return true; }
+    let words: Vec<String> = title.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.trim_end_matches('s').to_string())
+        .collect();
+    categories.iter().any(|cat| {
+        cat.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() > 2)
+            .map(|w| w.trim_end_matches('s').to_string())
+            .any(|needle| words.iter().any(|w| *w == needle))
+    })
+}
+
+/// The search terms a flavour would use, for a catalogue that filters by one substring at a time.
+pub fn flavour_searches(id: &str) -> Vec<&'static str> {
+    flavour(id).categories.to_vec()
+}
+
 /// A retail price from a provider's cost, rounded the way shops actually round.
 ///
 /// Charm pricing is not superstition here: a price ending in 00 reads as provisional next to one
@@ -581,6 +612,33 @@ mod tests {
         assert!(block.contains("Lightkid Editions"));
         assert!(block.contains("never say 'stunning'"));
         assert!(block.contains("at most 4 words"));
+    }
+
+    #[test]
+    fn a_flavour_narrows_the_catalogue_by_word_and_not_by_substring() {
+        let wear = flavour("wearable").categories;
+        assert!(suits_flavour("Unisex Heavy Cotton Tee T-shirt", wear));
+        assert!(suits_flavour("Embroidered Dad Hat", wear));
+        assert!(suits_flavour("Unisex Hoodie", wear));
+        assert!(!suits_flavour("Ceramic Mug 11oz", wear));
+        // The reason it is word-based: a substring match on "hat" also catches these.
+        assert!(!suits_flavour("Whatnot Shelf", wear));
+        assert!(!suits_flavour("Hatchback Decal", wear));
+    }
+
+    #[test]
+    fn plurals_match_in_both_directions() {
+        // The catalogue says "T-shirt" and the category says "T-shirts", or the reverse.
+        assert!(suits_flavour("Classic T-shirt", &["T-shirts"]));
+        assert!(suits_flavour("Coffee Mugs Set", &["Mugs"]));
+        assert!(suits_flavour("Framed Wall Art Poster", flavour("art_print").categories));
+    }
+
+    #[test]
+    fn no_categories_means_no_filtering_rather_than_nothing_matching() {
+        // A category list is a starting point, not a fence — an empty one must not empty the shop.
+        assert!(suits_flavour("Anything At All", &[]));
+        assert_eq!(flavour_searches("children").len(), flavour("children").categories.len());
     }
 
     // ── providers ───────────────────────────────────────────────────────

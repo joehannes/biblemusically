@@ -197,6 +197,13 @@ pub struct CatalogRequest {
     pub search: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Narrow to the categories this shop's flavour actually carries. A shop that has said it sells
+    /// art prints should not have to type "poster" to find one.
+    ///
+    /// Ignored when `search` is given: a typed search is somebody looking for something specific,
+    /// and a category filter that silently excludes it would be the worst of both.
+    #[serde(default)]
+    pub flavour: Option<String>,
 }
 
 /// The catalogue, filtered — the full list is over a thousand blueprints.
@@ -206,15 +213,30 @@ pub async fn printify_catalog(state: State<'_, AppState>, payload: CatalogReques
     let all = get_json(&t, "/catalog/blueprints.json").await?;
     let needle = payload.search.unwrap_or_default().to_lowercase();
     let limit = payload.limit.unwrap_or(40).min(200);
+    // The flavour narrows only when nothing was typed. A typed search is somebody looking for one
+    // thing, and a category filter that silently excluded it would be the worst of both.
+    let categories: Vec<&str> = match payload.flavour.as_deref().filter(|_| needle.is_empty()) {
+        Some(id) if !id.trim().is_empty() => crate::commands::store::flavour_searches(id),
+        _ => Vec::new(),
+    };
     let items: Vec<Value> = all.as_array().cloned().unwrap_or_default().into_iter()
-        .filter(|b| needle.is_empty() || b["title"].as_str().unwrap_or("").to_lowercase().contains(&needle))
+        .filter(|b| {
+            let title = b["title"].as_str().unwrap_or("");
+            (needle.is_empty() || title.to_lowercase().contains(&needle))
+                && crate::commands::store::suits_flavour(title, &categories)
+        })
         .take(limit)
         .map(|b| json!({
             "id": b["id"], "title": b["title"], "brand": b["brand"], "model": b["model"],
             "images": b["images"],
         }))
         .collect();
-    Ok(json!({ "blueprints": items, "total": all.as_array().map(|a| a.len()).unwrap_or(0) }))
+    Ok(json!({
+        "blueprints": items,
+        "total": all.as_array().map(|a| a.len()).unwrap_or(0),
+        // Said out loud, so a short list reads as a filter rather than as an empty catalogue.
+        "narrowed_to": categories,
+    }))
 }
 
 /// Print providers and their variants for one blueprint, with the print-area sizes.

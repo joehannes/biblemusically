@@ -2942,7 +2942,9 @@
     "What kind of shop this is": "Que tipo de loja é esta",
     "What things cost": "Quanto custam as coisas",
     "Who prints it": "Quem o imprime",
-    "words on the object, priced at": "palavras no objeto, com margem de"
+    "words on the object, priced at": "palavras no objeto, com margem de",
+    ". Type anything above to search the whole catalogue instead.": ". Escreva algo acima para pesquisar em todo o catálogo em vez disso.",
+    "Narrowed to what this shop carries:": "Restringido ao que esta loja tem:"
   },
   "same_as_english": [
     "DPI —",

@@ -2936,6 +2936,8 @@
     "What kind of shop this is": "Che tipo di negozio è questo",
     "What things cost": "Quanto costano le cose",
     "Who prints it": "Chi lo stampa",
-    "words on the object, priced at": "parole sull'oggetto, con un ricarico di"
+    "words on the object, priced at": "parole sull'oggetto, con un ricarico di",
+    ". Type anything above to search the whole catalogue instead.": ". Scrivi qualcosa sopra per cercare invece in tutto il catalogo.",
+    "Narrowed to what this shop carries:": "Ristretto a ciò che questo negozio tiene:"
   }
 }

@@ -94,11 +94,23 @@ export default function PrintOnDemand() {
     finally { setBusy(""); }
   };
 
+  // What kind of shop this is, so the catalogue can open on the categories it carries rather than on
+  // a thousand blueprints. Read once; absent is fine and simply means no narrowing.
+  const [flavour, setFlavour] = useState("");
+  useEffect(() => {
+    if (!activeProjectId) return;
+    api.storeProfile(activeProjectId).then((p) => setFlavour(p?.flavour || "")).catch(() => {});
+  }, [activeProjectId]);
+  const [narrowedTo, setNarrowedTo] = useState([]);
+
   const findProducts = async () => {
     setBusy("catalog");
     try {
-      const r = await api.printifyCatalog({ search, limit: 24 });
+      // The flavour narrows only when nothing was typed — the backend enforces that too, but sending
+      // it unconditionally would make a typed search look like it had failed.
+      const r = await api.printifyCatalog({ search, limit: 24, flavour });
       setBlueprints(r?.blueprints || []);
+      setNarrowedTo(r?.narrowed_to || []);
       if (!r?.blueprints?.length) toast.message("Nothing matched that word.");
     } catch (err) { toast.error(`${err}`); }
     finally { setBusy(""); }
@@ -309,6 +321,14 @@ export default function PrintOnDemand() {
                 Search the catalogue
               </Button>
             </div>
+            {/* Said out loud, so a short list reads as a filter rather than as an empty catalogue. */}
+            {narrowedTo.length > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                <span>Narrowed to what this shop carries: </span>
+                <span className="text-foreground">{narrowedTo.join(", ")}</span>
+                <span>. Type anything above to search the whole catalogue instead.</span>
+              </p>
+            )}
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {blueprints.map((b) => (
                 <button key={b.id} onClick={() => openBlueprint(b)}

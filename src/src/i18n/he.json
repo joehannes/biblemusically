@@ -2954,7 +2954,9 @@
     "What kind of shop this is": "איזו מן חנות זו",
     "What things cost": "כמה הדברים עולים",
     "Who prints it": "מי מדפיס",
-    "words on the object, priced at": "מילים על החפץ, במחיר של"
+    "words on the object, priced at": "מילים על החפץ, במחיר של",
+    ". Type anything above to search the whole catalogue instead.": ". הקלד משהו למעלה כדי לחפש במקום זה בכל הקטלוג.",
+    "Narrowed to what this shop carries:": "הוצטמצם למה שהחנות הזו מחזיקה:"
   },
   "same_as_english": [
     "DPI —",

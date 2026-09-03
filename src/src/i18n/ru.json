@@ -2960,7 +2960,9 @@
     "What kind of shop this is": "Что это за магазин",
     "What things cost": "Сколько всё стоит",
     "Who prints it": "Кто печатает",
-    "words on the object, priced at": "слов на предмете, с наценкой"
+    "words on the object, priced at": "слов на предмете, с наценкой",
+    ". Type anything above to search the whole catalogue instead.": ". Введите что-нибудь выше, чтобы вместо этого искать по всему каталогу.",
+    "Narrowed to what this shop carries:": "Сужено до того, что есть в этом магазине:"
   },
   "same_as_english": [
     "DPI —",

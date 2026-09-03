@@ -4,6 +4,50 @@ A dated log of observed project state, **newest observation first** (reverse-chr
 
 ---
 
+## 2026-09-03 — Whose voice it is written in, and the shop
+
+**A voice layer, and the research behind its shape.** The obvious design is "write like <author>";
+the obvious correction is to drop the names and give only measurable instructions. The evidence
+supports neither alone. A bare name produces the model's stereotype of a writer — the caricature
+effect measured for persona prompting (CoMPosT, EMNLP 2023; Marked Personas, ACL 2023), and worse for
+writers with a strong popular image, exactly backwards from what a picker wants to offer. A bare
+style guide is more controllable but less various: explicit guides put a ceiling on diversity where a
+name lets the model draw on what it read. Instructions and exemplars together are additive, and
+explicit directives control more strongly than demonstrations alone (arXiv:2511.13972).
+
+So `commands/authorial.rs` carries both. 56 traditions — bodies of technique with a place and a
+history rather than people, which is accuracy before it is ethics: "the cadence of the King James
+Bible" is a describable set of moves and "write like C. S. Lewis" is an impression. Every one of the
+sixteen languages has at least three of its own, which is the first time the app has known anything
+about those languages beyond how to translate its own buttons. Four surface dials alongside —
+sentence rhythm, figuration, concreteness, register — because those are the stylometric dimensions
+measurable in a text and therefore the ones a prompt steers reliably. Wired into composing, into
+authoring an edition, and into retelling, which inherits the edition's voice.
+
+**Three thin places in the print-on-demand path**, each showing up as a worse product rather than an
+error. The art was whichever came first — `break` on the first section image that existed, so a 2:3
+poster and a square mug got the same picture, chosen by iteration order. The scale meant two things:
+`print_quality` returns a pixel ratio for DPI and it was handed to Printify as `scale`, which is a
+fraction of print-area width, so art larger than the area was shrunk into the middle of it with white
+around. And every listing said the same hard-coded sentence, so two people selling different things
+got byte-identical copy.
+
+All three fixed, with the pure parts tested: art chosen per print area (printable first, then shape,
+then size), placement computed from the ratio of the two aspects with fill-or-fit following the
+product, crop loss reported, and a flavour — devotional, art prints, wearables, children's, memorial
+— setting the register, the categories, the markup and the phrase length. Sizes are read from PNG and
+JPEG headers rather than by adding a decoder dependency for two integers. Prices round up to a charm
+ending, never down. The other three fulfilment APIs are named with what each is for and what wiring
+it up would take, and a test asserts exactly one claims to work.
+
+**Also corrected here:** I overwrote the existing `VoicePicker` — the assistant's speaking voice —
+with a component of the same name. The IPC audit caught it as an orphaned command within the minute.
+
+Closing figures: **547 Rust tests, 156 JS tests, build clean, i18n 100% in all fifteen languages,
+both static audits clean, zero compiler warnings.**
+
+---
+
 ## 2026-09-02 (later) — What the audit asked for, built: rotation, HTTP Suno, a book engine, and a reader
 
 The implementation pass on top of the audit above. Baseline stayed green throughout — the closing

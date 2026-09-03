@@ -2947,6 +2947,8 @@
     "What kind of shop this is": "Wat voor winkel dit is",
     "What things cost": "Wat de dingen kosten",
     "Who prints it": "Wie het drukt",
-    "words on the object, priced at": "woorden op het object, geprijsd op"
+    "words on the object, priced at": "woorden op het object, geprijsd op",
+    ". Type anything above to search the whole catalogue instead.": ". Typ hierboven iets om in plaats daarvan de hele catalogus te doorzoeken.",
+    "Narrowed to what this shop carries:": "Beperkt tot wat deze winkel verkoopt:"
   }
 }

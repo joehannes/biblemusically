@@ -2957,7 +2957,9 @@
     "What kind of shop this is": "어떤 가게인가",
     "What things cost": "물건 값",
     "Who prints it": "누가 인쇄하는가",
-    "words on the object, priced at": "단어까지, 배수는"
+    "words on the object, priced at": "단어까지, 배수는",
+    ". Type anything above to search the whole catalogue instead.": ". 전체 카탈로그를 찾으려면 위에 아무것이나 입력하세요.",
+    "Narrowed to what this shop carries:": "이 가게가 취급하는 것으로 좁혔습니다:"
   },
   "same_as_english": [
     "DPI —",

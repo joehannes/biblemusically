@@ -2960,7 +2960,9 @@
     "What kind of shop this is": "ما نوع هذا المتجر",
     "What things cost": "كم تكلّف الأشياء",
     "Who prints it": "من يطبعها",
-    "words on the object, priced at": "كلمة على الشيء، بسعر يساوي"
+    "words on the object, priced at": "كلمة على الشيء، بسعر يساوي",
+    ". Type anything above to search the whole catalogue instead.": ". اكتب أي شيء أعلاه للبحث في الكتالوج كله بدلًا من ذلك.",
+    "Narrowed to what this shop carries:": "مُحصور بما يبيعه هذا المتجر:"
   },
   "same_as_english": [
     "Video Gen"

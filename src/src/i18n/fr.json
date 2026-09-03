@@ -2945,7 +2945,9 @@
     "What kind of shop this is": "Quel genre de boutique c'est",
     "What things cost": "Ce que coûtent les choses",
     "Who prints it": "Qui l'imprime",
-    "words on the object, priced at": "mots sur l'objet, avec une marge de"
+    "words on the object, priced at": "mots sur l'objet, avec une marge de",
+    ". Type anything above to search the whole catalogue instead.": ". Tapez quelque chose ci-dessus pour chercher dans tout le catalogue à la place.",
+    "Narrowed to what this shop carries:": "Restreint à ce que cette boutique propose :"
   },
   "same_as_english": [
     "Clips",
