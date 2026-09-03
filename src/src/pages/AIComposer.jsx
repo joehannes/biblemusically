@@ -1211,6 +1211,9 @@ export default function AIComposer() {
               to the language of the first target, since a tradition belongs to a language. */}
           <div className="mt-4 pt-4 border-t border-border/60">
             <AuthorialVoice
+              // Setting a passage and writing from an idea are different jobs, and the traditions
+              // that suit them barely overlap — a metrical psalm is a way to do the first only.
+              task={chapterText.trim() ? "scripture" : "song"}
               language={(cfg.targets || [])[0]?.language || ""}
               value={cfg.voice || {}}
               onChange={(voice) => setCfg((p) => ({ ...p, voice }))}

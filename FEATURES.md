@@ -384,7 +384,7 @@ of posts a month).
 
 ## Whose voice it is written in (2026-09-03)
 
-- **Traditions, not impersonations** — 56 bodies of writing and oratory technique, each with a place
+- **Traditions, not impersonations** — 89 bodies of writing and oratory technique, each with a place
   and a history: the King James cadence, American plain, the ballad, the preached line; Weimar
   classicism, the flat uncanny, Brecht's interrupted scene, Rilke's thing-poem; the wandering
   Cervantine narrator, the marvellous reported plainly, Andalusian deep song, Latin American
@@ -404,6 +404,24 @@ of posts a month).
   carries information a description cannot. The instruction sent alongside it is technique a writer
   could act on, which is what keeps the name from collapsing into a caricature. Nobody's voice is
   imitated and no name reaches the page.
+- **The church's own traditions, for all three jobs** — this app sets scripture to music, so these
+  are not an appendix. For **setting a passage**: the metrical psalm, which puts the text into
+  singable metre and forbids adding a thought that is not in it; the collect, four parts and fifty
+  words; Ephrem's teaching hymn with its refrain; the Wesleyan hymn threading scripture through an
+  argument; the spiritual, where one biblical crossing carries a present sorrow that is never named;
+  the chorale, the Bach cantata's recitative-and-aria, the akathist's paired salutations, the
+  Christian bhajan, the Chinese hymn's parallel couplets, the Polish Lenten lament, the Italian
+  lauda, the dark night of the Spanish mystics. For **a lyric**: the gospel song, the repeated chant,
+  the wrestling sonnet, the argued devotion that turns in its last plain line, Hopkins's charged
+  particular. For **a chapter or an edition**: the plain-style sermon's doctrine-reasons-uses, the
+  pilgrim allegory, the desert saying that stops without a gloss, Augustine's address written to God
+  throughout, Julian's showing in kitchen words, counsel to the soul, Pascal's fragment, Teresa's
+  plain talk about extraordinary things, the defended commonplace, the everyday analogy, the Baroque
+  sermon, the funeral oration, the Statenvertaling cadence, and Ignatian composition of place for
+  entering a scene before saying anything about it.
+- **Offered for the job in hand** — eighty-nine traditions is a wall if they are all shown at once,
+  so each says which of the three it can actually do. The composer offers the setting traditions when
+  a passage is loaded and the lyric ones when it is not; the edition writer offers the book ones.
 - **Four surface dials** — how the sentences go, how much is said in images, things or ideas, how
   raised the voice is. They work with a tradition or without one, and anything left unset is silence
   rather than a default.

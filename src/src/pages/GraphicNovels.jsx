@@ -266,6 +266,7 @@ export default function GraphicNovels() {
 
           <div className="pt-3 border-t border-border/60">
             <AuthorialVoice
+              task="book"
               language={(songs || []).find((s) => s.id === activeSongId)?.language || ""}
               value={voice}
               onChange={setVoice}

@@ -16,8 +16,10 @@ import { Feather } from "lucide-react";
 // how much is said in images, things or ideas, how raised the voice is. A person can take a
 // tradition and still ask for shorter sentences.
 //
-// Traditions are filtered to the language being written in, and the language's own come before the
-// ones that work anywhere — somebody writing in Korean should meet pansori before "plain speech".
+// Traditions are filtered twice: to the language being written in — the language's own come before
+// the ones that work anywhere, so somebody writing in Korean meets pansori before "plain speech" —
+// and to the task. Setting a psalm, writing a lyric and writing a chapter want different things:
+// the metrical psalm exists to do the first and would be a strange way to do the third.
 //
 // The exemplars are shown because they are how a person recognises what they are choosing. They are
 // named as where a technique can be heard, never as somebody to impersonate: the backend's prompt
@@ -26,14 +28,14 @@ import { Feather } from "lucide-react";
 
 const KIND_LABEL = { prose: "prose", verse: "verse", oratory: "spoken", story: "storytelling" };
 
-export default function AuthorialVoice({ language, value = {}, onChange, compact = false }) {
+export default function AuthorialVoice({ language, task, value = {}, onChange, compact = false }) {
   const [cat, setCat] = useState({ traditions: [], dials: [] });
 
   useEffect(() => {
-    api.authorialCatalogue(language || null)
+    api.authorialCatalogue(language || null, task || null)
       .then((r) => r && setCat(r))
       .catch(() => setCat({ traditions: [], dials: [] }));
-  }, [language]);
+  }, [language, task]);
 
   const set = (key, id) => onChange?.({ ...value, [key]: value[key] === id ? "" : id });
   const chosen = cat.traditions.find((t) => t.id === value.tradition);

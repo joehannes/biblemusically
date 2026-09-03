@@ -177,7 +177,24 @@ pub struct Tradition {
     pub direction: &'static str,
     /// Where this tradition is easiest to get wrong, stated so the model is told not to.
     pub guard: &'static str,
+    /// Which of the app's three writing tasks this is any good for: `scripture` (setting a passage
+    /// that already exists), `song` (writing a lyric), `book` (a chapter or an edition).
+    ///
+    /// Not decoration and not derivable from `kind`: the collect and the metrical psalm are both
+    /// verse and only one of them is a way to set a psalm, and a desert saying is a story that
+    /// belongs in a book and would be a strange thing to sing. Offering every tradition for every
+    /// task is the same failure as offering none — the list stops meaning anything.
+    pub suits: &'static [&'static str],
 }
+
+/// The tasks a tradition can be offered for.
+pub const TASKS: &[(&str, &str)] = &[
+    ("scripture", "Setting a passage"),
+    ("song", "Writing a lyric"),
+    ("book", "A chapter or an edition"),
+];
+
+pub fn is_task(id: &str) -> bool { TASKS.iter().any(|(t, _)| *t == id) }
 
 /// The traditions, grouped by the language they are practised in.
 ///
@@ -196,6 +213,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     rules sooner than write something outright barbarous.",
         guard: "Plain is not flat: it still has to be worth reading. Shortness with nothing in it is \
                 not this tradition, it is an absence of one.",
+        suits: &["book"],
     },
     Tradition {
         id: "ciceronian", label: "The classical arc", lang: "", region: "the Western rhetorical tradition",
@@ -208,6 +226,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     repeating the one phrase you want carried out of the room. The last sentence is \
                     short.",
         guard: "The parts must not be announced. If a listener can hear the outline, it has failed.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "call_response", label: "Call and answer", lang: "", region: "African and diasporic oratory and song",
@@ -220,6 +239,504 @@ pub const TRADITIONS: &[Tradition] = &[
                     must be singable by people who have not heard it before.",
         guard: "The repetition is the argument, not decoration. If the answering line could be cut \
                 without loss, the call was doing all the work and this is not the form.",
+        suits: &["scripture", "song"],
+    },
+
+
+    // ── the church's own, across languages ──────────────────────────────
+    //
+    // The app sets scripture to music, so these are not an appendix — they are the traditions its
+    // own subject has been written in for nineteen centuries, and most of them exist precisely to
+    // solve the problem it solves: getting a text people already revere into a form people will
+    // carry around in their heads.
+    Tradition {
+        id: "metrical_psalm", label: "Metrical psalm", lang: "", region: "the Reformed churches",
+        kind: Kind::Verse,
+        hint: "The psalm itself in singable metre, with nothing added and nothing left out.",
+        exemplars: &["the Genevan Psalter", "the Scottish Psalter of 1650", "Sternhold and Hopkins"],
+        direction: "Put the passage into common metre — four lines of 8, 6, 8, 6 syllables, rhyming \
+                    on the second and fourth — and add no thought that is not in the text. Where the \
+                    metre will not take a phrase, invert the word order rather than paraphrasing the \
+                    sense. Every verse of the source becomes one stanza, in order. Plain words \
+                    throughout: this is sung by a congregation reading it off a page for the first \
+                    time.",
+        guard: "Adding an idea is the one thing this tradition forbids. Its whole discipline is that \
+                a singer is singing scripture and not somebody's opinion of it — if a line could be \
+                cut without losing anything from the source, it was not in the source.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "wesleyan", label: "The Wesleyan hymn", lang: "", region: "the English-speaking revival",
+        kind: Kind::Verse,
+        hint: "Doctrine you can sing, with scripture threaded through every line.",
+        exemplars: &["Charles Wesley", "Isaac Watts's paraphrases", "the Olney hymns"],
+        direction: "Argue a single doctrine across the stanzas, and let each stanza take it one step \
+                    further so the last is the arrival. Thread scriptural phrases through the lines \
+                    so a listener who knows the Bible keeps half-recognising things. Apply the \
+                    universal claim to one person in the first person — 'my', 'me', 'I' — in at \
+                    least one stanza. Keep a strict singable metre and rhyme it.",
+        guard: "The argument must actually move. Four stanzas restating the same claim in different \
+                images is a mood; this tradition is a case being made, and the last stanza should be \
+                unavailable to somebody who has not sung the first three.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "spiritual", label: "The spiritual", lang: "",
+        region: "the enslaved Black church, United States", kind: Kind::Verse,
+        hint: "One biblical figure carrying a present sorrow, sung by everybody.",
+        exemplars: &["the sorrow songs", "the ring shout repertoire", "'Deep River'"],
+        direction: "Take one figure or crossing from scripture — Jordan, the chariot, Daniel, the \
+                    walls — and let it carry a trouble that is happening now, without ever naming \
+                    that trouble. Short lines, a leader's line and a chorus's answer, and the same \
+                    stanza returning with one word changed. Concrete and physical throughout: the \
+                    river is wet, the wall is stone.",
+        guard: "The double meaning is never explained and never winked at. State only the biblical \
+                thing; the present one is what the listener brings, and saying it out loud collapses \
+                the form into a lesson.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "gospel_song", label: "The gospel song", lang: "", region: "American revival and after",
+        kind: Kind::Verse,
+        hint: "A refrain that carries the whole thing, and a testimony in the verses.",
+        exemplars: &["Fanny Crosby", "the Sankey repertoire", "the convention songbook"],
+        direction: "Write a chorus first and make it the strongest thing here — short, warm, and \
+                    singable by somebody hearing it once. The verses are personal testimony in the \
+                    past tense: what I was, what happened, what I have now. Assurance rather than \
+                    argument. Rhyme plainly and keep the vocabulary to words a child would use.",
+        guard: "Warmth is not vagueness. The testimony needs one concrete particular — a place, an \
+                hour, a thing somebody said — or it is a feeling with a tune attached.",
+        suits: &["song"],
+    },
+    Tradition {
+        id: "collect", label: "The collect", lang: "", region: "the Western liturgies",
+        kind: Kind::Oratory,
+        hint: "One prayer, one petition, about fifty words. The tightest form in the church.",
+        exemplars: &["the Gelasian and Gregorian sacramentaries", "Cranmer's Book of Common Prayer"],
+        direction: "Build it in four parts and no more. Address God; then one relative clause naming \
+                    the attribute of God that the request depends on; then a single petition, asking \
+                    for one thing in the plainest words; then the purpose it is asked for. Close with \
+                    the customary ascription. Around fifty words in total, and the relative clause \
+                    must be the reason the petition makes sense.",
+        guard: "One petition only. A collect that asks for two things has stopped being a collect, \
+                and the discipline of choosing which one is where the form does its work.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "taize", label: "The repeated chant", lang: "", region: "Taizé and the meditative liturgies",
+        kind: Kind::Verse,
+        hint: "One or two lines, sung over and over until they stop being words.",
+        exemplars: &["the Taizé repertoire", "the Jesus Prayer", "Orthodox litany responses"],
+        direction: "Write one line, or two at the most, short enough to be sung from memory after \
+                    hearing it once. It must bear being repeated twenty times without wearing out, \
+                    which means no cleverness and no surprise — a plain scriptural phrase or a direct \
+                    address. Leave the sense slightly open so it deepens rather than resolving.",
+        guard: "Nothing develops here. Any second idea, any turn, any punchline breaks the form: what \
+                is wanted is a line that goes further in by being said again, not a line that goes on.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "madrasha", label: "The teaching hymn", lang: "", region: "Syriac Christianity",
+        kind: Kind::Verse,
+        hint: "Doctrine sung in paired images, with a refrain the congregation answers.",
+        exemplars: &["Ephrem the Syrian's madrāšê", "the Syriac Orthodox repertoire"],
+        direction: "Write stanzas of equal syllable count and give every one the same short refrain \
+                    after it. Teach by paired images from nature and scripture set against each other \
+                    — the pearl and the faith, the fire and the spirit — rather than by statement. \
+                    Where a point is contested, let two figures speak it as a short dialogue. Symbol \
+                    rather than definition throughout.",
+        guard: "Keep the stanzas the same length; this is sung to one tune and an irregular stanza \
+                cannot be. And resist explaining an image after giving it — in this tradition the \
+                image is the teaching, not an illustration of it.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "holy_sonnet", label: "The wrestling sonnet", lang: "", region: "English metaphysical devotion",
+        kind: Kind::Verse,
+        hint: "An argument with God, in fourteen lines, that turns near the end.",
+        exemplars: &["Donne's Holy Sonnets", "the metaphysical conceit"],
+        direction: "Fourteen lines. Open with a demand or an accusation addressed directly to God, in \
+                    the imperative. Sustain one extended conceit — a legal, military or medical \
+                    figure worked out logically rather than gestured at. Turn at the ninth line, and \
+                    let the close be a paradox that is true rather than a resolution that is tidy.",
+        guard: "The conceit has to hold up if pressed: this tradition reasons in its images. A \
+                metaphor that falls apart under a second sentence is decoration, and here that is the \
+                only real failure.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "shaped_devotion", label: "The argued devotion", lang: "", region: "English devotional lyric",
+        kind: Kind::Verse,
+        hint: "A complaint to God that gets answered in the last line, in the plainest words.",
+        exemplars: &["George Herbert's The Temple", "Vaughan", "Traherne"],
+        direction: "Complain, in plain domestic language and without decoration. Let the complaint be \
+                    specific and a little embarrassing. Then in the final line or two, have the \
+                    answer arrive from outside the speaker — short, mild, and completely deflating. \
+                    Keep the whole thing quiet; the volume never rises.",
+        guard: "The last line must be plainer than everything before it, not grander. An ending that \
+                soars is the opposite of this tradition, where the rebuke lands precisely because it \
+                is gentle and ordinary.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "sprung", label: "The charged particular", lang: "", region: "English devotional nature verse",
+        kind: Kind::Verse,
+        hint: "One creature looked at hard, in words that strain to hold it.",
+        exemplars: &["Gerard Manley Hopkins", "the inscape poems"],
+        direction: "Take one particular created thing — a bird, a tree, a weather — and press the \
+                    language until it matches its energy. Count stresses rather than syllables, so a \
+                    line may be crowded or bare. Coin compound words where no existing one is exact. \
+                    Alliterate heavily. End by turning from the creature to its maker without \
+                    announcing the turn.",
+        guard: "The strain must be doing work. Compounds and alliteration used for texture rather \
+                than for precision are the failure this style is most often accused of, and the test \
+                is whether a plainer word would have been more exact.",
+        suits: &["song"],
+    },
+    Tradition {
+        id: "puritan_plain", label: "The plain-style sermon", lang: "", region: "Puritan England and New England",
+        kind: Kind::Oratory,
+        hint: "Doctrine, then reasons, then uses. Deliberately unadorned.",
+        exemplars: &["William Perkins's method", "Richard Baxter", "the New England sermon"],
+        direction: "Open with one verse. State the doctrine drawn from it in a single sentence. Give \
+                    the reasons it is true, numbered. Then give the uses — what a person is to do \
+                    about it — also numbered, and spend more time here than on the reasons. Plain \
+                    words, no classical allusion, no ornament: the style is a conviction, not a \
+                    limitation.",
+        guard: "The uses are the point and must be concrete enough to obey. A sermon in this form \
+                that ends in general encouragement has failed at exactly the thing it was designed \
+                for.",
+        suits: &["scripture", "book"],
+    },
+    Tradition {
+        id: "apophthegm", label: "The desert saying", lang: "", region: "the Egyptian and Syrian deserts",
+        kind: Kind::Story,
+        hint: "Somebody asks an elder a question. The answer is short and is not explained.",
+        exemplars: &["the Apophthegmata Patrum", "the Sayings of the Desert Fathers"],
+        direction: "A brother comes and asks. The elder answers in one or two sentences, often by \
+                    describing an action rather than by stating a principle. Then stop. No commentary, \
+                    no application, no indication of what the reader should feel. Keep the setting \
+                    bare — a cell, a road, a rope being woven.",
+        guard: "Stopping is the form. The moment a saying is glossed it becomes an anecdote with a \
+                moral, and the whole tradition depends on the reader being left to sit with it.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "pilgrim_allegory", label: "The pilgrim allegory", lang: "", region: "English nonconformist prose",
+        kind: Kind::Story,
+        hint: "A road, and everyone on it is named for what they are.",
+        exemplars: &["Bunyan's Pilgrim's Progress", "The Holy War"],
+        direction: "Put one traveller on a road toward somewhere named. Every person and place is \
+                    called what it is — Mr Worldly Wiseman, the Slough of Despond — and behaves \
+                    accordingly without the narrator explaining the correspondence. Write the dialogue \
+                    in plain speech, as tradesmen would talk. Keep the physical journey vivid enough \
+                    to follow as a story on its own.",
+        guard: "It must work as a story for somebody who never notices the allegory. The moment the \
+                road stops being a real road with mud on it, the meaning has nothing to travel on.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "confessio", label: "Written to God", lang: "", region: "the Latin fathers",
+        kind: Kind::Prose,
+        hint: "An account of a life, addressed throughout to God rather than to a reader.",
+        exemplars: &["Augustine's Confessions"],
+        direction: "Address God in the second person from the first sentence to the last, and let the \
+                    reader overhear. Move between narrating what happened and asking what it meant, \
+                    with the questions genuinely open. Examine memory and motive rather than events. \
+                    Where scripture is quoted, let it arrive inside your own sentence rather than as \
+                    a citation.",
+        guard: "Never turn and address the reader. The whole force of this form is that it is a \
+                prayer that happens to be readable, and one aside to the audience makes it a memoir \
+                with a religious frame.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "affective_showing", label: "The showing", lang: "", region: "English mystical writing",
+        kind: Kind::Prose,
+        hint: "Something seen, described in homely images, and returned to gently.",
+        exemplars: &["Julian of Norwich's Revelations", "the anchoritic tradition"],
+        direction: "Describe what was seen simply and at once, in the smallest domestic image that \
+                    will hold it — a hazelnut in the palm, a cloth, a wound. Then turn it over slowly, \
+                    returning to the same words more than once. The tone is tender and unhurried, and \
+                    reassurance is offered as fact rather than as consolation.",
+        guard: "The image must be genuinely small and ordinary. Reaching for a grand one breaks the \
+                register that makes this bearable, which is that enormous things are being said in \
+                kitchen words.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "imitatio", label: "Counsel to the soul", lang: "", region: "the devotio moderna",
+        kind: Kind::Prose,
+        hint: "Short numbered paragraphs, speaking to the reader's own soul in the imperative.",
+        exemplars: &["The Imitation of Christ", "Groote and the Brethren of the Common Life"],
+        direction: "Write in short numbered paragraphs, each complete and each addressed to the \
+                    reader's soul as 'you'. Use imperatives. Distrust cleverness, curiosity and \
+                    reputation explicitly. Prefer a homely comparison to an argument, and let a \
+                    paragraph end without softening what it just said.",
+        guard: "Do not console at the end of a hard paragraph. The severity is the kindness in this \
+                tradition, and blunting it turns spiritual counsel into encouragement.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "composition_of_place", label: "Composition of place", lang: "", region: "Ignatian spirituality",
+        kind: Kind::Prose,
+        hint: "Enter the scene of the passage with all five senses before saying anything about it.",
+        exemplars: &["the Spiritual Exercises", "Ignatian retreat writing"],
+        direction: "Before any reflection, build the scene: what the place looks like, what can be \
+                    heard, what the air smells of, what the ground feels like underfoot, what is \
+                    being eaten. Put the reader bodily inside the passage in the present tense. Only \
+                    then ask one question of them, and keep it short.",
+        guard: "The senses are the work and must be specific to this passage rather than generically \
+                ancient. Dust and sandals will do for any scene, which is why they will not do for \
+                this one.",
+        suits: &["scripture", "book"],
+    },
+    Tradition {
+        id: "paradox", label: "The defended commonplace", lang: "", region: "English Christian essay",
+        kind: Kind::Prose,
+        hint: "Reverse the expected judgement, then defend the ordinary thing with delight.",
+        exemplars: &["Chesterton's essays", "Orthodoxy"],
+        direction: "Begin by stating the received opinion fairly, then turn it over so the despised or \
+                    obvious thing turns out to be the profound one. Carry the argument on concrete \
+                    images and jokes rather than on abstractions. Keep the tone delighted rather than \
+                    combative. End on a sentence that sounds like a proverb and is not one.",
+        guard: "The paradox has to be true, not merely inverted. A reversal that collapses when \
+                examined is a trick, and this tradition is judged on whether the strange claim turns \
+                out to be the obvious one seen properly.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "analogy", label: "The everyday analogy", lang: "", region: "English apologetics",
+        kind: Kind::Prose,
+        hint: "One homely comparison carrying the whole argument, objections answered in order.",
+        exemplars: &["C. S. Lewis's broadcast talks", "Dorothy L. Sayers's essays"],
+        direction: "Find one comparison from ordinary life — a ship's convoy, a fleet, a toothache, a \
+                    house being rebuilt — and let it carry the whole argument, extending it as the \
+                    argument goes rather than swapping it for another. Anticipate the reader's \
+                    objection out loud and answer it before continuing. Conversational, second \
+                    person, no technical vocabulary.",
+        guard: "One analogy per argument. Changing figures halfway is where this style goes wrong, \
+                because the reader has been reasoning with the first one and is left holding it.",
+        suits: &["book"],
+    },
+
+
+    // ── the church in each language ─────────────────────────────────────
+    //
+    // Every one of these languages has its own body of Christian writing, and they are not
+    // translations of each other: a Lutheran chorale and a Spanish mystical lyric are both the
+    // church and share almost no technique.
+    Tradition {
+        id: "luther_hymn", label: "The chorale", lang: "de", region: "the German Reformation",
+        kind: Kind::Verse,
+        hint: "Scripture in the people's own language, plain and strong enough to march to.",
+        exemplars: &["Luther's hymns", "the Lutheran chorale repertoire"],
+        direction: "Put a psalm or a creed into short strongly stressed lines in the plainest \
+                    vernacular, so that a congregation with no training can sing it in unison at \
+                    volume. Bold declarative statements, no subordinate clauses, one idea per line. \
+                    Where the source has a promise, state it as a fact about God rather than as a \
+                    hope.",
+        guard: "This is sung by everybody together, so it cannot be intricate. Any line that a \
+                hundred untrained voices could not land squarely on the beat is the wrong line, \
+                however good it reads.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "gerhardt", label: "The comfort hymn", lang: "de", region: "Lutheran Germany after the war",
+        kind: Kind::Verse,
+        hint: "Personal, tender, full of weather and gardens, written under real affliction.",
+        exemplars: &["Paul Gerhardt", "the seventeenth-century devotional hymn"],
+        direction: "Write in the first person singular to a soul that is having a hard time — \
+                    including your own. Draw the imagery from the natural year: evening, the garden, \
+                    the harvest, the coming winter. Move from the trouble named plainly to a comfort \
+                    that is stated but not argued for. Keep the metre regular and the diction warm.",
+        guard: "The affliction has to be real and named. A comfort hymn that never says what is wrong \
+                is sentimentality, and this tradition was written by people who knew exactly what was.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "bach_libretto", label: "Recitative and aria", lang: "de", region: "the German church cantata",
+        kind: Kind::Verse,
+        hint: "The story told plainly, then one soul stopping to dwell on it, then the old hymn.",
+        exemplars: &["the Bach cantata libretti", "Picander", "Salomo Franck"],
+        direction: "Alternate two registers. Recitative moves: the scripture narrated or expounded in \
+                    prose-like lines, fast and unrhymed. Aria stops: one image or one affection held \
+                    and turned over at length, in tight rhymed stanzas, sung by a single voice in the \
+                    first person. Close with a plain chorale stanza that the congregation already \
+                    knows, quoted without comment.",
+        guard: "The two registers must be genuinely different. If the recitative starts dwelling or \
+                the aria starts narrating, the form has collapsed into a single long lyric and the \
+                architecture is gone.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "sanjuan", label: "The dark night", lang: "es", region: "the Spanish mystics",
+        kind: Kind::Verse,
+        hint: "The soul as a lover going out at night. Erotic language, entirely serious.",
+        exemplars: &["San Juan de la Cruz", "the Cántico espiritual"],
+        direction: "Write as a lover leaving the house at night to meet the beloved, and keep the \
+                    language of human love without apology or explanation. Darkness is the good \
+                    thing here, not the obstacle. Short lines, few and elemental images — night, \
+                    stair, wound, flame, lily — and no theological vocabulary whatsoever.",
+        guard: "Do not gloss the allegory and do not soften the eroticism into affection. The \
+                tradition's whole claim is that this is what the language of love is for, and \
+                hedging it produces something merely pretty.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "teresian", label: "Plain talk about extraordinary things", lang: "es",
+        region: "Castile, the reformed Carmel", kind: Kind::Prose,
+        hint: "Chatty, self-deprecating, practical — and describing the inexplicable.",
+        exemplars: &["Teresa de Ávila's Life and Interior Castle", "her letters"],
+        direction: "Write conversationally, as if to somebody in the room, with asides and \
+                    interruptions. Undercut yourself: admit the comparison is poor, that you are no \
+                    scholar, that you have forgotten what you meant to say. Then describe the \
+                    extraordinary thing anyway, in a household image carried a long way — a castle of \
+                    rooms, water reaching a garden four ways. Stay practical about what to do next.",
+        guard: "The self-deprecation is real humility and also a strategy, so it must never become \
+                coy. And the household image has to be worked out fully rather than dropped after a \
+                sentence — the length of the working is the argument.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "pensee", label: "The fragment", lang: "fr", region: "France",
+        kind: Kind::Prose,
+        hint: "Unfinished notes that turn on the reader rather than on the subject.",
+        exemplars: &["Pascal's Pensées"],
+        direction: "Write in short unfinished pieces, some a sentence and some a paragraph, with no \
+                    connective tissue between them. Address the reader's own condition rather than a \
+                    proposition — their restlessness, their diversions, the fact that they cannot sit \
+                    alone in a room. Balance and antithesis in the sentences. Leave the conclusion \
+                    for the reader to reach.",
+        guard: "A fragment must be finished as a thought even though it is unfinished as an essay. \
+                An incomplete sentence is not this form; a complete sentence with nothing built on \
+                top of it is.",
+        suits: &["book"],
+    },
+    Tradition {
+        id: "bossuet", label: "The funeral oration", lang: "fr", region: "the French grand siècle",
+        kind: Kind::Oratory,
+        hint: "Grand, mounting periods, and the same memento mori under all the magnificence.",
+        exemplars: &["Bossuet's oraisons funèbres", "the seventeenth-century French pulpit"],
+        direction: "Build long mounting periods that hold their sense to the end, and let successive \
+                    sentences climb. Praise the dead specifically and honestly, then turn the praise \
+                    itself into the argument that all of it passes. Address the assembly directly at \
+                    the turn. The close is short and level after everything that came before.",
+        guard: "The praise must be true, or the turn has nothing to work on. Flattery followed by a \
+                memento mori is a rhetorical trick; honest praise followed by one is the tradition.",
+        suits: &["book", "song"],
+    },
+    Tradition {
+        id: "lauda", label: "The lauda", lang: "it", region: "Umbria and the Italian confraternities",
+        kind: Kind::Verse,
+        hint: "Vernacular praise song, sung by lay people, often as a dialogue.",
+        exemplars: &["Jacopone da Todi", "the Franciscan laudari", "the Cantico delle creature"],
+        direction: "Praise in the plainest vernacular, in short rhymed lines with a refrain. Address \
+                    created things directly as brother and sister and thank God for each in turn. \
+                    Where feeling runs high, break into dialogue between two voices — the soul and \
+                    Christ, the mother and the crowd. Ecstasy and coarse plain speech belong together \
+                    here.",
+        guard: "It is sung by lay people in the street, not clergy in a choir. Latinate vocabulary or \
+                learned allusion puts it in the wrong building.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "vieira", label: "The Baroque sermon", lang: "pt", region: "Portugal and colonial Brazil",
+        kind: Kind::Oratory,
+        hint: "One image pursued through the whole sermon, wittily and relentlessly.",
+        exemplars: &["Padre António Vieira", "the Sermão de Santo António aos peixes"],
+        direction: "Take one conceit from the day's text and pursue it through the entire sermon, \
+                    dividing and subdividing it, drawing consequences nobody expected. Argue with \
+                    apparent logic and real wit. Turn it, late, on the congregation in front of you \
+                    and name what they are actually doing. Ornate sentences, exact structure.",
+        guard: "The ornament must be structural. Baroque here means a building, not a decoration: if \
+                the divisions could be reordered without loss, the sermon was a display rather than \
+                an argument.",
+        suits: &["scripture", "book"],
+    },
+    Tradition {
+        id: "statenvertaling", label: "The Statenvertaling cadence", lang: "nl",
+        region: "the Dutch Reformed churches", kind: Kind::Prose,
+        hint: "The old Bible's own rhythm — literal, weighty, close to the Hebrew.",
+        exemplars: &["the Statenvertaling of 1637", "the Dutch psalm rhymings"],
+        direction: "Follow the source's word order even where the language resists it, and keep its \
+                    idioms literal rather than smoothing them into modern Dutch. Join clauses with \
+                    'and'. Prefer the concrete Hebrew figure — the hand, the face, the arm — over the \
+                    abstraction it stands for. Weighty and unhurried; this is read aloud slowly.",
+        guard: "Literal is not incomprehensible. Where the literal rendering would say something \
+                false in this language, the tradition's own translators annotated rather than \
+                paraphrased, and the same choice applies here.",
+        suits: &["scripture", "book"],
+    },
+    Tradition {
+        id: "gorzkie_zale", label: "The Lenten lament", lang: "pl", region: "Poland",
+        kind: Kind::Verse,
+        hint: "Sung sorrow at the passion, in parts, with the whole church answering.",
+        exemplars: &["Gorzkie żale", "the Polish passion devotions"],
+        direction: "Address the soul and command it to grieve. Move through the passion in ordered \
+                    parts, dwelling on the physical detail of each. Alternate a narrating voice with \
+                    a lamenting one that speaks to Christ or to Mary directly. Regular singable \
+                    stanzas, and a refrain of sorrow returning after each part.",
+        guard: "Sorrow here is an act performed together, not a mood described. Every stanza is \
+                addressed to somebody — the soul, Christ, the mother — and a stanza that merely \
+                reports has left the form.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "akathist", label: "The akathist", lang: "ru", region: "the Orthodox churches",
+        kind: Kind::Oratory,
+        hint: "Standing praise: paired salutations, each beginning 'Rejoice', building in waves.",
+        exemplars: &["the Akathist to the Theotokos", "the Slavonic akathist tradition"],
+        direction: "Alternate two kinds of stanza. A short one narrates or states, and ends in a \
+                    single sung word. A long one piles up salutations that all begin with the same \
+                    word — 'Rejoice' — arranged in pairs that answer or oppose each other, and closes \
+                    with a fixed refrain. Twelve or more salutations in a long stanza is normal; the \
+                    accumulation is the prayer.",
+        guard: "The salutations must be paired and must contrast. A list of compliments in the same \
+                direction is not this form, whose whole music is the antithesis inside each couple.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "christian_bhajan", label: "The Christian bhajan", lang: "hi", region: "North India",
+        kind: Kind::Verse,
+        hint: "Christian devotion in the bhakti forms — call and response, a returning line.",
+        exemplars: &["the Indian Christian bhajan and kirtan repertoire", "Narayan Vaman Tilak"],
+        direction: "Use the bhakti forms as they are: a leader's line answered by the gathering, a \
+                    sthayi line returned to after every verse, and vocabulary from the same devotional \
+                    register as the surrounding tradition. Address God familiarly and with the claim a \
+                    devotee has. Household images — the lamp, the threshold, the well, the road.",
+        guard: "The form is genuinely indigenous, not a translated hymn wearing local clothes. If the \
+                lines only scan as English hymn metre with Hindi words in them, the tradition has not \
+                been used.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "chinese_hymn", label: "The Chinese hymn", lang: "zh", region: "the Chinese church",
+        kind: Kind::Verse,
+        hint: "Christian words in the classical parallel couplet, set to a pentatonic tune.",
+        exemplars: &["Hymns of Universal Praise", "T. C. Chao's texts", "the indigenous hymn movement"],
+        direction: "Write in balanced couplets where the two lines correspond word class by word \
+                    class, as classical Chinese verse does, and keep the lines short and even so they \
+                    sit on a pentatonic melody. Use the imagery of Chinese landscape and household \
+                    life rather than of Western pastoral. Restraint throughout; the feeling is placed \
+                    in the scene.",
+        guard: "Parallelism is the discipline and must be exact, but the vocabulary stays plain \
+                enough to sing. This tradition was made deliberately singable by ordinary \
+                congregations, not written for scholars.",
+        suits: &["scripture", "song"],
+    },
+    Tradition {
+        id: "dawn_prayer", label: "Dawn prayer", lang: "ko", region: "the Korean church",
+        kind: Kind::Oratory,
+        hint: "Before light, out loud, everybody at once — plain repeated petitions.",
+        exemplars: &["saebyeok gido", "the Korean prayer-mountain tradition"],
+        direction: "Write as somebody praying aloud in the dark, early, among others doing the same. \
+                    Short direct petitions, repeated with increasing insistence rather than \
+                    elaborated. Name concrete troubles — a child, a debt, a country. Address God \
+                    familiarly and persistently, as one who has a right to keep asking.",
+        guard: "Persistence is not eloquence. Well-turned sentences are the wrong register entirely; \
+                this is a form whose force is in repetition and plainness under real pressure.",
+        suits: &["song", "book"],
     },
 
     // ── English ─────────────────────────────────────────────────────────
@@ -234,6 +751,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     end of the sentence. Rhythm before elegance — this is written for the ear.",
         guard: "No 'thee', 'thou', 'verily' or '-eth'. The cadence is the inheritance; the pronouns \
                 are costume, and they make it read as parody.",
+        suits: &["book"],
     },
     Tradition {
         id: "hardboiled", label: "American plain", lang: "en", region: "United States",
@@ -246,6 +764,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     what the reader can supply and the sentence gets stronger.",
         guard: "Terseness is not the point, restraint is. A flat sentence about nothing is not this \
                 tradition. Something has to be being held back.",
+        suits: &["book"],
     },
     Tradition {
         id: "sermon_anaphora", label: "The preached line", lang: "en",
@@ -258,6 +777,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     a long climb the short sentence is the arrival.",
         guard: "Anaphora without escalation is a list. Each repetition must earn its place by taking \
                 the thought somewhere the previous one could not.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "ballad", label: "The ballad", lang: "en", region: "Britain, Ireland, Appalachia",
@@ -270,6 +790,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     a stanza repeated with one detail changed — where the horror or the turn is.",
         guard: "Never explain why anybody did anything. The refusal to explain is what makes a ballad \
                 frightening; supplying a motive turns it into a report.",
+        suits: &["scripture", "song"],
     },
 
     // ── German ──────────────────────────────────────────────────────────
@@ -284,6 +805,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     Where the thought turns, mark it with a single short sentence.",
         guard: "Elevation is not fog. Every abstract noun must be one the sentence has earned, and the \
                 natural image must be a specific plant, hour or weather rather than 'nature'.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "kafkaesque", label: "The flat uncanny", lang: "de", region: "Prague, Central Europe",
@@ -296,6 +818,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     entirely in the calm.",
         guard: "Never signal the strangeness — no 'somehow', no 'inexplicably', no dream language. \
                 One nudge from the narrator and the effect is gone.",
+        suits: &["book"],
     },
     Tradition {
         id: "verfremdung", label: "The interrupted scene", lang: "de", region: "Germany",
@@ -308,6 +831,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     to be argued with, not fallen into.",
         guard: "Interruption is not sarcasm. The commenting voice takes the material seriously; it is \
                 the identification it refuses, not the subject.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "dinggedicht", label: "The thing looked at", lang: "de", region: "Germany, Austria",
@@ -320,6 +844,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     object, not on the speaker.",
         guard: "The speaker's feelings are not the subject and must not arrive. If the poem could \
                 keep going after the turn, it stopped in the wrong place.",
+        suits: &["scripture", "song"],
     },
 
     // ── Spanish ─────────────────────────────────────────────────────────
@@ -334,6 +859,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     never curdle into contempt.",
         guard: "Digression has to be entertaining in itself. A detour that is merely a delay is a \
                 fault; in this tradition it is the pleasure.",
+        suits: &["book"],
     },
     Tradition {
         id: "realismo_magico", label: "The marvellous, reported plainly", lang: "es",
@@ -346,6 +872,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     impossible arrives already furnished. Time may fold; say so plainly.",
         guard: "This is not whimsy and not decoration. The marvellous element must matter to somebody \
                 in the story, or it is a flourish rather than a world.",
+        suits: &["book"],
     },
     Tradition {
         id: "cante_jondo", label: "Deep song", lang: "es", region: "Andalusia, Spain",
@@ -358,6 +885,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     consolation, and no ending that resolves.",
         guard: "Elemental is not generic: the moon in this tradition does something, it is not \
                 scenery. If the nouns could be reordered without loss, they are decoration.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "testimonio", label: "The witness speaks", lang: "es", region: "Latin America",
@@ -370,6 +898,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     Do not shape the events into a plot — say them in the order they are remembered.",
         guard: "Never make the speaker eloquent on their behalf. A polished sentence in this form \
                 reads as somebody else's voice and destroys the only thing it has.",
+        suits: &["book", "song"],
     },
 
     // ── French ──────────────────────────────────────────────────────────
@@ -383,6 +912,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     quotable. Exactness of distinction is the beauty; where two words are near, choose \
                     the one that is right and let the difference be the point.",
         guard: "A maxim that is merely clever is a failure. It has to be true enough to be uncomfortable.",
+        suits: &["book"],
     },
     Tradition {
         id: "symboliste", label: "Correspondences", lang: "fr", region: "France, Belgium",
@@ -395,6 +925,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     poem is the atmosphere around the thing, not the thing.",
         guard: "Vagueness is not suggestion. Every image must be sharply particular even when what it \
                 points at is not.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "chanson", label: "The chanson", lang: "fr", region: "France, Belgium, Quebec",
@@ -407,6 +938,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     meaning something else. Wit and grief in the same line is the mode.",
         guard: "The turn must be prepared, not sprung. Everything needed to feel it should already \
                 have been said, just not in that order.",
+        suits: &["book", "song"],
     },
 
     // ── Italian ─────────────────────────────────────────────────────────
@@ -421,6 +953,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     each stanza's last line pull into the next so the whole leans forward.",
         guard: "The sublime comes from the particular. A general damnation is not frightening; a \
                 named neighbour in it is.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "commedia", label: "Masks and asides", lang: "it", region: "Italy",
@@ -433,6 +966,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     ends the moment its joke has landed.",
         guard: "A type is not a flat character: it wants something specific and pursues it \
                 relentlessly. Without the wanting there is nothing to laugh at.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "neorealismo", label: "Neorealism", lang: "it", region: "Italy",
@@ -445,6 +979,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     ending — stop where the situation stops.",
         guard: "Do not aestheticise poverty. The detail is there because it is true, not because it \
                 is picturesque.",
+        suits: &["book"],
     },
 
     // ── Portuguese ──────────────────────────────────────────────────────
@@ -459,6 +994,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     nor sweet; it holds both without choosing.",
         guard: "This is not sadness looking for a cure. Any line that reaches for comfort or resolution \
                 leaves the tradition.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "cordel", label: "Cordel", lang: "pt", region: "north-east Brazil",
@@ -471,6 +1007,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     and the moral sit together without embarrassment.",
         guard: "Keep the metre strict. This form is sung and sold by the sheet; a stanza that does not \
                 scan cannot be performed and is simply wrong.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "antropofagia", label: "Devouring modernism", lang: "pt", region: "Brazil",
@@ -483,6 +1020,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     subject as well as the method.",
         guard: "Playfulness is not carelessness. Each borrowing must be visibly changed by being \
                 taken, or it is imitation rather than appetite.",
+        suits: &["book"],
     },
 
     // ── Dutch ───────────────────────────────────────────────────────────
@@ -497,6 +1035,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     said.",
         guard: "Dryness is not indifference. The restraint has to be visibly costing the speaker \
                 something, or there is nothing underneath it.",
+        suits: &["book"],
     },
     Tradition {
         id: "emblem", label: "Picture and motto", lang: "nl", region: "the Low Countries",
@@ -509,6 +1048,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     revelation.",
         guard: "The lesson must arise from the picture rather than being attached to it. If any image \
                 would fit the moral, the wrong image was chosen.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "flemish_lyric", label: "Flemish nature lyric", lang: "nl", region: "Flanders",
@@ -522,6 +1062,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     Delight is expressed rather than implied.",
         guard: "The observation must be precise enough to be checked. Rapture over a generic bird is \
                 sentimentality, which is what this tradition is always accused of and rarely guilty of.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "levenslied", label: "The life-song", lang: "nl", region: "Netherlands, Flanders",
@@ -534,6 +1075,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     line keeps the whole from tipping over.",
         guard: "It is sung by and for the people it is about. A line that looks down on them, however \
                 affectionately, is not in this tradition.",
+        suits: &["book", "song"],
     },
 
     // ── Polish ──────────────────────────────────────────────────────────
@@ -548,6 +1090,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     and let its force come from how long it took.",
         guard: "The digressions must be answering something, even if only the speaker's own memory. \
                 Aimless wandering is not this form, which is intensely sociable.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "polish_irony", label: "The examined ordinary", lang: "pl", region: "Poland",
@@ -560,6 +1103,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     End before the reader expects, on a plain observation.",
         guard: "No grandeur and no self-pity, however large the history being touched. The wit is what \
                 makes the weight bearable, so it must not be dropped at the end.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "messianic", label: "The suffering nation", lang: "pl", region: "Poland",
@@ -572,6 +1116,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     and never ironic.",
         guard: "It speaks to a people, never against another one. A line whose force comes from an \
                 enemy has left the tradition for propaganda.",
+        suits: &["scripture", "song"],
     },
 
     // ── Russian ─────────────────────────────────────────────────────────
@@ -587,6 +1132,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     mockery.",
         guard: "The narrator must be consistent. One sentence in the author's own educated register \
                 breaks the whole illusion, which is the only device the form has.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "moral_novel", label: "The argument through people", lang: "ru", region: "Russia",
@@ -599,6 +1145,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     changed by having been asked.",
         guard: "Neither side may be a straw man. If a reader can tell which one the author prefers \
                 from the writing rather than from the events, it has failed.",
+        suits: &["book"],
     },
     Tradition {
         id: "chastushka", label: "Chastushka", lang: "ru", region: "Russia",
@@ -610,6 +1157,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     first three. Rude is allowed and often the point.",
         guard: "It must be sayable in one breath and funny to somebody who was not there. A chastushka \
                 that needs explaining is not one.",
+        suits: &["scripture", "song"],
     },
 
     // ── Arabic ──────────────────────────────────────────────────────────
@@ -624,6 +1172,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     the form is the point: this is speech for a moment that matters.",
         guard: "The rhyme must not force the sense. A unit padded to reach its rhyme is the failure \
                 this form is judged on.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "qasida", label: "The classical ode", lang: "ar", region: "Arabia, North Africa, the Levant",
@@ -636,6 +1185,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     complete thought that could stand alone.",
         guard: "The three movements must be proportionate; the opening is short. A whole poem spent at \
                 the ruins is a mood, not a qasida.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "arabic_free", label: "Modern free verse", lang: "ar", region: "the Arab world",
@@ -648,6 +1198,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     as though it were a person.",
         guard: "Free does not mean unmeasured: the line still has a foot underneath it. Prose broken \
                 into lines is not this tradition.",
+        suits: &["scripture", "song"],
     },
 
     // ── Hebrew ──────────────────────────────────────────────────────────
@@ -662,6 +1213,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     wanted, add a third line rather than a longer one.",
         guard: "The second line must do something the first did not. Pure repetition is not \
                 parallelism, it is a stammer.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "piyyut", label: "Piyyut", lang: "he", region: "Jewish liturgical tradition",
@@ -674,6 +1226,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     plural. Keep the refrain short enough to be joined.",
         guard: "The pattern is a discipline, not a puzzle. If the acrostic is the only reason a line is \
                 there, the line is not there.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "modern_hebrew", label: "The sacred in the kitchen", lang: "he", region: "Israel",
@@ -686,6 +1239,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     be tender rather than grand.",
         guard: "The old phrase must be used, not quoted. If it sits in the line like an epigraph, the \
                 collision has not happened.",
+        suits: &["scripture", "song"],
     },
 
     // ── Hindi ───────────────────────────────────────────────────────────
@@ -700,6 +1254,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     the interest is in the telling and the gloss, not the outcome.",
         guard: "The commentary is warm and specific, not a sermon in general terms. It should name the \
                 sort of trouble the listeners actually have.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "bhakti", label: "Bhakti devotional", lang: "hi", region: "North and Central India",
@@ -712,6 +1267,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     Close on a couplet compact enough to be remembered whole.",
         guard: "Familiarity is not irreverence, and the images are worked rather than decorative. \
                 Kabir's loom is a loom.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "ghazal", label: "The ghazal", lang: "hi", region: "North India and Pakistan",
@@ -724,6 +1280,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     distinguished. In the last couplet, name the speaker.",
         guard: "Do not join the couplets into an argument. A ghazal that develops a thesis has become \
                 a different poem.",
+        suits: &["scripture", "song"],
     },
 
     // ── Indonesian ──────────────────────────────────────────────────────
@@ -737,6 +1294,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     two say the human thing. The link between the halves is sound and suggestion, \
                     never explanation.",
         guard: "Never bridge the halves with 'like' or 'so'. The unstated leap is the entire form.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "wayang", label: "The puppeteer's voice", lang: "id", region: "Java, Bali",
@@ -750,6 +1308,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     purpose.",
         guard: "The comic interruption is not a break from the story, it is where its meaning is \
                 argued. Treat it as the most serious part.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "hikayat", label: "Hikayat", lang: "id", region: "the Malay world",
@@ -762,6 +1321,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     of the court, not a modern observer.",
         guard: "The formulas are the texture and must recur. Stripping them for concision leaves a \
                 plot summary rather than a hikayat.",
+        suits: &["book"],
     },
 
     // ── Japanese ────────────────────────────────────────────────────────
@@ -776,6 +1336,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     interval is not empty and must be felt as full.",
         guard: "Absence must be shaped, not merely short. If the gap could be closed without loss, it \
                 was a cut rather than a ma.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "haiku", label: "Season and cut", lang: "ja", region: "Japan",
@@ -788,6 +1349,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     conclusion, and no word about how the speaker feels.",
         guard: "Never state the meaning. The moment a haiku explains its own juxtaposition it becomes \
                 an aphorism with a line break.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "rakugo", label: "Rakugo", lang: "ja", region: "Japan",
@@ -800,6 +1362,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     last, to a single final line that reverses the whole story in a few words.",
         guard: "The ending must be one line and must be prepared from the beginning. A story that \
                 merely stops has no ochi and is not rakugo.",
+        suits: &["book", "song"],
     },
 
     // ── Korean ──────────────────────────────────────────────────────────
@@ -814,6 +1377,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     a room that answers. Comedy and grief sit in the same episode.",
         guard: "The sung parts must dwell. Summarising them back into narration collapses the form to \
                 a plot.",
+        suits: &["book", "song"],
     },
     Tradition {
         id: "sijo", label: "Sijo", lang: "ko", region: "Korea",
@@ -826,6 +1390,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     one sitting and to be remembered.",
         guard: "The third line's turn is compulsory. Three lines of steady development is a stanza, \
                 not a sijo.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "han", label: "Held sorrow", lang: "ko", region: "Korea",
@@ -838,6 +1403,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     road or hill anchor it.",
         guard: "Not despair and not nobility. The speaker is still going, still complaining, and would \
                 be unrecognisable if either the pain or the persistence were removed.",
+        suits: &["scripture", "song"],
     },
 
     // ── Chinese ─────────────────────────────────────────────────────────
@@ -852,6 +1418,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     as well as the sense.",
         guard: "The parallelism must be exact enough to be felt and varied enough not to tick. Two \
                 dozen identical pairs is a metronome.",
+        suits: &["book"],
     },
     Tradition {
         id: "tang_verse", label: "Regulated verse", lang: "zh", region: "China",
@@ -864,6 +1431,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     mountain, a river, a lamp, a season.",
         guard: "The feeling is never stated. In this tradition 'I was sad' is not a line, it is the \
                 admission that no image was found.",
+        suits: &["scripture", "song"],
     },
     Tradition {
         id: "pingshu", label: "The storyteller's serial", lang: "zh", region: "China",
@@ -876,6 +1444,7 @@ pub const TRADITIONS: &[Tradition] = &[
                     throughout, with set phrases for combat and for beauty.",
         guard: "The break must fall at a decision, not at a lull. Stopping at a resting point wastes \
                 the only structural device the form has.",
+        suits: &["book", "song"],
     },
 ];
 
@@ -889,9 +1458,22 @@ pub fn tradition(id: &str) -> Option<&'static Tradition> {
 /// should be offered pansori and sijo before "plain speech" — the general option is a fallback, and
 /// putting it at the top makes the specific ones look like variants of it.
 pub fn traditions_for(lang: &str) -> Vec<&'static Tradition> {
+    traditions_for_task(lang, "")
+}
+
+/// The traditions offered for a language *and* a task.
+///
+/// The task filter is what keeps a list of eighty-nine from being useless. Setting a psalm, writing
+/// a lyric and writing a chapter want genuinely different things: the metrical psalm exists to do
+/// the first and would be a strange way to do the third, and a desert saying is the reverse. An
+/// unknown or empty task filters nothing, so a caller that does not know what it is doing still
+/// sees everything rather than nothing.
+pub fn traditions_for_task(lang: &str, task: &str) -> Vec<&'static Tradition> {
     let code = lang.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
-    let mut own: Vec<&Tradition> = TRADITIONS.iter().filter(|t| t.lang == code).collect();
-    own.extend(TRADITIONS.iter().filter(|t| t.lang.is_empty()));
+    let wanted = is_task(task).then_some(task);
+    let ok = |t: &&Tradition| wanted.is_none_or(|w| t.suits.contains(&w));
+    let mut own: Vec<&Tradition> = TRADITIONS.iter().filter(|t| t.lang == code).filter(ok).collect();
+    own.extend(TRADITIONS.iter().filter(|t| t.lang.is_empty()).filter(ok));
     own
 }
 
@@ -906,17 +1488,20 @@ pub fn languages() -> Vec<&'static str> {
 }
 
 #[tauri::command]
-pub async fn authorial_catalogue(language: Option<String>) -> Result<Value, String> {
+pub async fn authorial_catalogue(language: Option<String>, task: Option<String>) -> Result<Value, String> {
     let lang = language.unwrap_or_default();
+    let task = task.unwrap_or_default();
     let list: Vec<&Tradition> = if lang.trim().is_empty() {
-        TRADITIONS.iter().collect()
+        let wanted = is_task(&task).then_some(task.as_str());
+        TRADITIONS.iter().filter(|t| wanted.is_none_or(|w| t.suits.contains(&w))).collect()
     } else {
-        traditions_for(&lang)
+        traditions_for_task(&lang, &task)
     };
     Ok(json!({
         "traditions": list.iter().map(|t| json!({
             "id": t.id, "label": t.label, "lang": t.lang, "region": t.region,
             "kind": t.kind.id(), "hint": t.hint, "exemplars": t.exemplars,
+            "suits": t.suits,
         })).collect::<Vec<_>>(),
         "dials": DIALS.iter().map(|(id, choices, label)| json!({
             "id": id, "label": label,
@@ -925,6 +1510,8 @@ pub async fn authorial_catalogue(language: Option<String>) -> Result<Value, Stri
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         "languages": languages(),
+        "tasks": TASKS.iter().map(|(id, label)| json!({ "id": id, "label": label }))
+            .collect::<Vec<_>>(),
     }))
 }
 
@@ -1028,6 +1615,65 @@ mod tests {
         let unknown = traditions_for("xx");
         assert!(!unknown.is_empty());
         assert!(unknown.iter().all(|t| t.lang.is_empty()));
+    }
+
+    #[test]
+    fn a_task_narrows_the_list_to_traditions_that_could_actually_do_it() {
+        // Eighty-nine traditions offered for every job is the same failure as offering none.
+        let all = traditions_for_task("en", "");
+        for task in ["scripture", "song", "book"] {
+            let some = traditions_for_task("en", task);
+            assert!(!some.is_empty(), "{task} has nothing");
+            assert!(some.len() < all.len(), "{task} narrowed nothing");
+            assert!(some.iter().all(|t| t.suits.contains(&task)));
+        }
+    }
+
+    #[test]
+    fn setting_a_psalm_and_writing_a_chapter_are_offered_different_things() {
+        let scripture: Vec<&str> = traditions_for_task("en", "scripture").iter().map(|t| t.id).collect();
+        let book: Vec<&str> = traditions_for_task("en", "book").iter().map(|t| t.id).collect();
+        // The metrical psalm exists to do the first and would be a strange way to do the third.
+        assert!(scripture.contains(&"metrical_psalm"));
+        assert!(!book.contains(&"metrical_psalm"));
+        // And the reverse.
+        assert!(book.contains(&"apophthegm"));
+        assert!(!scripture.contains(&"apophthegm"));
+    }
+
+    #[test]
+    fn an_unknown_task_shows_everything_rather_than_nothing() {
+        // A caller that does not know what it is doing must not end up with an empty picker.
+        assert_eq!(traditions_for_task("en", "").len(), traditions_for_task("en", "nonsense").len());
+        assert!(!traditions_for_task("en", "nonsense").is_empty());
+    }
+
+    #[test]
+    fn every_tradition_is_good_for_at_least_one_thing() {
+        for t in TRADITIONS {
+            assert!(!t.suits.is_empty(), "{} is offered for nothing", t.id);
+            for task in t.suits {
+                assert!(is_task(task), "{} claims an unknown task {task}", t.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_church_traditions_cover_all_three_uses_and_reach_the_languages() {
+        // This app sets scripture to music: the traditions its own subject has been written in are
+        // not an appendix, and they have to be there for each of the three things it writes.
+        for (task, expected) in [("scripture", "metrical_psalm"), ("song", "gospel_song"),
+                                 ("book", "pilgrim_allegory")] {
+            assert!(traditions_for_task("en", task).iter().any(|t| t.id == expected),
+                    "{expected} missing from {task}");
+        }
+        // And each language has its own church writing rather than a translation of somebody else's.
+        for (lang, id) in [("de", "luther_hymn"), ("es", "sanjuan"), ("fr", "pensee"),
+                           ("it", "lauda"), ("pt", "vieira"), ("nl", "statenvertaling"),
+                           ("pl", "gorzkie_zale"), ("ru", "akathist"), ("hi", "christian_bhajan"),
+                           ("zh", "chinese_hymn"), ("ko", "dawn_prayer")] {
+            assert!(traditions_for(lang).iter().any(|t| t.id == id), "{lang} is missing {id}");
+        }
     }
 
     #[test]

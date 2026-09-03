@@ -221,7 +221,8 @@ export const api = {
   craftCatalogue: () => invokeCommand("craft_catalogue"),
   // The traditions a piece can be written in, filtered to a language, plus the surface dials.
   // One source of truth, so a picker cannot offer a voice the prompt builder does not know.
-  authorialCatalogue: (language) => invokeCommand("authorial_catalogue", { language: language || null }),
+  authorialCatalogue: (language, task) =>
+    invokeCommand("authorial_catalogue", { language: language || null, task: task || null }),
   getWorkflowState: (projectId, view) => invokeCommand("get_workflow_state", { projectId, view }),
   saveWorkflowState: (projectId, view, patch) => invokeCommand("save_workflow_state", { projectId, view, patch }),
   resetWorkflowState: (projectId, view) => invokeCommand("reset_workflow_state", { projectId, view }),
