@@ -19,6 +19,7 @@ import { novelFlow } from "../lib/guidedFlows";
 import { openLoginUrl } from "../lib/openLogin";
 import AvatarUniverses from "../components/AvatarUniverses";
 import VolumeWorkbench from "../components/VolumeWorkbench";
+import AuthorialVoice from "../components/AuthorialVoice";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Graphic novels → ebooks.
@@ -43,6 +44,9 @@ export default function GraphicNovels() {
   const [register, setRegister] = useState("free_verse");
   const [format, setFormat] = useState("page");
   const [pages, setPages] = useState(12);
+  // Whose voice the prose is in. A register says what kind of edition this is; a voice says how the
+  // sentences go inside it, and an illuminated edition in Andalusian deep song is a real thing to want.
+  const [voice, setVoice] = useState({});
   const [editions, setEditions] = useState([]);
   const [active, setActive] = useState(null);
   const [stores, setStores] = useState([]);
@@ -73,7 +77,7 @@ export default function GraphicNovels() {
     setBusy("write");
     try {
       const ed = await api.authorEdition({
-        song_id: activeSongId, register, format, pages: Number(pages) || 12,
+        song_id: activeSongId, register, format, pages: Number(pages) || 12, voice,
       });
       setEditions((e) => [...e, ed]);
       setActive(ed);
@@ -258,6 +262,15 @@ export default function GraphicNovels() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="pt-3 border-t border-border/60">
+            <AuthorialVoice
+              language={(songs || []).find((s) => s.id === activeSongId)?.language || ""}
+              value={voice}
+              onChange={setVoice}
+              compact
+            />
           </div>
 
           <Button onClick={write} disabled={busy === "write" || !activeSongId}>

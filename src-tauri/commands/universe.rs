@@ -907,9 +907,13 @@ pub async fn universe_retell(state: State<'_, AppState>, payload: RetellRequest)
     }
     let language = field_str(universe.get("axes").unwrap_or(&Value::Null), "language");
 
+    // The voice the edition was written in, carried over. Without this a retelling silently reverts
+    // to the model's default register, which is the one thing a retelling must not change.
+    let voice_block = crate::commands::authorial::authorial_prompt_block(&edition["voice"]);
     let system = format!(
         "You retell an illustrated edition for one specific reader. You are not translating: you are \
          writing the same book again, for them.\n\n\
+         {voice_block}\
          {block}\n\
          WHAT TO KEEP: the sequence of beats. Page {n} of your retelling covers what page {n} of the \
          source covers — the same turn, the same moment, the same weight — {pagination}\n\n\
@@ -921,6 +925,7 @@ pub async fn universe_retell(state: State<'_, AppState>, payload: RetellRequest)
          Return ONLY: {{\"title\": string, \"pages\": [{{\"heading\": string, \"lines\": [string], \
          \"art\": string, \"caption\": string}}]}}. No markdown, no fences, no commentary.",
         block = universe_prompt_block(&universe),
+        voice_block = voice_block,
         n = "N",
         pagination = if payload.keep_pagination {
             format!("and there are exactly {} pages, in the same order. Do not merge, split or \

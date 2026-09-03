@@ -2915,7 +2915,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "A chave antiga continua a funcionar durante duas semanas. Essa sobreposição não é cortesia: um token emitido um minuto antes da troca vale o prazo todo, e recusá-lo excluiria precisamente quem estava a usar a aplicação durante a rotação.",
     "The private half — for whatever signs entitlements. Shown once.": "A metade privada — para o que assina as licenças. Mostrada uma vez.",
     "The signing key is this machine's own.": "A chave de assinatura é desta máquina.",
-    "This build still trusts the leaked signing key": "Esta versão ainda confia na chave de assinatura que vazou"
+    "This build still trusts the leaked signing key": "Esta versão ainda confia na chave de assinatura que vazou",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": ". O que viaja é a técnica — não se imita a voz de ninguém e nenhum nome chega à página.",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "Um corpo de técnica com um lugar e uma história — não um autor a imitar. As escritas nesta língua vêm primeiro.",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "Deixe qualquer um por definir e nada será dito sobre isso: um seletor não escolhido é silêncio, não um valor por omissão contra o qual o modelo tenha de argumentar.",
+    "The tradition": "A tradição",
+    "Where this is heard:": "Onde isto se ouve:"
   },
   "same_as_english": [
     "DPI —",

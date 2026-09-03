@@ -2929,7 +2929,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "古い鍵は二週間動き続けます。この重なりは礼儀ではありません：切り替えの一分前に発行されたトークンは期間いっぱい有効で、それを拒めば入れ替えの最中にアプリを使っていた人をちょうど締め出すことになります。",
     "The private half — for whatever signs entitlements. Shown once.": "秘密鍵——ライセンスに署名するもの向けです。一度だけ表示します。",
     "The signing key is this machine's own.": "署名鍵はこの端末自身のものです。",
-    "This build still trusts the leaked signing key": "このビルドはまだ漏れた署名鍵を信頼しています"
+    "This build still trusts the leaked signing key": "このビルドはまだ漏れた署名鍵を信頼しています",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": "。旅をするのは技法です——誰の声も真似しませんし、どんな名前もページには出ません。",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "場所と歴史を持つ技法の体系であって、真似るべき作家ではありません。この言語で書かれたものが先に並びます。",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "どれも未設定のままにすれば、それについては何も言われません——選ばなかったつまみは沈黙であって、モデルが逆らうべき既定値ではありません。",
+    "The tradition": "伝統",
+    "Where this is heard:": "これが聞けるところ："
   },
   "same_as_english": [
     "DPI —",

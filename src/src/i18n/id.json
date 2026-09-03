@@ -2909,7 +2909,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "Kunci lama masih berlaku dua minggu. Tumpang tindih itu bukan kesopanan: token yang terbit semenit sebelum pergantian berlaku penuh masa berlakunya, dan menolaknya justru mengunci orang-orang yang sedang memakai aplikasi saat rotasi.",
     "The private half — for whatever signs entitlements. Shown once.": "Separuh privat — untuk apa pun yang menandatangani lisensi. Ditampilkan sekali.",
     "The signing key is this machine's own.": "Kunci penandatangan adalah milik mesin ini sendiri.",
-    "This build still trusts the leaked signing key": "Build ini masih mempercayai kunci penandatangan yang bocor"
+    "This build still trusts the leaked signing key": "Build ini masih mempercayai kunci penandatangan yang bocor",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": ". Yang berpindah adalah tekniknya — suara siapa pun tidak ditiru dan tidak ada nama yang sampai ke halaman.",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "Sehimpun teknik dengan tempat dan sejarahnya — bukan pengarang untuk ditiru. Yang ditulis dalam bahasa ini didahulukan.",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "Biarkan salah satunya tidak diisi dan tidak ada yang dikatakan tentangnya: tombol yang tidak dipilih adalah kesenyapan, bukan nilai bawaan yang harus dilawan model.",
+    "The tradition": "Tradisinya",
+    "Where this is heard:": "Di mana ini terdengar:"
   },
   "same_as_english": [
     "DPI —",

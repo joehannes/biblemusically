@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { appendDailyFlavor } from "../lib/dailyFlavor";
 import { checkSingability } from "../lib/singability";
+import AuthorialVoice from "../components/AuthorialVoice";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useAutoSave, AutoSaveChip, useBackgroundSave, restore } from "../lib/hooks";
@@ -827,6 +828,8 @@ export default function AIComposer() {
         title_pattern: cfg.title_pattern,
         artist: cfg.artist,
         craft: cfg.craft || {},
+        // Whose voice, as opposed to what kind of song and who it is for.
+        voice: cfg.voice || {},
         // The same reader the book engine retells through. Named once, so a project does not end up
         // with a book written for somebody and a song written for nobody inside the same video.
         universe_id: cfg.universe_id || null,
@@ -1203,6 +1206,16 @@ export default function AIComposer() {
             or padded by the singer rather than fixed. Set a range only if you want one — otherwise the
             song's own consistency is what gets checked.
           </p>
+
+          {/* Whose voice. The tradition is the frame; the dials are the surface of the prose. Filtered
+              to the language of the first target, since a tradition belongs to a language. */}
+          <div className="mt-4 pt-4 border-t border-border/60">
+            <AuthorialVoice
+              language={(cfg.targets || [])[0]?.language || ""}
+              value={cfg.voice || {}}
+              onChange={(voice) => setCfg((p) => ({ ...p, voice }))}
+            />
+          </div>
 
           {/* Who it is for. The same record the book engine retells an edition through, so the song
               and its illustrated edition are written for the same person rather than one for

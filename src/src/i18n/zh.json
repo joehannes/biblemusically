@@ -2929,7 +2929,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "旧密钥还会再工作两周。这段重叠不是客气：切换前一分钟签发的令牌在整个有效期内都算数，拒绝它恰恰会把轮换当时正在用这个应用的人挡在外面。",
     "The private half — for whatever signs entitlements. Shown once.": "私钥——给签发授权的那一端。只显示一次。",
     "The signing key is this machine's own.": "签名密钥是这台机器自己的。",
-    "This build still trusts the leaked signing key": "这个构建仍然信任那把泄露的签名密钥"
+    "This build still trusts the leaked signing key": "这个构建仍然信任那把泄露的签名密钥",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": "。旅行的是技法——不模仿任何人的声音，也没有名字会出现在页面上。",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "一套有地点也有历史的技法，而不是一位可供模仿的作者。用这门语言写作的排在前面。",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "把其中任何一项留空，就不会对它说什么——没选的旋钮是沉默，而不是一个需要模型去顶撞的默认值。",
+    "The tradition": "这一传统",
+    "Where this is heard:": "这在哪里听得到："
   },
   "same_as_english": [
     "DPI —",

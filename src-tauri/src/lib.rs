@@ -810,6 +810,7 @@ pub fn run() {
             commands::project_journey,
             commands::mint_signing_key,
             commands::signing_key_status,
+            commands::authorial_catalogue,
             commands::guide_templates,
             commands::get_workflow_state,
             commands::save_workflow_state,

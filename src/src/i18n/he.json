@@ -2927,7 +2927,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "המפתח הישן ממשיך לעבוד שבועיים. החפיפה הזו אינה נימוס: אסימון שהונפק דקה לפני המעבר תקף למלוא תקופתו, ודחייתו הייתה נועלת בחוץ בדיוק את מי שהשתמש באפליקציה בזמן הרוטציה.",
     "The private half — for whatever signs entitlements. Shown once.": "החצי הפרטי — למה שחותם על הרישיונות. מוצג פעם אחת.",
     "The signing key is this machine's own.": "מפתח החתימה שייך למכונה הזו.",
-    "This build still trusts the leaked signing key": "הבנייה הזו עדיין בוטחת במפתח החתימה שדלף"
+    "This build still trusts the leaked signing key": "הבנייה הזו עדיין בוטחת במפתח החתימה שדלף",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": ". מה שנוסע הוא הטכניקה — קולו של איש אינו מחוקה ואף שם אינו מגיע לדף.",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "גוף של טכניקה עם מקום והיסטוריה — לא סופר לחקות. אלה שנכתבו בשפה הזו מופיעות ראשונות.",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "השאר כל אחד מהם לא מוגדר ולא ייאמר עליו דבר: חוגה שלא נבחרה היא שתיקה, לא ברירת מחדל שהמודל צריך להתווכח איתה.",
+    "The tradition": "המסורת",
+    "Where this is heard:": "היכן שומעים את זה:"
   },
   "same_as_english": [
     "DPI —",

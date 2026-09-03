@@ -2930,7 +2930,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "옛 키는 2주 더 동작합니다. 이 겹침은 예의가 아닙니다: 전환 1분 전에 발급된 토큰은 기간 내내 유효하며, 이를 거절하면 교체가 일어나던 그때 앱을 쓰고 있던 사람들을 정확히 막아 버립니다.",
     "The private half — for whatever signs entitlements. Shown once.": "개인 키 — 이용권에 서명하는 쪽을 위한 것입니다. 한 번만 표시됩니다.",
     "The signing key is this machine's own.": "서명 키는 이 기기 자신의 것입니다.",
-    "This build still trusts the leaked signing key": "이 빌드는 아직 유출된 서명 키를 신뢰합니다"
+    "This build still trusts the leaked signing key": "이 빌드는 아직 유출된 서명 키를 신뢰합니다",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": ". 옮겨 가는 것은 기법입니다 — 누구의 목소리도 흉내 내지 않고 어떤 이름도 지면에 오르지 않습니다.",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "장소와 역사를 지닌 기법의 몸통이지, 흉내 낼 작가가 아닙니다. 이 언어로 쓰인 것이 앞에 옵니다.",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "무엇이든 설정하지 않고 두면 그에 대해서는 아무 말도 하지 않습니다 — 고르지 않은 다이얼은 침묵이지, 모델이 맞서야 할 기본값이 아닙니다.",
+    "The tradition": "전통",
+    "Where this is heard:": "이것이 들리는 곳:"
   },
   "same_as_english": [
     "DPI —",

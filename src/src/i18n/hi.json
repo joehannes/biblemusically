@@ -2934,7 +2934,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "पुरानी कुंजी दो सप्ताह और चलती है। यह ओवरलैप शिष्टाचार नहीं है: बदलाव से एक मिनट पहले जारी टोकन अपनी पूरी अवधि तक मान्य है, और उसे ठुकराना ठीक उन्हीं लोगों को बाहर कर देता जो रोटेशन के समय ऐप चला रहे थे।",
     "The private half — for whatever signs entitlements. Shown once.": "निजी हिस्सा — जो भी अधिकार पर हस्ताक्षर करता है उसके लिए। एक बार दिखाया जाता है।",
     "The signing key is this machine's own.": "हस्ताक्षर कुंजी इसी मशीन की अपनी है।",
-    "This build still trusts the leaked signing key": "यह बिल्ड अब भी लीक हुई हस्ताक्षर कुंजी पर भरोसा करता है"
+    "This build still trusts the leaked signing key": "यह बिल्ड अब भी लीक हुई हस्ताक्षर कुंजी पर भरोसा करता है",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": "। जो यात्रा करती है वह तकनीक है — किसी की आवाज़ की नकल नहीं होती और कोई नाम पन्ने तक नहीं पहुँचता।",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "तकनीक का एक भंडार, जिसकी अपनी जगह और अपना इतिहास है — नकल करने के लिए कोई लेखक नहीं। इस भाषा में लिखी गई परंपराएँ पहले आती हैं।",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "इनमें से किसी को भी बिना चुने छोड़ दीजिए और उसके बारे में कुछ नहीं कहा जाएगा: न चुना गया डायल मौन है, कोई ऐसी पूर्वनिर्धारित सेटिंग नहीं जिससे मॉडल को उलझना पड़े।",
+    "The tradition": "परंपरा",
+    "Where this is heard:": "यह कहाँ सुनाई देती है:"
   },
   "same_as_english": [
     "DPI —",

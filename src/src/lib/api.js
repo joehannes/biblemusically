@@ -219,6 +219,9 @@ export const api = {
   // The lyric-craft vocabulary — one source of truth, so a picker cannot offer a value the
   // prompt builder does not know.
   craftCatalogue: () => invokeCommand("craft_catalogue"),
+  // The traditions a piece can be written in, filtered to a language, plus the surface dials.
+  // One source of truth, so a picker cannot offer a voice the prompt builder does not know.
+  authorialCatalogue: (language) => invokeCommand("authorial_catalogue", { language: language || null }),
   getWorkflowState: (projectId, view) => invokeCommand("get_workflow_state", { projectId, view }),
   saveWorkflowState: (projectId, view, patch) => invokeCommand("save_workflow_state", { projectId, view, patch }),
   resetWorkflowState: (projectId, view) => invokeCommand("reset_workflow_state", { projectId, view }),

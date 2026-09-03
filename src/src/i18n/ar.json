@@ -2933,7 +2933,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "يظل المفتاح القديم صالحًا أسبوعين. هذا التداخل ليس مجاملة: الرمز الصادر قبل التبديل بدقيقة صالح لمدته كاملة، ورفضه سيقصي تحديدًا من كانوا يستخدمون التطبيق أثناء التبديل.",
     "The private half — for whatever signs entitlements. Shown once.": "النصف الخاص — لما يوقّع الاشتراكات. يُعرض مرة واحدة.",
     "The signing key is this machine's own.": "مفتاح التوقيع خاص بهذا الجهاز.",
-    "This build still trusts the leaked signing key": "ما زالت هذه النسخة تثق بمفتاح التوقيع المسرَّب"
+    "This build still trusts the leaked signing key": "ما زالت هذه النسخة تثق بمفتاح التوقيع المسرَّب",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": ". ما ينتقل هو الأسلوب الفني — لا يُقلَّد صوت أحد ولا يصل أي اسم إلى الصفحة.",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "متن من الصنعة له مكان وتاريخ — لا مؤلف يُقلَّد. المكتوبة بهذه اللغة تأتي أولًا.",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "اترك أيًّا منها دون تحديد فلا يُقال عنه شيء: المؤشر غير المختار صمت، لا قيمة افتراضية على النموذج أن يجادلها.",
+    "The tradition": "التقليد",
+    "Where this is heard:": "أين يُسمع هذا:"
   },
   "same_as_english": [
     "Video Gen"

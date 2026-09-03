@@ -368,6 +368,11 @@ pub struct ComposeRequest {
     /// dial handed to the model as free text is a dial with no defined effect.
     #[serde(default)]
     pub craft: Value,
+    /// Whose voice this is written in — a tradition, plus the surface dials. See
+    /// `commands::authorial`: the tradition is the frame, the dials modify it, and both travel
+    /// because instructions and exemplars together steer style better than either alone.
+    #[serde(default)]
+    pub voice: Value,
     /// The reader this is for, when one has been described (see `commands::universe`).
     ///
     /// The same universe that retells an edition can write the song, which is the point of naming
@@ -1099,6 +1104,9 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     // Ahead of the source text on purpose: "use its own words" and "take it somewhere" are
     // instructions about what the source *is* for this run, so they have to be read before it.
     let craft_block = crate::commands::craft::craft_prompt_block(&payload.craft);
+    // How it is written, as opposed to what it is and who it is for. Ahead of the universe block
+    // because a tradition is the frame a reader's world is described inside, not the other way round.
+    let voice_block = crate::commands::authorial::authorial_prompt_block(&payload.voice);
 
     // Who it is for, when somebody has said. Read from the same record the book engine retells
     // through, so a project's song and its edition are written for the same person.
@@ -1112,7 +1120,7 @@ pub async fn compose_lyrics(state: State<'_, AppState>, payload: ComposeRequest)
     };
 
     let user_prompt = format!(
-        "{profile_block}{brief_block}{research_block}{learnings_block}{craft_block}{universe_block}\
+        "{profile_block}{brief_block}{research_block}{learnings_block}{craft_block}{voice_block}{universe_block}\
          Source chapter text:\n{}\n\n\
          User-authored section ideas (apply to bracket prompts when matching lines):\n{}\n\n\
          Global theme: {}\n\

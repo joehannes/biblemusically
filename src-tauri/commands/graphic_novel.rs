@@ -180,6 +180,13 @@ pub struct AuthorRequest {
     /// Roughly how many pages. The model is told this is a target, not a quota.
     #[serde(default)]
     pub pages: Option<i64>,
+    /// The tradition it is written in, and the surface dials. See `commands::authorial`.
+    ///
+    /// A register (`REGISTERS` above) says what *kind* of edition this is — panels, study notes, a
+    /// children's book. A voice says how the sentences go inside it. They are different questions,
+    /// and an illuminated-manuscript edition written in Andalusian deep song is a real thing to want.
+    #[serde(default)]
+    pub voice: Value,
 }
 
 /// Write a poetic edition of a song's text.
@@ -201,8 +208,10 @@ pub async fn author_edition(state: State<'_, AppState>, payload: AuthorRequest) 
     let brief = crate::commands::ai::project_brief_block(
         &state.db, song["project_id"].as_str().unwrap_or("")).await;
 
+    let voice_block = crate::commands::authorial::authorial_prompt_block(&payload.voice);
     let system = format!(
         "You write illustrated editions of song texts for publication as ebooks.\n\n\
+         {voice_block}\
          VOICE: {direction}\n\n\
          Return ONLY a JSON object: {{\"title\": string, \"pages\": [{{\"heading\": string, \
          \"lines\": [string], \"art\": string, \"caption\": string}}]}}\n\
@@ -214,6 +223,7 @@ pub async fn author_edition(state: State<'_, AppState>, payload: AuthorRequest) 
          - `caption` is a short line under the art, or \"\" for none;\n\
          - no markdown, no fences, no commentary.",
         direction = reg.direction, want = want, aspect = fmt.aspect,
+        voice_block = voice_block,
     );
     let user = format!(
         "{brief}Song title: {title}\nLanguage: {lang}\n\nText:\n{lyrics}\n\n\
@@ -241,6 +251,8 @@ pub async fn author_edition(state: State<'_, AppState>, payload: AuthorRequest) 
             .unwrap_or(song["title"].as_str().unwrap_or("Edition")),
         "register": reg.id,
         "register_label": reg.label,
+        // Kept on the edition so a retelling can inherit it rather than reverting to no voice at all.
+        "voice": payload.voice.clone(),
         "format": fmt.id,
         "aspect": fmt.aspect,
         "width": fmt.width,

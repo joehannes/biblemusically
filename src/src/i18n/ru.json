@@ -2933,7 +2933,12 @@
     "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "Старый ключ работает ещё две недели. Это перекрытие — не вежливость: токен, выданный за минуту до переключения, действует весь свой срок, и отказ в нём отрезал бы ровно тех, кто пользовался приложением во время ротации.",
     "The private half — for whatever signs entitlements. Shown once.": "Приватная половина — для того, что подписывает лицензии. Показывается один раз.",
     "The signing key is this machine's own.": "Ключ подписи принадлежит этой машине.",
-    "This build still trusts the leaked signing key": "Эта сборка всё ещё доверяет утёкшему ключу подписи"
+    "This build still trusts the leaked signing key": "Эта сборка всё ещё доверяет утёкшему ключу подписи",
+    ". The technique is what travels — nobody's voice is imitated and no name reaches the page.": ". Путешествует техника — ничей голос не имитируется и ни одно имя не попадает на страницу.",
+    "A body of technique with a place and a history — not an author to imitate. The ones written in this language come first.": "Свод приёмов со своим местом и историей — не автор для подражания. Написанные на этом языке идут первыми.",
+    "Leave any of it unset and nothing is said about it — an unchosen dial is silence rather than a default the model has to argue with.": "Оставьте любой невыбранным — и о нём ничего не будет сказано: невыбранная настройка это молчание, а не значение по умолчанию, с которым модели придётся спорить.",
+    "The tradition": "Традиция",
+    "Where this is heard:": "Где это слышно:"
   },
   "same_as_english": [
     "DPI —",
