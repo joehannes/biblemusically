@@ -2943,7 +2943,22 @@
     "Open Music Gen": "Music Gen öffnen",
     "Sections saved.": "Abschnitte gespeichert.",
     "Sections, structure tags and per-section imagery": "Abschnitte, Struktur-Tags und Bilder je Abschnitt",
-    "Sections, tags and per-section imagery": "Abschnitte, Tags und Bilder je Abschnitt"
+    "Sections, tags and per-section imagery": "Abschnitte, Tags und Bilder je Abschnitt",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Auf diesem Rechner wurde ein Schlüssel erzeugt, und dieser Build führt ihn noch nicht. Solange der Ausschnitt nicht in",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "steht und ausgeliefert ist, ist die Rotation halb erledigt — dieser Rechner kann für einen Schlüssel signieren, dem die App nicht traut.",
+    "Copy the snippet": "Ausschnitt kopieren",
+    "Could not reach the clipboard — select it and copy by hand.": "Die Zwischenablage war nicht erreichbar — markiere es und kopiere es von Hand.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Er liegt bereits im Tresor dieses Rechners, Schließen verliert ihn also nicht. Er wird nie ins Repository geschrieben — und falls er doch je in einem landet, fängt das ab:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "Seine private Hälfte wurde in v0.88.0 ins Repository committet und ist in der Historie weiterhin erreichbar. Wer dieses Repo je geklont hat, kann sich eine lebenslange Berechtigung ausstellen, die diese App glaubt. Das Ersetzen ist ein Klick hier und eine Änderung.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Hier erzeugt, nicht geholt: kein Netz, kein Konto, nichts zu installieren. Die private Hälfte kommt in den verschlüsselten Tresor dieser App, die öffentliche wird einmal angezeigt, zum Veröffentlichen. Erzeugt werden muss er auf dem Rechner, der damit signiert — ein öffentlicher Schlüssel, dessen private Hälfte an einem Ort liegt, den es nicht mehr gibt, ist schlimmer als ein geleakter: niemand kann dafür signieren, und jede Berechtigung verliert ihre Gültigkeit.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Erzeugt und gegen sich selbst geprüft: ein Token wurde mit der privaten Hälfte signiert und mit der öffentlichen verifiziert, bevor eine von beiden angezeigt wurde.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Das hier in SUBS_PUBLIC_KEYS einsetzen und die eine Zeile dort ersetzen",
+    "The leaked one is no longer trusted by this build.": "Der geleakte wird von diesem Build nicht mehr akzeptiert.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "Der alte Schlüssel funktioniert noch zwei Wochen. Diese Überlappung ist keine Höflichkeit: ein Token, das eine Minute vor der Umstellung ausgegeben wurde, gilt seine volle Laufzeit, und es abzulehnen würde genau die Leute aussperren, die die App während der Rotation benutzt haben.",
+    "The private half — for whatever signs entitlements. Shown once.": "Die private Hälfte — für das, was Berechtigungen signiert. Wird einmal angezeigt.",
+    "The signing key is this machine's own.": "Der Signaturschlüssel gehört diesem Rechner.",
+    "This build still trusts the leaked signing key": "Dieser Build vertraut noch dem geleakten Signaturschlüssel"
   },
   "same_as_english": [
     "Clips",

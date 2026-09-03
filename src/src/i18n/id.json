@@ -2894,7 +2894,22 @@
     "Open Music Gen": "Buka Music Gen",
     "Sections saved.": "Bagian tersimpan.",
     "Sections, structure tags and per-section imagery": "Bagian, tag struktur, dan gambar per bagian",
-    "Sections, tags and per-section imagery": "Bagian, tag, dan gambar per bagian"
+    "Sections, tags and per-section imagery": "Bagian, tag, dan gambar per bagian",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Sebuah kunci dibuat di mesin ini dan build ini belum mencantumkannya. Sampai potongan itu ada di",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "dan dirilis, rotasinya baru setengah jadi — mesin ini bisa menandatangani untuk kunci yang tidak dipercaya aplikasi.",
+    "Copy the snippet": "Salin potongannya",
+    "Could not reach the clipboard — select it and copy by hand.": "Papan klip tidak bisa dijangkau — pilih dan salin manual.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Ia sudah ada di brankas mesin ini, jadi menutup ini tidak menghilangkannya. Ia tidak pernah ditulis ke repositori — dan kalau suatu saat masuk ke sana, ini yang menangkapnya:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "Separuh privatnya ter-commit ke repositori pada v0.88.0 dan masih terjangkau di riwayat. Siapa pun yang pernah meng-clone-nya bisa menerbitkan lisensi seumur hidup untuk dirinya, dan aplikasi ini mempercayainya. Menggantinya cukup satu klik di sini dan satu perubahan.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Dibuat di sini, bukan diambil: tanpa jaringan, tanpa akun, tanpa yang perlu dipasang. Separuh privat masuk ke brankas terenkripsi aplikasi dan separuh publiknya ditampilkan sekali, untuk diterbitkan. Ia harus dibuat di mesin yang akan menandatangani dengannya — kunci publik yang separuh privatnya ada di tempat yang sudah tidak ada lebih buruk daripada yang bocor: tidak ada yang bisa menandatangani untuknya, dan semua lisensi berhenti terverifikasi.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Dibuat, dan diperiksa terhadap dirinya sendiri: sebuah token ditandatangani dengan separuh privat dan diverifikasi dengan separuh publik sebelum keduanya ditampilkan.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Tempel ini ke SUBS_PUBLIC_KEYS, menggantikan satu baris yang ada di sana",
+    "The leaked one is no longer trusted by this build.": "Yang bocor sudah tidak dipercaya build ini.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "Kunci lama masih berlaku dua minggu. Tumpang tindih itu bukan kesopanan: token yang terbit semenit sebelum pergantian berlaku penuh masa berlakunya, dan menolaknya justru mengunci orang-orang yang sedang memakai aplikasi saat rotasi.",
+    "The private half — for whatever signs entitlements. Shown once.": "Separuh privat — untuk apa pun yang menandatangani lisensi. Ditampilkan sekali.",
+    "The signing key is this machine's own.": "Kunci penandatangan adalah milik mesin ini sendiri.",
+    "This build still trusts the leaked signing key": "Build ini masih mempercayai kunci penandatangan yang bocor"
   },
   "same_as_english": [
     "DPI —",

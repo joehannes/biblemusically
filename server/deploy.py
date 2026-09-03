@@ -5,6 +5,7 @@
     python3 deploy.py --keys-only   # print the keys and URL again, deploy nothing
     python3 deploy.py --rotate-key  # mint a NEW signing key, deploy it, print the public half
     python3 deploy.py --rotate-admin-token   # mint a new admin token, deploy it
+    python3 deploy.py --mint-only   # mint a signing key and print it. No network, no credential.
 
 No wrangler: this talks to the REST API, so there is nothing to install and nothing that can be a
 different version than last time. Idempotent — running it again updates the script and reuses the KV
@@ -195,6 +196,22 @@ def upload(account: str, tok: str, script: bytes, metadata: dict):
 
 def main():
     refuse_if_tracked()
+
+    # Minting is local: an Ed25519 pair out of `secrets`, written to the state file. It needed the
+    # Cloudflare token only because it sat below `token()` in this function and so inherited the
+    # deploy step's requirements — which is why rotating the compromised key looked like it was
+    # gated on a credential when it never was. `--mint-only` is the mint with nothing attached, so
+    # the key can be made on the machine that will hold its private half.
+    if "--mint-only" in sys.argv:
+        new_public = rotate_signing_key()
+        print(f"minted a new signing key.\n"
+              f"  public half  {new_public}\n"
+              f"  private half stays in {STATE.name} (chmod 600, gitignored)\n\n"
+              f"Add the public half to SUBS_PUBLIC_KEYS in src-tauri/commands/subscription.rs, above\n"
+              f"the key it replaces, and give that one an accept_until about a fortnight out. Then\n"
+              f"deploy so the server signs with the new private half:  python3 deploy.py\n")
+        return
+
     tok = token()
 
     rotated_key = "--rotate-key" in sys.argv

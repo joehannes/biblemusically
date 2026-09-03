@@ -2912,7 +2912,22 @@
     "Open Music Gen": "פתח את Music Gen",
     "Sections saved.": "הקטעים נשמרו.",
     "Sections, structure tags and per-section imagery": "קטעים, תגיות מבנה ותמונות לכל קטע",
-    "Sections, tags and per-section imagery": "קטעים, תגיות ותמונות לכל קטע"
+    "Sections, tags and per-section imagery": "קטעים, תגיות ותמונות לכל קטע",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "נוצר מפתח במכונה הזו והבנייה הזו עדיין לא מונה אותו. עד שהקטע יופיע ב",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "וייצא לאוויר, הרוטציה חצי גמורה — המכונה הזו יכולה לחתום במפתח שהאפליקציה לא בוטחת בו.",
+    "Copy the snippet": "העתק את הקטע",
+    "Could not reach the clipboard — select it and copy by hand.": "לא הצלחתי להגיע ללוח — סמן והעתק ידנית.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "הוא כבר בכספת של המכונה הזו, אז סגירה לא מאבדת אותו. הוא לעולם לא נכתב למאגר — ואם בכל זאת יגיע לאחד, זה מה שיתפוס אותו:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "החצי הפרטי שלו נדחף למאגר בגרסה v0.88.0 ועדיין נגיש בהיסטוריה. כל מי ששכפל אותו אי פעם יכול להנפיק לעצמו רישיון לכל החיים שהאפליקציה מאמינה לו. ההחלפה היא לחיצה אחת כאן ושינוי אחד.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "נוצר כאן, לא הובא: בלי רשת, בלי חשבון, בלי מה להתקין. החצי הפרטי נכנס לכספת המוצפנת של האפליקציה והציבורי מוצג פעם אחת, לפרסום. הוא חייב להיווצר במכונה שתחתום איתו — מפתח ציבורי שהחצי הפרטי שלו נמצא במקום שכבר לא קיים גרוע ממפתח שדלף: אין מה שיחתום בו, וכל הרישיונות מפסיקים להיאמת.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "נוצר ונבדק מול עצמו: אסימון נחתם בחצי הפרטי ואומת בציבורי לפני שאחד מהם הוצג.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "הדבק את זה ב-SUBS_PUBLIC_KEYS במקום השורה היחידה שיש שם",
+    "The leaked one is no longer trusted by this build.": "זה שדלף כבר לא נאמן בבנייה הזו.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "המפתח הישן ממשיך לעבוד שבועיים. החפיפה הזו אינה נימוס: אסימון שהונפק דקה לפני המעבר תקף למלוא תקופתו, ודחייתו הייתה נועלת בחוץ בדיוק את מי שהשתמש באפליקציה בזמן הרוטציה.",
+    "The private half — for whatever signs entitlements. Shown once.": "החצי הפרטי — למה שחותם על הרישיונות. מוצג פעם אחת.",
+    "The signing key is this machine's own.": "מפתח החתימה שייך למכונה הזו.",
+    "This build still trusts the leaked signing key": "הבנייה הזו עדיין בוטחת במפתח החתימה שדלף"
   },
   "same_as_english": [
     "DPI —",

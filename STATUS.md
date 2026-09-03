@@ -7,7 +7,7 @@ A dated log of observed project state, **newest observation first** (reverse-chr
 ## 2026-09-02 (later) — What the audit asked for, built: rotation, HTTP Suno, a book engine, and a reader
 
 The implementation pass on top of the audit above. Baseline stayed green throughout — the closing
-figures are **503 Rust tests, 156 JS tests, `npm run build` clean, i18n 100% in all fifteen
+figures are **510 Rust tests, 156 JS tests, `npm run build` clean, i18n 100% in all fifteen
 languages, both static audits clean, zero compiler warnings**.
 
 **The compromised signing key is replaceable now, and the audit had understated it.** `SUBS_PUBLIC_KEY`
@@ -98,8 +98,23 @@ loaded — so nine of C's ten crossings are live. The tenth, thumbnails, is the 
 plan that needs new data rather than new code: the app generates thumbnails but never records which
 one an upload went out with.
 
-**Still the owner's to do:** run `python3 server/deploy.py --rotate-key --rotate-admin-token` and
-edit two lines in `subscription.rs` per `docs/SECURITY-KEY-ROTATION.md`.
+**And the rotation stopped needing a credential, because it never did.** This log and the rotation
+doc both said replacing the compromised key required the Cloudflare account. That was wrong. Minting
+an Ed25519 pair is local arithmetic; the account is needed only to *deploy* the new private half to
+the Worker that signs. Minting had simply inherited the deploy step's requirements by sitting below
+`token()` in `deploy.py`'s `main()`. There are two ways to mint now and neither touches the network:
+`deploy.py --mint-only`, and a card in Account (source builds only) that keeps the private half in
+the app's own vault, hands over the exact `SUBS_PUBLIC_KEYS` edit, and offers the private half as
+PKCS#8 — what WebCrypto's `importKey` takes — or as the raw seed. The pair is signed and verified
+against itself before either half is shown, because a rotation that shipped a mismatched pair would
+lock out every user silently.
+
+It still has to be minted on the machine that will sign with it, which is the one part nobody can do
+on somebody's behalf: a public key whose private half lives on a machine that no longer exists is
+worse than a compromised one — nothing can sign for it, and every entitlement stops verifying.
+
+**Still the owner's to do:** open Account in a source build, mint, paste the snippet into
+`subscription.rs`, and deploy so the server signs with the new private half.
 
 ---
 

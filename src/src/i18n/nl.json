@@ -2905,6 +2905,21 @@
     "Open Music Gen": "Music Gen openen",
     "Sections saved.": "Secties opgeslagen.",
     "Sections, structure tags and per-section imagery": "Secties, structuurtags en beelden per sectie",
-    "Sections, tags and per-section imagery": "Secties, tags en beelden per sectie"
+    "Sections, tags and per-section imagery": "Secties, tags en beelden per sectie",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Er is op deze machine een sleutel gemaakt en deze build vermeldt hem nog niet. Zolang het fragment niet in",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "staat en is uitgebracht, is de rotatie half af — deze machine kan tekenen voor een sleutel die de app niet vertrouwt.",
+    "Copy the snippet": "Fragment kopiëren",
+    "Could not reach the clipboard — select it and copy by hand.": "Het klembord was niet bereikbaar — selecteer het en kopieer met de hand.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Hij zit al in de kluis van deze machine, dus sluiten verliest hem niet. Hij wordt nooit naar de repository geschreven — en mocht hij daar ooit belanden, dan vangt dit het af:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "De privéhelft is in v0.88.0 naar de repository gecommit en is nog steeds in de historie bereikbaar. Iedereen die hem ooit gekloond heeft, kan zichzelf een levenslange licentie uitgeven die deze app gelooft. Vervangen is één klik hier en één wijziging.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Hier gemaakt, niet opgehaald: geen netwerk, geen account, niets te installeren. De privéhelft gaat de versleutelde kluis van deze app in en de publieke wordt één keer getoond, om te publiceren. Hij moet gemaakt worden op de machine die ermee gaat tekenen — een publieke sleutel waarvan de privéhelft ergens ligt dat niet meer bestaat is erger dan een gelekte: niets kan er nog voor tekenen en elke licentie stopt met verifiëren.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Gemaakt en tegen zichzelf gecontroleerd: er is een token met de privéhelft ondertekend en met de publieke geverifieerd voordat een van beide werd getoond.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Plak dit in SUBS_PUBLIC_KEYS, ter vervanging van de ene regel die er staat",
+    "The leaked one is no longer trusted by this build.": "De gelekte wordt door deze build niet meer vertrouwd.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "De oude sleutel werkt nog twee weken. Die overlap is geen beleefdheid: een token dat een minuut voor de omschakeling is uitgegeven geldt zijn hele termijn, en het weigeren zou precies de mensen buitensluiten die de app tijdens de rotatie gebruikten.",
+    "The private half — for whatever signs entitlements. Shown once.": "De privéhelft — voor wat licenties ondertekent. Eenmalig getoond.",
+    "The signing key is this machine's own.": "De ondertekensleutel is van deze machine zelf.",
+    "This build still trusts the leaked signing key": "Deze build vertrouwt nog de gelekte ondertekensleutel"
   }
 }

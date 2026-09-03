@@ -2915,7 +2915,22 @@
     "Open Music Gen": "Music Gen 열기",
     "Sections saved.": "구획을 저장했습니다.",
     "Sections, structure tags and per-section imagery": "구획, 구조 태그, 구획별 이미지",
-    "Sections, tags and per-section imagery": "구획, 태그, 구획별 이미지"
+    "Sections, tags and per-section imagery": "구획, 태그, 구획별 이미지",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "이 기기에서 키를 만들었지만 이 빌드는 아직 그것을 목록에 두지 않았습니다. 스니펫이",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "에 들어가 배포되기 전까지 교체는 절반만 된 상태입니다 — 이 기기는 앱이 신뢰하지 않는 키로 서명할 수 있습니다.",
+    "Copy the snippet": "스니펫 복사",
+    "Could not reach the clipboard — select it and copy by hand.": "클립보드에 닿지 못했습니다 — 직접 선택해 복사하세요.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "이미 이 기기의 금고에 있으므로 닫아도 잃지 않습니다. 저장소에는 결코 기록되지 않으며, 혹시라도 들어간다면 이것이 잡아냅니다:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "개인 키가 v0.88.0에서 저장소에 커밋되었고 기록에서 여전히 꺼낼 수 있습니다. 한 번이라도 클론한 사람이라면 이 앱이 믿어 버리는 평생 이용권을 스스로 발급할 수 있습니다. 교체는 여기 한 번의 클릭과 한 군데 수정입니다.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "가져온 것이 아니라 여기서 만듭니다: 네트워크도 계정도, 설치할 것도 없습니다. 개인 키는 이 앱의 암호화 금고로 들어가고 공개 키는 배포용으로 한 번만 표시됩니다. 서명할 기기에서 만들어야 합니다 — 개인 키가 더 이상 존재하지 않는 곳에 있는 공개 키는 유출된 키보다 나쁩니다. 아무도 그것으로 서명할 수 없어 모든 이용권이 검증되지 않습니다.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "만든 뒤 스스로 확인했습니다: 개인 키로 토큰에 서명하고 공개 키로 검증한 다음에야 둘 중 어느 것도 보여 줍니다.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "이것을 SUBS_PUBLIC_KEYS에 붙여 넣고, 거기 있는 한 줄을 대체하세요",
+    "The leaked one is no longer trusted by this build.": "유출된 키는 이 빌드가 더 이상 신뢰하지 않습니다.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "옛 키는 2주 더 동작합니다. 이 겹침은 예의가 아닙니다: 전환 1분 전에 발급된 토큰은 기간 내내 유효하며, 이를 거절하면 교체가 일어나던 그때 앱을 쓰고 있던 사람들을 정확히 막아 버립니다.",
+    "The private half — for whatever signs entitlements. Shown once.": "개인 키 — 이용권에 서명하는 쪽을 위한 것입니다. 한 번만 표시됩니다.",
+    "The signing key is this machine's own.": "서명 키는 이 기기 자신의 것입니다.",
+    "This build still trusts the leaked signing key": "이 빌드는 아직 유출된 서명 키를 신뢰합니다"
   },
   "same_as_english": [
     "DPI —",

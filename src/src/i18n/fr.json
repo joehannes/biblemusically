@@ -2903,7 +2903,22 @@
     "Open Music Gen": "Ouvrir Music Gen",
     "Sections saved.": "Sections enregistrées.",
     "Sections, structure tags and per-section imagery": "Sections, balises de structure et images par section",
-    "Sections, tags and per-section imagery": "Sections, balises et images par section"
+    "Sections, tags and per-section imagery": "Sections, balises et images par section",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Une clé a été générée sur cette machine et cette version ne la référence pas encore. Tant que l'extrait n'est pas dans",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "et publié, la rotation est à moitié faite — cette machine peut signer pour une clé à laquelle l'application ne fait pas confiance.",
+    "Copy the snippet": "Copier l'extrait",
+    "Could not reach the clipboard — select it and copy by hand.": "Le presse-papiers est inaccessible — sélectionnez et copiez à la main.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Elle est déjà dans le coffre de cette machine, la fermer ne la perd donc pas. Elle n'est jamais écrite dans le dépôt — et si elle s'y retrouvait un jour, ceci l'attrape :",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "Sa moitié privée a été commitée dans le dépôt en v0.88.0 et reste accessible dans l'historique. Quiconque l'a cloné peut se délivrer une licence à vie que cette application croit. La remplacer, c'est un clic ici et une modification.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Fabriquée ici, pas récupérée : pas de réseau, pas de compte, rien à installer. La moitié privée va dans le coffre chiffré de l'application et la publique s'affiche une fois, pour publication. Elle doit être générée sur la machine qui signera avec — une clé publique dont la moitié privée est sur une machine qui n'existe plus est pire qu'une clé fuitée : plus rien ne peut signer pour elle et toutes les licences cessent d'être vérifiées.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Générée, et vérifiée contre elle-même : un jeton a été signé avec la moitié privée et vérifié avec la publique avant que l'une ou l'autre ne soit montrée.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Collez ceci dans SUBS_PUBLIC_KEYS, en remplaçant la seule ligne qui s'y trouve",
+    "The leaked one is no longer trusted by this build.": "Cette version ne fait plus confiance à celle qui a fuité.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "L'ancienne clé fonctionne encore quinze jours. Ce recouvrement n'est pas de la politesse : un jeton émis une minute avant le basculement vaut toute sa durée, et le refuser exclurait précisément les gens qui utilisaient l'application pendant la rotation.",
+    "The private half — for whatever signs entitlements. Shown once.": "La moitié privée — pour ce qui signe les licences. Affichée une fois.",
+    "The signing key is this machine's own.": "La clé de signature appartient à cette machine.",
+    "This build still trusts the leaked signing key": "Cette version fait toujours confiance à la clé de signature ayant fuité"
   },
   "same_as_english": [
     "Clips",

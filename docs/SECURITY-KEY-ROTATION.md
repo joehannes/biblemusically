@@ -5,10 +5,22 @@ still reachable in its history. **It is also still the key in service.** Anyone 
 this repo can mint themselves an entitlement — including a lifetime one — that the app verifies
 without complaint.
 
-This is written down because rotating it is a production credential operation that needs the
-Cloudflare account, so it cannot be done from a coding session. Everything that *could* be prepared
-in advance has been: the app accepts more than one key, `deploy.py` can mint and deploy a new one,
-and CI now refuses to carry a credential again.
+**Minting the replacement needs nothing but this machine.** That was misstated here for a while —
+this document used to say rotation needed the Cloudflare account, and it does not. Minting an
+Ed25519 pair is local arithmetic over the OS entropy source; the account is needed only to *deploy*
+the new private half to the Worker that signs. Minting had inherited the deploy step's requirements
+because it sat below `token()` in `deploy.py`'s `main()`, which made a local operation look like a
+credentialled one for no reason.
+
+So there are now two ways to mint and neither needs an account: **Account → the signing-key card**
+in the app, which keeps the private half in the app's encrypted vault and hands you the exact edit,
+or `python3 deploy.py --mint-only` on the command line. The rest was already prepared: the app
+accepts more than one key, and CI refuses to carry a credential again.
+
+**Mint it on the machine that will sign with it.** A public key whose private half lives somewhere
+that no longer exists is worse than a compromised one — nothing can sign for it, so every entitlement
+stops verifying and there is no way back. This is the one part of the procedure that cannot be done
+for you by somebody else, and it is why the app grew a button for it rather than a longer runbook.
 
 ## What leaked
 
@@ -42,22 +54,46 @@ a token claims. Both properties are tested (`during_the_overlap_both_the_new_and
 
 Roughly fifteen minutes, plus a release.
 
-### 1. Rotate the key and the admin token
+### 1. Mint the new key
+
+Either way works, and both are local — no network, no account, nothing to install.
+
+**In the app.** Account → "This build still trusts the leaked signing key" → *Mint a new key on this
+machine*. The card appears **only in a source build** (`npm run tauri dev`), not in a packaged
+release: which key a release trusts is not a user's business, and a warning nobody can act on is
+alarm rather than information.
+
+The pair is signed-and-verified against itself before either half is shown, so a mismatched pair
+cannot reach step 2 — a rotation that shipped one would lock out every user, and silently, since the
+app would simply stop believing tokens. The private half goes into the app's vault
+(XChaCha20-Poly1305, `vault.rs`) and is shown once, in either encoding: **PKCS#8** for WebCrypto's
+`importKey`, which is what the Worker loads, or the **raw 32-byte seed** for anything wanting bare
+bytes. The card hands you the exact snippet for step 2.
+
+**On the command line.**
 
 ```bash
 cd server
-python3 deploy.py --rotate-key --rotate-admin-token
+python3 deploy.py --mint-only
 ```
 
-This mints a new pair, uploads the private half as the Worker secret `SIGNING_KEY_PKCS8`, keeps the
-*previous public* half in the local state file, and prints the new public key. The previous private
-key is discarded and cannot be recovered — which is the point.
+Writes the pair into `.deploy-state.json` (chmod 600, gitignored) and prints the public half.
 
-The new admin token is printed too. Anything that used the old one has to be updated.
+Whichever you used, the private half now has to reach whatever signs entitlements. For the Cloudflare
+Worker that is `python3 deploy.py`, which uploads it as the Worker secret `SIGNING_KEY_PKCS8` — that
+step, and only that step, needs `server/.secrets`. Rotate the admin token in the same pass:
+
+```bash
+python3 deploy.py --rotate-admin-token
+```
+
+The previous private key is discarded and cannot be recovered, which is the point. The new admin
+token is printed; anything that used the old one has to be updated.
 
 ### 2. Teach the app about it
 
-In `src-tauri/commands/subscription.rs`, `SUBS_PUBLIC_KEYS` becomes two entries:
+The app's card gives you this snippet with both values already filled in. By hand, in
+`src-tauri/commands/subscription.rs`, `SUBS_PUBLIC_KEYS` becomes two entries:
 
 ```rust
 pub const SUBS_PUBLIC_KEYS: &[SubsKey] = &[
@@ -70,6 +106,10 @@ pub const SUBS_PUBLIC_KEYS: &[SubsKey] = &[
 
 `date -d '+14 days' +%s` gives the number. Exactly one entry may have `accept_until: None`; a test
 enforces that, because two live signers is not a rotation.
+
+Once this ships, the app's card flips to "the signing key is this machine's own". Until then it says
+the rotation is half-done — this machine can sign for a key the shipped build does not trust — which
+is the state it is easiest to walk away from and forget about.
 
 ### 3. Ship a release
 

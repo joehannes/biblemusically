@@ -2894,6 +2894,21 @@
     "Open Music Gen": "Apri Music Gen",
     "Sections saved.": "Sezioni salvate.",
     "Sections, structure tags and per-section imagery": "Sezioni, tag di struttura e immagini per sezione",
-    "Sections, tags and per-section imagery": "Sezioni, tag e immagini per sezione"
+    "Sections, tags and per-section imagery": "Sezioni, tag e immagini per sezione",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Una chiave è stata generata su questa macchina e questa build non la elenca ancora. Finché lo snippet non è in",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "ed è pubblicato, la rotazione è a metà — questa macchina può firmare per una chiave di cui l'app non si fida.",
+    "Copy the snippet": "Copia lo snippet",
+    "Could not reach the clipboard — select it and copy by hand.": "Impossibile raggiungere gli appunti — selezionalo e copialo a mano.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "È già nella cassaforte di questa macchina, quindi chiudere non la perde. Non viene mai scritta nel repository — e se dovesse finirci, questo la intercetta:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "La sua metà privata è stata committata nel repository nella v0.88.0 ed è ancora raggiungibile nella cronologia. Chiunque l'abbia clonato può emettersi una licenza a vita a cui questa app crede. Sostituirla è un clic qui e una modifica.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Fatta qui, non scaricata: niente rete, niente account, niente da installare. La metà privata va nella cassaforte cifrata dell'app e quella pubblica viene mostrata una volta, da pubblicare. Va generata sulla macchina che ci firmerà — una chiave pubblica la cui metà privata sta in un posto che non esiste più è peggio di una trapelata: nulla può firmare per essa e ogni licenza smette di verificarsi.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Generata e verificata contro sé stessa: un token è stato firmato con la metà privata e verificato con quella pubblica prima che venisse mostrata l'una o l'altra.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Incolla questo in SUBS_PUBLIC_KEYS, sostituendo l'unica riga presente",
+    "The leaked one is no longer trusted by this build.": "Quella trapelata non è più accettata da questa build.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "La vecchia chiave funziona ancora per due settimane. Questa sovrapposizione non è cortesia: un token emesso un minuto prima del cambio vale per tutta la sua durata, e rifiutarlo escluderebbe proprio chi stava usando l'app durante la rotazione.",
+    "The private half — for whatever signs entitlements. Shown once.": "La metà privata — per ciò che firma le licenze. Mostrata una volta.",
+    "The signing key is this machine's own.": "La chiave di firma è di questa macchina.",
+    "This build still trusts the leaked signing key": "Questa build si fida ancora della chiave di firma trapelata"
   }
 }

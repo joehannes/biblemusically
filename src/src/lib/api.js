@@ -212,6 +212,10 @@ export const api = {
   // Where you are in the whole thing, computed from what the project contains rather than from
   // where anybody has clicked.
   projectJourney: (projectId) => invokeCommand("project_journey", { projectId }),
+  // Minting the entitlement signing key. Local — no network, no credential — and the private half
+  // goes into the app's own vault, which is why this can be a button rather than a runbook.
+  mintSigningKey: () => invokeCommand("mint_signing_key"),
+  signingKeyStatus: () => invokeCommand("signing_key_status"),
   // The lyric-craft vocabulary — one source of truth, so a picker cannot offer a value the
   // prompt builder does not know.
   craftCatalogue: () => invokeCommand("craft_catalogue"),

@@ -81,9 +81,14 @@ pub const SUBS_PUBLIC_KEYS: &[SubsKey] = &[
     // ⚠️ COMPROMISED, and still the key in service. Its private half was committed to this
     // repository in v0.88.0 (`server/.deploy-state.json`, removed again in `feee638`) and is still
     // reachable in the history, together with the admin token. Anyone who has ever cloned this repo
-    // can mint themselves a lifetime entitlement that this app verifies. Rotating it needs the
-    // Cloudflare credentials, so it is the owner's to run — the procedure is one command and is
-    // written down in `docs/SECURITY-KEY-ROTATION.md`.
+    // can mint themselves a lifetime entitlement that this app verifies.
+    //
+    // Replacing it is two halves that must happen on the same machine, which is why it cannot be
+    // done for somebody: `mint_signing_key` (Settings → Subscription, or `deploy.py --mint-only`)
+    // makes the pair locally and keeps the private half in the vault, and the public half goes here
+    // above this line with an `accept_until` set on this one. A public key whose private half lives
+    // on a machine that no longer exists is worse than a compromised one — nothing can sign for it,
+    // so every entitlement stops verifying. See `docs/SECURITY-KEY-ROTATION.md`.
     SubsKey { b64: "9-9bAxvvDtG98OKRR8xn3OeOHk0S0aruy4UA8FUmQwY", accept_until: None },
 ];
 
@@ -93,6 +98,152 @@ const GRACE_DAYS: i64 = 7;
 /// Every capability the app gates. Named rather than derived from a plan, so adding one later does not
 /// need the server and the client to agree about what a plan means.
 pub const FEATURES: &[&str] = &["read", "generate", "publish", "export", "save_copies", "remote_sync"];
+
+fn b64u_encode(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// Where the newly minted private half is kept: the app's own encrypted vault, never the repo.
+pub const SIGNING_KEY_VAULT_SLOT: &str = "subscription_signing_key";
+
+/// The DER header of an Ed25519 PKCS#8 private key, which is the same sixteen bytes every time.
+///
+/// `SEQUENCE { INTEGER 0, SEQUENCE { OID 1.3.101.112 }, OCTET STRING { OCTET STRING (32) } }` — the
+/// only variable part of the structure is the seed, so the whole encoding is this prefix followed by
+/// it. Checked against `openssl genpkey -algorithm ed25519 -outform DER`, byte for byte, in
+/// `the_pkcs8_wrapper_is_the_one_openssl_writes`.
+const PKCS8_ED25519_PREFIX: [u8; 16] = [
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06,
+    0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+];
+
+/// A raw 32-byte seed wrapped as PKCS#8, which is what WebCrypto's `importKey` wants.
+///
+/// Both encodings are needed and neither side accepts the other's: the app verifies with the raw
+/// public bytes, and the Worker imports the private half as PKCS#8. Minting that returned only the
+/// seed would hand somebody a key their own server cannot load — which they would discover at the
+/// moment entitlements stopped being issued.
+pub fn pkcs8_of_seed(seed: &[u8]) -> Option<Vec<u8>> {
+    if seed.len() != 32 { return None; }
+    let mut out = PKCS8_ED25519_PREFIX.to_vec();
+    out.extend_from_slice(seed);
+    Some(out)
+}
+
+/// The 32-byte seed inside a PKCS#8 Ed25519 key, or the input if it is already a bare seed.
+///
+/// Accepting both is not sloppiness: a person pasting "the private key" has one or the other
+/// depending on where it came from, and guessing wrong silently produces a key that verifies nothing.
+pub fn seed_of(private_b64: &str) -> Option<[u8; 32]> {
+    let bytes = b64u_decode(private_b64).or_else(|| {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.decode(private_b64.trim()).ok()
+    })?;
+    match bytes.len() {
+        32 => bytes.try_into().ok(),
+        48 if bytes.starts_with(&PKCS8_ED25519_PREFIX) => bytes[16..].try_into().ok(),
+        _ => None,
+    }
+}
+
+/// Mint an Ed25519 signing pair on this machine.
+///
+/// Pure and local — no network, nothing to install, no Cloudflare credential. That was the thing
+/// standing in the way of rotating the compromised key, and it turned out not to be true: minting
+/// was welded to `deploy.py`'s upload step and so inherited its requirements. It does not need them.
+///
+/// The private half goes into the vault (XChaCha20-Poly1305, `vault.rs`) and is returned once, here,
+/// so it can be pasted into whatever signs entitlements. It is never written to the repository, and
+/// the caller is expected to show it once rather than store it again.
+///
+/// The pair is **self-tested before it is returned**: a token is signed with the private half and
+/// verified with the public half through the app's own `verify_entitlement`. A rotation that shipped
+/// a mismatched pair would lock out every user, and it would do so silently — the app would simply
+/// stop believing tokens — so the check is here rather than left to whoever runs it.
+pub fn mint_pair() -> Result<(String, String), String> {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    // The OS entropy source the rest of the app already uses for the vault's own keys.
+    let mut seed = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut seed);
+    let signing = SigningKey::from_bytes(&seed);
+    let public_b64 = b64u_encode(signing.verifying_key().as_bytes());
+    let private_b64 = b64u_encode(&seed);
+
+    // Sign something that looks like a real entitlement and check it comes back verified. The
+    // expiry is far enough out that the grace window plays no part in the answer.
+    let now = chrono::Utc::now().timestamp();
+    let payload = serde_json::json!({ "exp": now + 86_400, "features": ["read"], "plan": "selftest" });
+    let body = b64u_encode(serde_json::to_string(&payload).map_err(|e| e.to_string())?.as_bytes());
+    let token = format!("{body}.{}", b64u_encode(&signing.sign(body.as_bytes()).to_bytes()));
+    if verify_entitlement(&token, &public_b64, now, 0).is_none() {
+        return Err("the minted pair did not verify against itself — nothing was saved".into());
+    }
+    Ok((public_b64, private_b64))
+}
+
+/// Mint a key, keep the private half, and hand back what has to be published.
+#[tauri::command]
+pub async fn mint_signing_key() -> Result<Value, String> {
+    let (public_b64, private_b64) = mint_pair()?;
+    crate::vault::put(SIGNING_KEY_VAULT_SLOT, &private_b64)?;
+
+    // A fortnight, which is the overlap the retiring key needs: a token issued a minute before the
+    // switch is valid for its full term, and refusing it would lock out exactly the people who were
+    // using the app when the rotation happened.
+    let accept_until = chrono::Utc::now().timestamp() + 14 * 86_400;
+    let pkcs8 = pkcs8_of_seed(&b64u_decode(&private_b64).unwrap_or_default())
+        .map(|d| b64u_encode(&d))
+        .unwrap_or_default();
+
+    Ok(serde_json::json!({
+        "public_key": public_b64,
+        // Returned once. The caller shows it and does not keep it — it is already in the vault.
+        "private_key": private_b64,
+        // The same key, wrapped for WebCrypto's importKey — which is what the Worker that signs
+        // entitlements actually takes. Returning only the seed would hand somebody a key their own
+        // server cannot load, discovered at the moment entitlements stopped being issued.
+        "private_key_pkcs8": pkcs8,
+        "vault_slot": SIGNING_KEY_VAULT_SLOT,
+        "accept_until": accept_until,
+        // The exact edit, rather than a description of it: this is the step where a typo silently
+        // ships a key nothing can sign for.
+        "code": format!(
+            "SubsKey {{ b64: \"{public_b64}\", accept_until: None }},\n\
+             SubsKey {{ b64: \"{}\", accept_until: Some({accept_until}) }},",
+            SUBS_PUBLIC_KEYS.first().map(|k| k.b64).unwrap_or(""),
+        ),
+        "retiring": SUBS_PUBLIC_KEYS.first().map(|k| k.b64).unwrap_or(""),
+    }))
+}
+
+/// The private half of the key minted here, for whatever signs entitlements. `None` if none was.
+#[tauri::command]
+pub async fn signing_key_status() -> Result<Value, String> {
+    let held = crate::vault::get(SIGNING_KEY_VAULT_SLOT)?;
+    Ok(serde_json::json!({
+        "minted": held.is_some(),
+        // Whether the key this build trusts is one this machine can sign for. A "yes" here is what
+        // makes a rotation finished rather than half-done.
+        "in_service": match held.as_deref() {
+            Some(private) => public_of(private).is_some_and(|pubk|
+                SUBS_PUBLIC_KEYS.iter().any(|k| k.b64 == pubk)),
+            None => false,
+        },
+        "compromised": SUBS_PUBLIC_KEYS.iter().any(|k| k.b64 == COMPROMISED_KEY),
+    }))
+}
+
+/// The key committed in v0.88.0. Named so the app can say out loud whether it is still trusted.
+pub const COMPROMISED_KEY: &str = "9-9bAxvvDtG98OKRR8xn3OeOHk0S0aruy4UA8FUmQwY";
+
+/// The public half of a stored private key, so a build can be checked against what it can sign for.
+pub fn public_of(private_b64: &str) -> Option<String> {
+    use ed25519_dalek::SigningKey;
+    let seed = seed_of(private_b64)?;
+    Some(b64u_encode(SigningKey::from_bytes(&seed).verifying_key().as_bytes()))
+}
 
 fn b64u_decode(s: &str) -> Option<Vec<u8>> {
     use base64::Engine;
@@ -687,6 +838,95 @@ pub async fn subs_can(state: State<'_, AppState>, feature: String) -> Res<Value>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_minted_pair_verifies_against_itself() {
+        // The whole point of minting locally: no network, no credential, and a pair that provably
+        // works before anybody ships its public half.
+        let (public, private) = mint_pair().expect("minting is a local operation");
+        assert_eq!(public_of(&private).as_deref(), Some(public.as_str()));
+        assert_eq!(b64u_decode(&public).unwrap().len(), 32);
+        assert_eq!(b64u_decode(&private).unwrap().len(), 32);
+    }
+
+    #[test]
+    fn two_mints_are_two_different_keys() {
+        // A generator that returned the same key twice would be the same failure as not rotating.
+        let (a, _) = mint_pair().unwrap();
+        let (b, _) = mint_pair().unwrap();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn a_token_signed_with_the_new_key_verifies_and_one_from_another_key_does_not() {
+        use ed25519_dalek::{Signer, SigningKey};
+        let (public, private) = mint_pair().unwrap();
+        let seed: [u8; 32] = b64u_decode(&private).unwrap().try_into().unwrap();
+        let signing = SigningKey::from_bytes(&seed);
+
+        let now = 1_800_000_000i64;
+        let payload = serde_json::json!({ "exp": now + 3600, "features": ["export"] });
+        let body = b64u_encode(serde_json::to_string(&payload).unwrap().as_bytes());
+        let token = format!("{body}.{}", b64u_encode(&signing.sign(body.as_bytes()).to_bytes()));
+
+        let ok = verify_entitlement(&token, &public, now, 0).expect("its own key verifies it");
+        assert_eq!(ok["features"][0], "export");
+        // And the key it replaces must not verify it, or the rotation would have changed nothing.
+        let (other, _) = mint_pair().unwrap();
+        assert!(verify_entitlement(&token, &other, now, 0).is_none());
+    }
+
+    #[test]
+    fn the_public_half_of_a_private_key_is_derived_and_not_guessed() {
+        // This is what tells somebody whether the build they are running can be signed for at all.
+        let (public, private) = mint_pair().unwrap();
+        assert_eq!(public_of(&private).unwrap(), public);
+        // Rubbish in, nothing out — never a panic and never a plausible-looking wrong answer.
+        assert!(public_of("not base64 at all !!").is_none());
+        assert!(public_of("").is_none());
+        assert!(public_of(&b64u_encode(&[1u8; 16])).is_none(), "a 16-byte seed is not a key");
+    }
+
+    #[test]
+    fn the_pkcs8_wrapper_is_the_one_openssl_writes() {
+        // Checked against a real `openssl genpkey -algorithm ed25519 -outform DER`: 48 bytes, of
+        // which the first sixteen are fixed and the rest is the seed. If this drifted, the Worker's
+        // importKey would reject the key and entitlements would stop being issued.
+        let der = concat!("302e020100300506032b657004220420",
+                          "824c9ce5c2ac34f395b7b89bbdfc69b84657bc1f408525dfa17278ddfa820847");
+        let bytes: Vec<u8> = (0..der.len()).step_by(2)
+            .map(|i| u8::from_str_radix(&der[i..i + 2], 16).unwrap()).collect();
+        assert_eq!(bytes.len(), 48);
+        assert_eq!(&bytes[..16], &PKCS8_ED25519_PREFIX);
+        assert_eq!(pkcs8_of_seed(&bytes[16..]).unwrap(), bytes);
+        // …and it comes back out again.
+        assert_eq!(seed_of(&b64u_encode(&bytes)).unwrap().to_vec(), bytes[16..].to_vec());
+    }
+
+    #[test]
+    fn a_private_key_is_read_in_whichever_encoding_it_arrives_in() {
+        // Somebody pasting "the private key" has a bare seed or a PKCS#8 blob depending on where it
+        // came from, and guessing wrong silently produces a key that verifies nothing.
+        let (public, seed_b64) = mint_pair().unwrap();
+        let der = pkcs8_of_seed(&b64u_decode(&seed_b64).unwrap()).unwrap();
+        assert_eq!(public_of(&seed_b64).unwrap(), public, "a bare seed");
+        assert_eq!(public_of(&b64u_encode(&der)).unwrap(), public, "the same key as PKCS#8");
+        // Standard base64 too, since that is what openssl and most tools print.
+        use base64::Engine;
+        let std_b64 = base64::engine::general_purpose::STANDARD.encode(&der);
+        assert_eq!(public_of(&std_b64).unwrap(), public, "PKCS#8 in standard base64");
+        // Anything else is refused rather than half-read.
+        assert!(seed_of(&b64u_encode(&[0u8; 40])).is_none());
+        assert!(seed_of("nonsense").is_none());
+    }
+
+    #[test]
+    fn the_compromised_key_constant_is_the_key_actually_listed() {
+        // The interface says "this build still trusts the leaked key" by comparing these. If the
+        // constant drifted from the list, the warning would quietly stop being true.
+        assert!(SUBS_PUBLIC_KEYS.iter().any(|k| k.b64 == COMPROMISED_KEY),
+                "the constant no longer matches the shipped list — has the rotation happened?");
+    }
     use ed25519_dalek::{Signer, SigningKey};
 
     /// Mint a token the way the server does, so the verifier is tested against the real shape.

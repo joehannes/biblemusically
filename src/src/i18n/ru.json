@@ -2918,7 +2918,22 @@
     "Open Music Gen": "Открыть Music Gen",
     "Sections saved.": "Разделы сохранены.",
     "Sections, structure tags and per-section imagery": "Разделы, теги структуры и картинки по разделам",
-    "Sections, tags and per-section imagery": "Разделы, теги и картинки по разделам"
+    "Sections, tags and per-section imagery": "Разделы, теги и картинки по разделам",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "На этой машине создан ключ, и текущая сборка его ещё не перечисляет. Пока фрагмент не окажется в",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "и не будет выпущен, ротация сделана наполовину — эта машина может подписывать ключом, которому приложение не доверяет.",
+    "Copy the snippet": "Скопировать фрагмент",
+    "Could not reach the clipboard — select it and copy by hand.": "Не удалось обратиться к буферу обмена — выделите и скопируйте вручную.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Он уже в хранилище этой машины, так что закрытие его не потеряет. В репозиторий он не пишется никогда — а если вдруг туда попадёт, это поймает:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "Его приватная половина попала в репозиторий в v0.88.0 и до сих пор доступна в истории. Любой, кто когда-либо его клонировал, может выписать себе пожизненную лицензию, которой это приложение верит. Замена — одно нажатие здесь и одна правка.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Создан здесь, а не получен: без сети, без учётной записи, ничего не нужно устанавливать. Приватная половина уходит в зашифрованное хранилище приложения, публичная показывается один раз — для публикации. Создавать его нужно на той машине, которая будет им подписывать: публичный ключ, приватная половина которого лежит там, где её больше нет, хуже утёкшего — подписать им нечем, и все лицензии перестают проверяться.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Создан и проверен сам собой: токен подписан приватной половиной и проверен публичной, прежде чем показать хоть одну из них.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Вставьте это в SUBS_PUBLIC_KEYS вместо той единственной строки, что там есть",
+    "The leaked one is no longer trusted by this build.": "Утёкшему эта сборка больше не доверяет.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "Старый ключ работает ещё две недели. Это перекрытие — не вежливость: токен, выданный за минуту до переключения, действует весь свой срок, и отказ в нём отрезал бы ровно тех, кто пользовался приложением во время ротации.",
+    "The private half — for whatever signs entitlements. Shown once.": "Приватная половина — для того, что подписывает лицензии. Показывается один раз.",
+    "The signing key is this machine's own.": "Ключ подписи принадлежит этой машине.",
+    "This build still trusts the leaked signing key": "Эта сборка всё ещё доверяет утёкшему ключу подписи"
   },
   "same_as_english": [
     "DPI —",

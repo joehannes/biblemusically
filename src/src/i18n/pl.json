@@ -2906,7 +2906,22 @@
     "Open Music Gen": "Otwórz Music Gen",
     "Sections saved.": "Sekcje zapisane.",
     "Sections, structure tags and per-section imagery": "Sekcje, tagi struktury i obrazy dla każdej sekcji",
-    "Sections, tags and per-section imagery": "Sekcje, tagi i obrazy dla każdej sekcji"
+    "Sections, tags and per-section imagery": "Sekcje, tagi i obrazy dla każdej sekcji",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Na tej maszynie wygenerowano klucz, a ta kompilacja jeszcze go nie zna. Dopóki fragment nie znajdzie się w",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "i nie zostanie wydany, rotacja jest w połowie — ta maszyna może podpisywać kluczem, któremu aplikacja nie ufa.",
+    "Copy the snippet": "Kopiuj fragment",
+    "Could not reach the clipboard — select it and copy by hand.": "Nie udało się sięgnąć do schowka — zaznacz i skopiuj ręcznie.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Jest już w sejfie tej maszyny, więc zamknięcie go nie traci. Nigdy nie trafia do repozytorium — a gdyby kiedyś trafił, wyłapie to:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "Jego prywatna połowa trafiła do repozytorium w v0.88.0 i wciąż jest dostępna w historii. Każdy, kto kiedykolwiek je sklonował, może wystawić sobie dożywotnie uprawnienie, w które ta aplikacja wierzy. Wymiana to jedno kliknięcie tutaj i jedna zmiana.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Zrobiony tutaj, nie pobrany: bez sieci, bez konta, nic do instalowania. Prywatna połowa trafia do zaszyfrowanego sejfu aplikacji, a publiczna pokazuje się raz, do opublikowania. Musi powstać na maszynie, która będzie nim podpisywać — klucz publiczny, którego prywatna połowa leży w miejscu, które już nie istnieje, jest gorszy od wycieku: nic nie może nim podpisać i każde uprawnienie przestaje się weryfikować.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Wygenerowany i sprawdzony sam ze sobą: token podpisano prywatną połową i zweryfikowano publiczną, zanim pokazano którąkolwiek.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Wklej to do SUBS_PUBLIC_KEYS, zastępując tę jedną linię, która tam jest",
+    "The leaked one is no longer trusted by this build.": "Ta, która wyciekła, nie jest już przez tę kompilację akceptowana.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "Stary klucz działa jeszcze dwa tygodnie. To nachodzenie nie jest uprzejmością: token wystawiony minutę przed przełączeniem obowiązuje pełny okres, a odrzucenie go zablokowałoby dokładnie tych, którzy używali aplikacji w trakcie rotacji.",
+    "The private half — for whatever signs entitlements. Shown once.": "Prywatna połowa — dla tego, co podpisuje uprawnienia. Pokazana raz.",
+    "The signing key is this machine's own.": "Klucz podpisujący należy do tej maszyny.",
+    "This build still trusts the leaked signing key": "Ta kompilacja wciąż ufa kluczowi podpisującemu, który wyciekł"
   },
   "same_as_english": [
     "DPI —",

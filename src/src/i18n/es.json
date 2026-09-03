@@ -2903,7 +2903,22 @@
     "Open Music Gen": "Abrir Music Gen",
     "Sections saved.": "Secciones guardadas.",
     "Sections, structure tags and per-section imagery": "Secciones, etiquetas de estructura e imágenes por sección",
-    "Sections, tags and per-section imagery": "Secciones, etiquetas e imágenes por sección"
+    "Sections, tags and per-section imagery": "Secciones, etiquetas e imágenes por sección",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Se generó una clave en esta máquina y esta compilación todavía no la lista. Hasta que el fragmento esté en",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "y se publique, la rotación está a medias — esta máquina puede firmar con una clave en la que la app no confía.",
+    "Copy the snippet": "Copiar el fragmento",
+    "Could not reach the clipboard — select it and copy by hand.": "No se pudo acceder al portapapeles — selecciónalo y cópialo a mano.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Ya está en el almacén cifrado de esta máquina, así que cerrar esto no la pierde. Nunca se escribe en el repositorio — y si alguna vez acabara en uno, lo detecta:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "Su mitad privada se subió al repositorio en la v0.88.0 y sigue siendo accesible en el historial. Cualquiera que lo haya clonado puede emitirse una licencia vitalicia que esta app se cree. Reemplazarla es un clic aquí y un cambio.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Hecha aquí, no descargada: sin red, sin cuenta, nada que instalar. La mitad privada va al almacén cifrado de esta app y la pública se muestra una vez, para publicarla. Tiene que generarse en la máquina que va a firmar con ella — una clave pública cuya mitad privada está en un sitio que ya no existe es peor que una filtrada: nadie puede firmar con ella y todas las licencias dejan de verificarse.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Generada y comprobada contra sí misma: se firmó un token con la mitad privada y se verificó con la pública antes de mostrar ninguna de las dos.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Pega esto en SUBS_PUBLIC_KEYS, sustituyendo la única línea que hay",
+    "The leaked one is no longer trusted by this build.": "Esta compilación ya no confía en la filtrada.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "La clave antigua sigue funcionando dos semanas. Ese solapamiento no es cortesía: un token emitido un minuto antes del cambio vale todo su plazo, y rechazarlo dejaría fuera justo a quien estaba usando la app durante la rotación.",
+    "The private half — for whatever signs entitlements. Shown once.": "La mitad privada — para lo que firme las licencias. Se muestra una vez.",
+    "The signing key is this machine's own.": "La clave de firma es propia de esta máquina.",
+    "This build still trusts the leaked signing key": "Esta compilación todavía confía en la clave de firma filtrada"
   },
   "same_as_english": [
     "Clips",

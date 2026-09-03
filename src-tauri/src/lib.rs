@@ -808,6 +808,8 @@ pub fn run() {
             commands::lyric_sections,
             commands::rewrite_section,
             commands::project_journey,
+            commands::mint_signing_key,
+            commands::signing_key_status,
             commands::guide_templates,
             commands::get_workflow_state,
             commands::save_workflow_state,

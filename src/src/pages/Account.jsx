@@ -7,7 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import {
   UserCircle, Clock, Monitor, LogOut, RefreshCw, Download, Share2, Copy,
-  Loader2, ArrowUpCircle, MapPin, Eye, Lock, Unlock,
+  Loader2, ArrowUpCircle, MapPin, Eye, Lock, Unlock, KeyRound, ShieldAlert, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { downloadAndInstallUpdate } from "../lib/updateInstall";
@@ -28,6 +28,41 @@ import LearningsPanel from "../components/LearningsPanel";
 
 export default function Account() {
   const [ent, setEnt] = useState(null);
+  // The entitlement signing key. Minting is local — an Ed25519 pair out of the OS entropy source —
+  // so replacing the leaked one is a button rather than a runbook. It only appears for whoever
+  // publishes this app: a warning nobody can act on is alarm, not information.
+  const [signing, setSigning] = useState(null);
+  const [minted, setMinted] = useState(null);
+  const [showPrivate, setShowPrivate] = useState(false);
+  const [keyForm, setKeyForm] = useState("pkcs8");
+  // A packaged release is somebody else's copy; a dev build is the publisher's own checkout, which
+  // is also the only place `subscription.rs` can be edited. Vite folds this to `false` in a release
+  // so the card never renders and the backend is never asked — the copy still ships in the bundle,
+  // as any unrendered branch does, which is fine because it is text rather than a capability.
+  const publisher = import.meta.env.DEV;
+  const privateHalf = keyForm === "pkcs8"
+    ? (minted?.private_key_pkcs8 || minted?.private_key || "")
+    : (minted?.private_key || "");
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    api.signingKeyStatus().then(setSigning).catch(() => setSigning(null));
+  }, []);
+
+  const copy = async (text, note) => {
+    try { await navigator.clipboard.writeText(text); toast.success(note); }
+    catch { toast.error("Could not reach the clipboard — select it and copy by hand."); }
+  };
+
+  const mintKey = async () => {
+    setBusy("mint");
+    try {
+      const r = await api.mintSigningKey();
+      setMinted(r);
+      setSigning(await api.signingKeyStatus().catch(() => signing));
+    } catch (err) { toast.error(`${err}`, { duration: 9000 }); }
+    finally { setBusy(""); }
+  };
   const [sessions, setSessions] = useState(null);
   const [update, setUpdate] = useState(null);
   const [referral, setReferral] = useState(null);
@@ -282,6 +317,122 @@ export default function Account() {
           one that shapes your output deserves at least as much visibility as the one that counts
           your clicks. */}
       <LearningsPanel />
+
+      {/* ── The signing key ──────────────────────────────────────────────── */}
+      {/* Only in a source build. Which key a release trusts is not a user's business, and a warning
+          nobody can act on is alarm rather than information — the person who can act on it is the
+          one running from a checkout, which is also the only place the edit it asks for can be made. */}
+      {publisher && signing?.compromised && (
+        <Card className="p-4 space-y-3 border-destructive/40">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <h2 className="font-medium">This build still trusts the leaked signing key</h2>
+              <p className="text-xs text-muted-foreground">
+                Its private half was committed to the repository in v0.88.0 and is still reachable in
+                the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement
+                that this app believes. Replacing it is one click here, and one edit.
+              </p>
+            </div>
+          </div>
+
+          {!minted && (
+            <>
+              <Button size="sm" onClick={mintKey} disabled={busy === "mint"}>
+                {busy === "mint" ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                 : <KeyRound className="w-3.5 h-3.5 mr-1.5" />}
+                Mint a new key on this machine
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Made here, not fetched: no network, no account, nothing to install. The private half
+                goes into this app's encrypted vault and the public half is shown once, to publish.
+                It has to be minted on the machine that will sign with it — a public key whose
+                private half lives somewhere that no longer exists is worse than a leaked one,
+                because nothing can sign for it and every entitlement stops verifying.
+              </p>
+            </>
+          )}
+
+          {minted && (
+            <div className="space-y-2.5">
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                Minted, and checked against itself: a token was signed with the private half and
+                verified with the public half before either was shown.
+              </p>
+
+              <div className="space-y-1">
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there
+                </div>
+                <pre className="text-[10px] font-mono whitespace-pre-wrap rounded bg-muted/50 p-2 select-all">{minted.code}</pre>
+                <Button size="sm" variant="secondary" onClick={() => copy(minted.code, "Snippet copied.")}>
+                  <Copy className="w-3.5 h-3.5 mr-1.5" />Copy the snippet
+                </Button>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                  The private half — for whatever signs entitlements. Shown once.
+                </div>
+                {/* PKCS#8 by default: that is the encoding WebCrypto's importKey takes, and it is
+                    what the signing Worker loads. The bare seed is there for anything that wants
+                    raw bytes — handing over only one of the two is how somebody ends up with a key
+                    their own server cannot load. */}
+                <div className="flex gap-1">
+                  {[["pkcs8", "PKCS#8"], ["raw", "raw seed"]].map(([id, label]) => (
+                    <button key={id} onClick={() => setKeyForm(id)}
+                            className={`text-[10px] rounded border px-1.5 py-0.5 transition-colors ${
+                              keyForm === id ? "border-primary bg-primary/10 text-primary"
+                                             : "border-border text-muted-foreground hover:border-primary/40"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Input readOnly value={showPrivate ? privateHalf : "•".repeat(43)}
+                         className="h-8 text-[11px] font-mono" />
+                  <Button size="sm" variant="ghost" onClick={() => setShowPrivate((v) => !v)}>
+                    {showPrivate ? <Lock className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </Button>
+                  <Button size="sm" variant="secondary"
+                          onClick={() => copy(privateHalf, "Private half copied — paste it into the signer now.")}>
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  It is already in this machine's vault, so closing this does not lose it. It is never
+                  written to the repository — and if it ever ends up in one, the audit that catches
+                  that is <span className="text-mono" data-no-i18n>npm run audit:secrets</span>.
+                </p>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground">
+                The old key keeps working for a fortnight. That overlap is not politeness: a token
+                issued a minute before the switch is valid for its full term, and refusing it would
+                lock out exactly the people who were using the app when the rotation happened.
+              </p>
+            </div>
+          )}
+
+          {signing?.minted && !signing?.in_service && !minted && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              A key was minted on this machine and this build does not list it yet. Until the snippet
+              is in <span className="text-mono" data-no-i18n>subscription.rs</span> and shipped, the rotation is
+              half-done — this machine can sign for a key the app does not trust.
+            </p>
+          )}
+        </Card>
+      )}
+
+      {publisher && signing && !signing.compromised && signing.in_service && (
+        <Card className="p-4 flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+          <div className="text-xs">
+            <span className="font-medium">The signing key is this machine's own.</span>
+            <span className="text-muted-foreground"> The leaked one is no longer trusted by this build.</span>
+          </div>
+        </Card>
+      )}
 
       {/* ── Being studied ────────────────────────────────────────────────── */}
       <Card className="p-4 space-y-2">

@@ -2914,7 +2914,22 @@
     "Open Music Gen": "Music Gen を開く",
     "Sections saved.": "セクションを保存しました。",
     "Sections, structure tags and per-section imagery": "セクション、構造タグ、セクションごとの画像",
-    "Sections, tags and per-section imagery": "セクション、タグ、セクションごとの画像"
+    "Sections, tags and per-section imagery": "セクション、タグ、セクションごとの画像",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "この端末で鍵を作成しましたが、このビルドはまだ登録していません。スニペットが",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "に入って公開されるまで、入れ替えは途中です——この端末はアプリが信頼していない鍵で署名できてしまいます。",
+    "Copy the snippet": "スニペットをコピー",
+    "Could not reach the clipboard — select it and copy by hand.": "クリップボードに届きませんでした——選択して手でコピーしてください。",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "すでにこの端末の保管庫にあるので、閉じても失われません。リポジトリには決して書き込まれません——万一入り込んでも、これが捕まえます：",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "その秘密鍵は v0.88.0 でリポジトリにコミットされ、履歴から今も取得できます。一度でもクローンした人なら、このアプリが信じてしまう永年ライセンスを自分で発行できます。差し替えはここを一度押して、一箇所直すだけです。",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "取得ではなく、ここで作ります：ネットワークもアカウントも不要、インストールするものもありません。秘密鍵はこのアプリの暗号化保管庫に入り、公開鍵は公開用に一度だけ表示されます。署名する端末で作る必要があります——秘密鍵がもう存在しない場所にある公開鍵は、漏れた鍵より悪いのです。誰も署名できず、すべてのライセンスが検証できなくなります。",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "作成し、自分自身で検証済みです：秘密鍵でトークンに署名し、公開鍵で検証してから、どちらも表示しています。",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "これを SUBS_PUBLIC_KEYS に貼り、そこにある一行を置き換えてください",
+    "The leaked one is no longer trusted by this build.": "漏れたほうは、このビルドではもう信頼されません。",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "古い鍵は二週間動き続けます。この重なりは礼儀ではありません：切り替えの一分前に発行されたトークンは期間いっぱい有効で、それを拒めば入れ替えの最中にアプリを使っていた人をちょうど締め出すことになります。",
+    "The private half — for whatever signs entitlements. Shown once.": "秘密鍵——ライセンスに署名するもの向けです。一度だけ表示します。",
+    "The signing key is this machine's own.": "署名鍵はこの端末自身のものです。",
+    "This build still trusts the leaked signing key": "このビルドはまだ漏れた署名鍵を信頼しています"
   },
   "same_as_english": [
     "DPI —",

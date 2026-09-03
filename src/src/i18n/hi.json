@@ -2919,7 +2919,22 @@
     "Open Music Gen": "Music Gen खोलिए",
     "Sections saved.": "सेक्शन सहेजे गए।",
     "Sections, structure tags and per-section imagery": "सेक्शन, संरचना टैग और प्रति-सेक्शन चित्र",
-    "Sections, tags and per-section imagery": "सेक्शन, टैग और प्रति-सेक्शन चित्र"
+    "Sections, tags and per-section imagery": "सेक्शन, टैग और प्रति-सेक्शन चित्र",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "इस मशीन पर एक कुंजी बनाई गई है और यह बिल्ड अभी उसे सूचीबद्ध नहीं करता। जब तक स्निपेट",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "में नहीं आ जाता और रिलीज़ नहीं हो जाता, रोटेशन आधा है — यह मशीन ऐसी कुंजी से हस्ताक्षर कर सकती है जिस पर ऐप भरोसा नहीं करता।",
+    "Copy the snippet": "स्निपेट कॉपी करें",
+    "Could not reach the clipboard — select it and copy by hand.": "क्लिपबोर्ड तक नहीं पहुँच सका — इसे चुनकर हाथ से कॉपी कीजिए।",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "यह पहले ही इस मशीन की तिजोरी में है, इसलिए बंद करने से खोएगा नहीं। यह कभी रिपॉज़िटरी में नहीं लिखा जाता — और अगर कभी पहुँच जाए, तो उसे यह पकड़ता है:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "इसका निजी हिस्सा v0.88.0 में रिपॉज़िटरी में कमिट हो गया था और इतिहास में अब भी पहुँच में है। जिसने भी इसे कभी क्लोन किया है, वह अपने लिए आजीवन अधिकार बना सकता है जिस पर यह ऐप भरोसा कर लेता है। इसे बदलना यहाँ एक क्लिक और एक बदलाव है।",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "यहीं बनाई गई, लाई नहीं गई: न नेटवर्क, न खाता, न कुछ इंस्टॉल करना। निजी हिस्सा इस ऐप की एन्क्रिप्टेड तिजोरी में जाता है और सार्वजनिक हिस्सा एक बार दिखाया जाता है, प्रकाशित करने के लिए। इसे उसी मशीन पर बनाना होगा जो इससे हस्ताक्षर करेगी — ऐसी सार्वजनिक कुंजी जिसका निजी हिस्सा अब मौजूद न रही जगह पर हो, लीक हुई कुंजी से भी बुरी है: कोई उससे हस्ताक्षर नहीं कर सकता और हर अधिकार सत्यापित होना बंद कर देता है।",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "बनाई गई और खुद से जाँची गई: निजी हिस्से से एक टोकन पर हस्ताक्षर किया गया और सार्वजनिक हिस्से से सत्यापित किया गया, दोनों में से कोई दिखाने से पहले।",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "इसे SUBS_PUBLIC_KEYS में चिपकाइए, वहाँ मौजूद एकमात्र पंक्ति की जगह",
+    "The leaked one is no longer trusted by this build.": "लीक हुई कुंजी पर यह बिल्ड अब भरोसा नहीं करता।",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "पुरानी कुंजी दो सप्ताह और चलती है। यह ओवरलैप शिष्टाचार नहीं है: बदलाव से एक मिनट पहले जारी टोकन अपनी पूरी अवधि तक मान्य है, और उसे ठुकराना ठीक उन्हीं लोगों को बाहर कर देता जो रोटेशन के समय ऐप चला रहे थे।",
+    "The private half — for whatever signs entitlements. Shown once.": "निजी हिस्सा — जो भी अधिकार पर हस्ताक्षर करता है उसके लिए। एक बार दिखाया जाता है।",
+    "The signing key is this machine's own.": "हस्ताक्षर कुंजी इसी मशीन की अपनी है।",
+    "This build still trusts the leaked signing key": "यह बिल्ड अब भी लीक हुई हस्ताक्षर कुंजी पर भरोसा करता है"
   },
   "same_as_english": [
     "DPI —",

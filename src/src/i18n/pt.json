@@ -2900,7 +2900,22 @@
     "Open Music Gen": "Abrir o Music Gen",
     "Sections saved.": "Secções guardadas.",
     "Sections, structure tags and per-section imagery": "Secções, etiquetas de estrutura e imagens por secção",
-    "Sections, tags and per-section imagery": "Secções, etiquetas e imagens por secção"
+    "Sections, tags and per-section imagery": "Secções, etiquetas e imagens por secção",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "Foi gerada uma chave nesta máquina e esta versão ainda não a lista. Enquanto o excerto não estiver em",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "e publicado, a rotação está a meio — esta máquina pode assinar com uma chave em que a aplicação não confia.",
+    "Copy the snippet": "Copiar o excerto",
+    "Could not reach the clipboard — select it and copy by hand.": "Não foi possível aceder à área de transferência — selecione e copie à mão.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "Já está no cofre desta máquina, por isso fechar não a perde. Nunca é escrita no repositório — e se alguma vez lá parar, isto apanha-a:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "A sua metade privada foi commitada no repositório na v0.88.0 e continua acessível no histórico. Quem alguma vez o clonou pode emitir para si uma licença vitalícia em que esta aplicação acredita. Substituí-la é um clique aqui e uma alteração.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "Feita aqui, não obtida: sem rede, sem conta, nada para instalar. A metade privada vai para o cofre cifrado da aplicação e a pública é mostrada uma vez, para publicar. Tem de ser gerada na máquina que vai assinar com ela — uma chave pública cuja metade privada está num sítio que já não existe é pior do que uma que vazou: nada consegue assinar com ela e todas as licenças deixam de ser verificadas.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "Gerada e verificada contra si própria: assinou-se um token com a metade privada e verificou-se com a pública antes de qualquer uma ser mostrada.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "Cole isto em SUBS_PUBLIC_KEYS, substituindo a única linha que lá está",
+    "The leaked one is no longer trusted by this build.": "A que vazou já não é aceite por esta versão.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "A chave antiga continua a funcionar durante duas semanas. Essa sobreposição não é cortesia: um token emitido um minuto antes da troca vale o prazo todo, e recusá-lo excluiria precisamente quem estava a usar a aplicação durante a rotação.",
+    "The private half — for whatever signs entitlements. Shown once.": "A metade privada — para o que assina as licenças. Mostrada uma vez.",
+    "The signing key is this machine's own.": "A chave de assinatura é desta máquina.",
+    "This build still trusts the leaked signing key": "Esta versão ainda confia na chave de assinatura que vazou"
   },
   "same_as_english": [
     "DPI —",

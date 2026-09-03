@@ -2918,7 +2918,22 @@
     "Open Music Gen": "افتح Music Gen",
     "Sections saved.": "حُفظت المقاطع.",
     "Sections, structure tags and per-section imagery": "المقاطع ووسوم البنية وصور كل مقطع",
-    "Sections, tags and per-section imagery": "المقاطع والوسوم وصور كل مقطع"
+    "Sections, tags and per-section imagery": "المقاطع والوسوم وصور كل مقطع",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "أُنشئ مفتاح على هذا الجهاز وهذه النسخة لا تدرجه بعد. وإلى أن يوضع المقتطف في",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "ويُطلَق، تبقى الدورة نصف منجَزة — هذا الجهاز يستطيع التوقيع بمفتاح لا يثق به التطبيق.",
+    "Copy the snippet": "انسخ المقتطف",
+    "Could not reach the clipboard — select it and copy by hand.": "تعذّر الوصول إلى الحافظة — حدّده وانسخه يدويًا.",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "إنه بالفعل في خزنة هذا الجهاز، فالإغلاق لا يفقده. ولا يُكتب أبدًا في المستودع — وإن انتهى إلى واحد يومًا، فهذا ما يلتقطه:",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "نُشر نصفه الخاص في المستودع في الإصدار v0.88.0 وما زال متاحًا في السجل. أي شخص استنسخ المستودع يستطيع أن يصدر لنفسه اشتراكًا مدى الحياة يصدّقه هذا التطبيق. استبداله نقرة واحدة هنا وتعديل واحد.",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "صُنع هنا لا جُلب: بلا شبكة، بلا حساب، ولا شيء لتثبيته. النصف الخاص يذهب إلى خزنة التطبيق المشفّرة، والنصف العام يُعرض مرة واحدة للنشر. ويجب أن يُنشأ على الجهاز الذي سيوقّع به — فمفتاح عام نصفه الخاص في مكان لم يعد موجودًا أسوأ من مفتاح مسرَّب: لا شيء يستطيع التوقيع به، وتتوقف كل الاشتراكات عن التحقق.",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "أُنشئ وجرى التحقق منه بنفسه: وُقّع رمز بالنصف الخاص وتم التحقق منه بالنصف العام قبل عرض أيٍّ منهما.",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "الصق هذا في SUBS_PUBLIC_KEYS مكان السطر الوحيد الموجود",
+    "The leaked one is no longer trusted by this build.": "ولم تعد هذه النسخة تثق بالمسرَّب.",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "يظل المفتاح القديم صالحًا أسبوعين. هذا التداخل ليس مجاملة: الرمز الصادر قبل التبديل بدقيقة صالح لمدته كاملة، ورفضه سيقصي تحديدًا من كانوا يستخدمون التطبيق أثناء التبديل.",
+    "The private half — for whatever signs entitlements. Shown once.": "النصف الخاص — لما يوقّع الاشتراكات. يُعرض مرة واحدة.",
+    "The signing key is this machine's own.": "مفتاح التوقيع خاص بهذا الجهاز.",
+    "This build still trusts the leaked signing key": "ما زالت هذه النسخة تثق بمفتاح التوقيع المسرَّب"
   },
   "same_as_english": [
     "Video Gen"

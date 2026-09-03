@@ -2914,7 +2914,22 @@
     "Open Music Gen": "打开 Music Gen",
     "Sections saved.": "段落已保存。",
     "Sections, structure tags and per-section imagery": "段落、结构标签与每段配图",
-    "Sections, tags and per-section imagery": "段落、标签与每段配图"
+    "Sections, tags and per-section imagery": "段落、标签与每段配图",
+    "A key was minted on this machine and this build does not list it yet. Until the snippet is in": "这台机器上已生成一把密钥，而当前构建还没有收录它。在片段进入",
+    "and shipped, the rotation is half-done — this machine can sign for a key the app does not trust.": "并发布之前，轮换只做了一半——这台机器可以为一把应用并不信任的密钥签名。",
+    "Copy the snippet": "复制片段",
+    "Could not reach the clipboard — select it and copy by hand.": "无法访问剪贴板——请选中后手动复制。",
+    "It is already in this machine's vault, so closing this does not lose it. It is never written to the repository — and if it ever ends up in one, the audit that catches that is": "它已经在这台机器的保险库里，关掉也不会丢。它永远不会写进仓库——万一哪天进去了，抓住它的是：",
+    "Its private half was committed to the repository in v0.88.0 and is still reachable in the history. Anyone who has ever cloned it can mint themselves a lifetime entitlement that this app believes. Replacing it is one click here, and one edit.": "它的私钥在 v0.88.0 被提交进了仓库，至今仍可从历史中取出。任何克隆过这个仓库的人，都能给自己签发一份这个应用会相信的终身授权。更换只需在这里点一下，再改一处。",
+    "Made here, not fetched: no network, no account, nothing to install. The private half goes into this app's encrypted vault and the public half is shown once, to publish. It has to be minted on the machine that will sign with it — a public key whose private half lives somewhere that no longer exists is worse than a leaked one, because nothing can sign for it and every entitlement stops verifying.": "是在这里生成的，不是取来的：不联网、不需要账号、没有要装的东西。私钥进入本应用的加密保险库，公钥只显示一次，供你发布。必须在将要用它签名的机器上生成——私钥留在一台已经不存在的机器上的公钥，比泄露的还糟：没有任何东西能为它签名，所有授权都不再通过验证。",
+    "Minted, and checked against itself: a token was signed with the private half and verified with the public half before either was shown.": "已生成，并且自己验过自己：先用私钥签了一个令牌、再用公钥验证通过，然后才把两半展示出来。",
+    "npm run audit:secrets": "npm run audit:secrets",
+    "Paste this into SUBS_PUBLIC_KEYS, replacing the one line that is there": "把这段粘进 SUBS_PUBLIC_KEYS，替换掉那里唯一的一行",
+    "The leaked one is no longer trusted by this build.": "这个构建已不再信任泄露的那把。",
+    "The old key keeps working for a fortnight. That overlap is not politeness: a token issued a minute before the switch is valid for its full term, and refusing it would lock out exactly the people who were using the app when the rotation happened.": "旧密钥还会再工作两周。这段重叠不是客气：切换前一分钟签发的令牌在整个有效期内都算数，拒绝它恰恰会把轮换当时正在用这个应用的人挡在外面。",
+    "The private half — for whatever signs entitlements. Shown once.": "私钥——给签发授权的那一端。只显示一次。",
+    "The signing key is this machine's own.": "签名密钥是这台机器自己的。",
+    "This build still trusts the leaked signing key": "这个构建仍然信任那把泄露的签名密钥"
   },
   "same_as_english": [
     "DPI —",
