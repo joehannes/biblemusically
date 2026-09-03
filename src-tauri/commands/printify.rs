@@ -440,6 +440,14 @@ pub async fn make_products(
         .map(bson_to_value)
         .ok_or_else(|| "song not found".to_string())?;
 
+    // The shop's own settings: flavour, brand, audience, house rules. Per project, because two
+    // projects in one account are two different shops.
+    let profile = state.db.collection::<Document>("store_profiles")
+        .find_one(doc! { "project_id": song["project_id"].as_str().unwrap_or("") }).await.map_err(e)?
+        .map(bson_to_value).unwrap_or_default();
+    let fl = crate::commands::store::flavour(profile["flavour"].as_str().unwrap_or(""));
+    let shop_block = crate::commands::store::store_prompt_block(&profile);
+
     let selection = state.db.collection::<Document>("printify_selection")
         .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
         .map(bson_to_value).unwrap_or(json!({ "products": [] }));
@@ -451,57 +459,51 @@ pub async fn make_products(
 
     // The wording. Written by the AI from the song unless the user supplied it.
     let phrase = match phrase_override.filter(|p| !p.trim().is_empty()) {
-        Some(p) => print_phrase(p, 12),
+        Some(p) => print_phrase(p, fl.max_phrase_words),
         None => {
             let settings = state.db.collection::<Document>("settings")
                 .find_one(doc! { "_id": "singleton" }).await.map_err(e)?
                 .map(bson_to_value).unwrap_or_default();
-            let system = "You write the single line of text that goes on a printed product.\n\
-                          Rules: at most eight words; no quotation marks; no hashtags; no trailing \
-                          punctuation; it must stand alone on a mug or a shirt without the song for \
-                          context. Return ONLY the line.";
+            let system = format!(
+                "{shop_block}You write the single line of text that goes on a printed product.\n\
+                 Rules: at most {words} words; no quotation marks; no hashtags; no trailing \
+                 punctuation; it must stand alone on the object without the song for context. \
+                 Return ONLY the line.",
+                words = fl.max_phrase_words);
+            let system = system.as_str();
             let user = format!(
                 "Song: {}\n\nLyrics:\n{}\n\nWrite the line.",
                 song["title"].as_str().unwrap_or(""),
                 song["lyrics"].as_str().unwrap_or("").chars().take(1200).collect::<String>(),
             );
             let (text, _) = crate::commands::ai::provider_chat(&settings, system, &user, 0.9, false).await?;
-            print_phrase(&text, 8)
+            print_phrase(&text, fl.max_phrase_words)
         }
     };
 
-    // The art. Whatever the image pipeline already produced for this song, unless overridden.
-    let art = {
-            let mut found = String::new();
-            let mut cursor = state.db.collection::<Document>("sections")
-                .find(doc! { "song_id": song_id }).await.map_err(e)?;
-            while let Some(Ok(d)) = cursor.next().await {
-                let s = bson_to_value(d);
-                let url = s["image_url"].as_str().unwrap_or("").trim_start_matches("file://");
-                if !url.is_empty() && std::path::Path::new(url).exists() {
-                    found = url.to_string();
-                    break;
-                }
-            }
-            if found.is_empty() {
-                return Err("This song has no finished artwork to print. Generate images first.".into());
-            }
-            found
-    };
-
-    // Upload once, reuse for every product — Printify keeps uploads at account level.
-    let bytes = std::fs::read(&art).map_err(e)?;
-    let file_name = std::path::Path::new(&art).file_name()
-        .map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| "art.png".into());
-    let uploaded = post_json(&t, "/uploads/images.json", &json!({
-        "file_name": file_name,
-        "contents": base64_encode(&bytes),
-    })).await?;
-    let image_id = uploaded["id"].as_str().unwrap_or("").to_string();
-    if image_id.is_empty() {
-        return Err("Printify accepted the upload but returned no image id.".into());
+    // Every candidate, with its size read from the file's own header — so the choice of *which*
+    // picture suits *which* print area can be made per product. This used to `break` on the first
+    // file that existed, which meant a 2:3 poster and a square mug got the same picture, chosen by
+    // iteration order.
+    let mut candidates: Vec<Value> = Vec::new();
+    let mut cursor = state.db.collection::<Document>("sections")
+        .find(doc! { "song_id": song_id }).await.map_err(e)?;
+    while let Some(Ok(d)) = cursor.next().await {
+        let s = bson_to_value(d);
+        let url = s["image_url"].as_str().unwrap_or("").trim_start_matches("file://").to_string();
+        if url.is_empty() { continue; }
+        let path = std::path::Path::new(&url);
+        if !path.exists() { continue; }
+        let (w, h) = crate::commands::store::image_size_of(path).unwrap_or((0, 0));
+        candidates.push(json!({ "path": url, "width": w, "height": h }));
     }
-    let (art_w, art_h) = (uploaded["width"].as_i64().unwrap_or(0), uploaded["height"].as_i64().unwrap_or(0));
+    if candidates.is_empty() {
+        return Err("This song has no finished artwork to print. Generate images first.".into());
+    }
+
+    // Uploaded lazily and once each: Printify keeps uploads at account level, so a picture reused
+    // across products costs one upload however many products want it.
+    let mut uploads: std::collections::HashMap<String, (String, i64, i64)> = std::collections::HashMap::new();
 
     // Publishing is the capped operation, so check the window before making anything.
     let mut recent: Vec<String> = Vec::new();
@@ -526,20 +528,72 @@ pub async fn make_products(
                 target["title"].as_str().unwrap_or("a picked product")));
             continue;
         }
-        let quality = print_quality(
-            target["placeholder_width"].as_i64().unwrap_or(0),
-            target["placeholder_height"].as_i64().unwrap_or(0),
-            art_w, art_h,
-        );
+        let (ph_w, ph_h) = (target["placeholder_width"].as_i64().unwrap_or(0),
+                            target["placeholder_height"].as_i64().unwrap_or(0));
+
+        // The best picture for *this* print area, which is not necessarily the best for the last one.
+        let Some(chosen) = crate::commands::store::pick_art(&candidates, ph_w, ph_h) else {
+            errors.push(format!("{}: no usable artwork", target["title"].as_str().unwrap_or("a product")));
+            continue;
+        };
+        let art_path = chosen["path"].as_str().unwrap_or("").to_string();
+
+        let (image_id, art_w, art_h) = match uploads.get(&art_path) {
+            Some(entry) => entry.clone(),
+            None => {
+                let bytes = match std::fs::read(&art_path) {
+                    Ok(b) => b,
+                    Err(err) => { errors.push(format!("{art_path}: {err}")); continue; }
+                };
+                let file_name = std::path::Path::new(&art_path).file_name()
+                    .map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| "art.png".into());
+                let uploaded = match post_json(&t, "/uploads/images.json", &json!({
+                    "file_name": file_name, "contents": base64_encode(&bytes),
+                })).await {
+                    Ok(u) => u,
+                    Err(err) => { errors.push(format!("{file_name}: {err}")); continue; }
+                };
+                let id = uploaded["id"].as_str().unwrap_or("").to_string();
+                if id.is_empty() {
+                    errors.push(format!("{file_name}: Printify accepted the upload and returned no image id"));
+                    continue;
+                }
+                // Printify's own numbers where it has them; the header read is the fallback, and the
+                // two should agree — if they do not, believe the service that will do the printing.
+                let entry = (
+                    id,
+                    uploaded["width"].as_i64().filter(|w| *w > 0)
+                        .unwrap_or_else(|| chosen["width"].as_i64().unwrap_or(0)),
+                    uploaded["height"].as_i64().filter(|h| *h > 0)
+                        .unwrap_or_else(|| chosen["height"].as_i64().unwrap_or(0)),
+                );
+                uploads.insert(art_path.clone(), entry.clone());
+                entry
+            }
+        };
+
+        let quality = print_quality(ph_w, ph_h, art_w, art_h);
+        // Whether this product's art fills the area or fits inside it is a property of the product,
+        // not a preference: a poster *is* the art, a mug wraps and would show a band of blank.
+        let fill = target["fill"].as_bool().unwrap_or(fl.fill);
+        let scale = crate::commands::store::placement_scale(ph_w, ph_h, art_w, art_h, fill);
+        let loss = crate::commands::store::crop_loss(ph_w, ph_h, art_w, art_h);
+
         let title = format!("{} — {}", phrase, target["title"].as_str().unwrap_or("print"));
-        let description = format!(
-            "{phrase}\n\nFrom \"{song}\". Scripture set to music, printed on demand.",
-            song = song["title"].as_str().unwrap_or(""),
-        );
+        // The shop's own words where it has them. One hard-coded sentence on every product of every
+        // project was the same listing twice for two people selling different things.
+        let description = {
+            let brand = profile["brand"].as_str().unwrap_or("").trim();
+            let mut out = format!("{phrase}\n\nFrom \"{}\".", song["title"].as_str().unwrap_or(""));
+            let blurb = profile["blurb"].as_str().unwrap_or("").trim();
+            if !blurb.is_empty() { out.push_str(&format!(" {blurb}")); }
+            else { out.push_str(" Printed on demand."); }
+            if !brand.is_empty() { out.push_str(&format!("\n\n{brand}")); }
+            out
+        };
         let body = product_payload(
             &title, &description, blueprint_id, provider_id, &variant_ids, price,
-            &image_id, target["position"].as_str().unwrap_or("front"),
-            quality["scale"].as_f64().unwrap_or(1.0).min(1.0),
+            &image_id, target["position"].as_str().unwrap_or("front"), scale,
         );
         match post_json(&t, &format!("/shops/{shop_id}/products.json"), &body).await {
             Ok(product) => {
@@ -562,8 +616,9 @@ pub async fn make_products(
                     "title": title,
                     "blueprint_id": blueprint_id,
                     "price_cents": price,
-                    "art_path": art,
+                    "art_path": art_path,
                     "print_quality": quality,
+                    "placement": { "scale": scale, "fill": fill, "crop_loss": loss },
                     "published_at": published_at,
                     "created_at": crate::models::now_iso(),
                 });
@@ -578,8 +633,12 @@ pub async fn make_products(
 
     Ok(json!({
         "phrase": phrase,
-        "art": art,
-        "image_id": image_id,
+        // Which pictures were used and how many uploads that took, since a set of products may draw
+        // on several and each is uploaded once.
+        "art": uploads.keys().cloned().collect::<Vec<_>>(),
+        "uploads": uploads.len(),
+        "candidates": candidates.len(),
+        "flavour": fl.id,
         "created": created,
         "errors": errors,
         "published": may_publish,

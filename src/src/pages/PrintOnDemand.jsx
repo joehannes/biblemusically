@@ -8,11 +8,12 @@ import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   Shirt, Loader2, Search, Store, CheckCircle2, AlertTriangle, Sparkles,
-  ExternalLink, Trash2, RefreshCw,
+  ExternalLink, Trash2, RefreshCw, Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import GuidedPanel from "../components/GuidedPanel";
+import StoreProfile from "../components/StoreProfile";
 import TypographyStudio from "../components/TypographyStudio";
 import { useSectionAction } from "../lib/pageActions";
 import { podFlow } from "../lib/guidedFlows";
@@ -207,7 +208,8 @@ export default function PrintOnDemand() {
           </p>
         </div>
         <div className="flex gap-1">
-          {[["shop", "Shop", Store], ["products", "Products", Shirt], ["make", "Make", Sparkles], ["made", "Made", CheckCircle2]]
+          {[["shop", "Shop", Store], ["kind", "Kind of shop", Tag], ["products", "Products", Shirt],
+            ["make", "Make", Sparkles], ["made", "Made", CheckCircle2]]
             .map(([id, label, Icon]) => (
               <Button key={id} variant={tab === id ? "default" : "secondary"} size="sm" onClick={() => setTab(id)}>
                 <Icon className="w-3.5 h-3.5 mr-1.5" />{label}
@@ -224,6 +226,10 @@ export default function PrintOnDemand() {
       />
 
       {/* ── Shop ─────────────────────────────────────────────────────────── */}
+      {/* What kind of shop this is, its own words, and how it prices. One flavour sets a dozen
+          defaults so that somebody who has not thought about any of it still gets a coherent shop. */}
+      {tab === "kind" && <StoreProfile projectId={activeProjectId} />}
+
       {tab === "shop" && (
         <div className="space-y-3">
           <Card className="p-4 space-y-3">

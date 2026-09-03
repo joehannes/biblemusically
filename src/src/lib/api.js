@@ -296,6 +296,12 @@ export const api = {
   // ============ Print on demand (Printify) ============
   // The one integration here with a real API — shapes taken from its OpenAPI spec.
   printifyStorefronts: () => invokeCommand("printify_storefronts"),
+  // The shop itself: what kind of shop it is, its own words, and how it prices. Per project,
+  // because two projects in one Printify account are two different shops.
+  storeFlavours: () => invokeCommand("store_flavours"),
+  storeProfile: (projectId) => invokeCommand("store_profile", { projectId }),
+  saveStoreProfile: (payload) => invokeCommand("save_store_profile", { payload }),
+  storePrice: (payload) => invokeCommand("store_price", { payload }),
   printifyConnect: () => invokeCommand("printify_connect"),
   printifyCatalog: (payload) => invokeCommand("printify_catalog", { payload }),
   printifyBlueprintDetail: (blueprintId) => invokeCommand("printify_blueprint_detail", { blueprintId }),
