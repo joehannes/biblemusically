@@ -2904,7 +2904,16 @@
     "next, and keep the rest of the run the same.": "अगली बार, और बाकी सब वैसा ही रखिए।",
     "Try": "आज़माइए",
     "Hide the journey — the sidebar still has everything": "यात्रा छिपाइए — साइडबार में सब कुछ अब भी मौजूद है",
-    "Take me there": "मुझे वहाँ ले चलिए"
+    "Take me there": "मुझे वहाँ ले चलिए",
+    "Alright, skipping that.": "ठीक है, इसे छोड़ देता हूँ।",
+    "asking — talk over me any time": "पूछ रहा हूँ — कभी भी बीच में बोल दीजिए",
+    "Did you mean this?": "क्या आपका यही मतलब था?",
+    "I didn't catch that.": "मैं समझ नहीं पाया।",
+    "I'll leave this one to you.": "यह आप पर छोड़ता हूँ।",
+    "I'm not following — have a look and pick one.": "मैं समझ नहीं पा रहा — देखकर एक चुन लीजिए।",
+    "listening…": "सुन रहा हूँ…",
+    "Sorry — which one?": "माफ़ कीजिए — कौन सा?",
+    "working out what you meant…": "समझ रहा हूँ कि आपका क्या मतलब था…"
   },
   "same_as_english": [
     "DPI —",

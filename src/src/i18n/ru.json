@@ -2903,7 +2903,16 @@
     "next, and keep the rest of the run the same.": "в следующий раз, а остальное в прогоне оставьте прежним.",
     "Try": "Попробуйте",
     "Hide the journey — the sidebar still has everything": "Скрыть маршрут — в боковой панели по-прежнему есть всё",
-    "Take me there": "Отведи меня туда"
+    "Take me there": "Отведи меня туда",
+    "Alright, skipping that.": "Хорошо, пропускаю.",
+    "asking — talk over me any time": "спрашиваю — перебивайте в любой момент",
+    "Did you mean this?": "Вы это имели в виду?",
+    "I didn't catch that.": "Я не расслышал.",
+    "I'll leave this one to you.": "Это оставлю вам.",
+    "I'm not following — have a look and pick one.": "Я не улавливаю — посмотрите и выберите одно.",
+    "listening…": "слушаю…",
+    "Sorry — which one?": "Простите — какое?",
+    "working out what you meant…": "разбираюсь, что вы имели в виду…"
   },
   "same_as_english": [
     "DPI —",

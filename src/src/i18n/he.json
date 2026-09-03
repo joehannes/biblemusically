@@ -2897,7 +2897,16 @@
     "next, and keep the rest of the run the same.": "בפעם הבאה, והשאר את שאר הסבב כפי שהוא.",
     "Try": "נסה",
     "Hide the journey — the sidebar still has everything": "הסתר את המסלול — בסרגל הצד עדיין יש הכול",
-    "Take me there": "קח אותי לשם"
+    "Take me there": "קח אותי לשם",
+    "Alright, skipping that.": "בסדר, מדלג על זה.",
+    "asking — talk over me any time": "שואל — אפשר להפריע לי בכל רגע",
+    "Did you mean this?": "לזה התכוונת?",
+    "I didn't catch that.": "לא קלטתי.",
+    "I'll leave this one to you.": "את זה אשאיר לך.",
+    "I'm not following — have a look and pick one.": "אני לא עוקב — תסתכל ותבחר אחד.",
+    "listening…": "מקשיב…",
+    "Sorry — which one?": "סליחה — איזה?",
+    "working out what you meant…": "מנסה להבין למה התכוונת…"
   },
   "same_as_english": [
     "DPI —",

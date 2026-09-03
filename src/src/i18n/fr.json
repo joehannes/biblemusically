@@ -2888,7 +2888,16 @@
     "next, and keep the rest of the run the same.": "la prochaine fois, et gardez le reste de la série identique.",
     "Try": "Essayez",
     "Hide the journey — the sidebar still has everything": "Masquer le parcours — la barre latérale a toujours tout",
-    "Take me there": "Emmène-moi là"
+    "Take me there": "Emmène-moi là",
+    "Alright, skipping that.": "D'accord, on saute ça.",
+    "asking — talk over me any time": "je demande — coupez-moi quand vous voulez",
+    "Did you mean this?": "Vous vouliez dire ça ?",
+    "I didn't catch that.": "Je n'ai pas compris.",
+    "I'll leave this one to you.": "Je vous laisse celui-là.",
+    "I'm not following — have a look and pick one.": "Je ne suis pas — regardez et choisissez-en un.",
+    "listening…": "j'écoute…",
+    "Sorry — which one?": "Pardon — lequel ?",
+    "working out what you meant…": "je cherche ce que vous vouliez dire…"
   },
   "same_as_english": [
     "Clips",

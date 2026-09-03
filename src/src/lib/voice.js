@@ -2,6 +2,7 @@ import { api } from "./api";
 import { matchOption } from "./voiceMatch.js";
 import { getUiLanguage, allLanguages, translateKnown } from "./uiTranslate";
 import { resolveSpeechLanguage, createSilenceGate } from "./speech.js";
+import { createBargeInGate } from "./conversation.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Talking and listening.
@@ -22,7 +23,7 @@ import { resolveSpeechLanguage, createSilenceGate } from "./speech.js";
 
 const PREF_KEY = "studio:voice";
 
-const defaults = { engine: "gemini", voice: "Kore", systemVoice: "", speak: false, listen: false };
+const defaults = { engine: "gemini", voice: "Kore", systemVoice: "", speak: false, listen: false, handsFree: false };
 
 // ── system voices ───────────────────────────────────────────────────────────
 // The voices the platform itself ships: free, offline, no key, and no request budget. Android's WebView
@@ -149,6 +150,75 @@ export async function speak(text, { style, force = false, translate = true } = {
     });
   }
   return { spoken: false, error: "no speech engine available" };
+}
+
+/**
+ * Watch the microphone while something is playing, and resolve as soon as somebody starts talking.
+ *
+ * The mirror of `waitForSpeechEnd`. `cancelled()` is polled so the caller can stop watching the
+ * moment its speech finishes on its own — otherwise the analyser would hold the microphone open, and
+ * a recording indicator that stays lit after the assistant stops talking is alarming.
+ */
+async function waitForBargeIn(stream, cancelled) {
+  const Ctx = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+  if (!Ctx) return false;
+  let ctx;
+  try { ctx = new Ctx(); } catch { return false; }
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  source.connect(analyser);
+  const buf = new Uint8Array(analyser.fftSize);
+
+  const gate = createBargeInGate();
+  const started = Date.now();
+  const interrupted = await new Promise((resolve) => {
+    const tick = () => {
+      if (cancelled()) return resolve(false);
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      if (gate.push(Date.now() - started, Math.sqrt(sum / buf.length)) === "stop") return resolve(true);
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+
+  try { source.disconnect(); } catch { /* ignore */ }
+  try { await ctx.close(); } catch { /* ignore */ }
+  return interrupted;
+}
+
+/**
+ * Speak, and stop the moment somebody talks over it.
+ *
+ * Only for hands-free mode, because it holds the microphone open for as long as it is speaking —
+ * which lights the platform's recording indicator, and is not a thing to do to somebody who only
+ * asked to have the questions read aloud.
+ *
+ * Degrades to a plain `speak()` wherever the microphone is unavailable or refused: an assistant that
+ * would not speak at all because it could not listen would be a worse trade than one that cannot be
+ * interrupted.
+ */
+export async function speakInterruptible(text, { style, translate = true } = {}) {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return { ...await speak(text, { style, translate }), interrupted: false };
+  }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { return { ...await speak(text, { style, translate }), interrupted: false }; }
+
+  let finished = false;
+  let interrupted = false;
+  const watching = waitForBargeIn(stream, () => finished).then((hit) => {
+    if (hit) { interrupted = true; stopSpeaking(); }
+  });
+
+  const result = await speak(text, { style, translate });
+  finished = true;
+  await watching;
+  stream.getTracks().forEach((t) => t.stop());
+  return { ...result, interrupted };
 }
 
 // ── listening ───────────────────────────────────────────────────────────────

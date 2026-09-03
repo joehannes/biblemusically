@@ -2903,7 +2903,16 @@
     "next, and keep the rest of the run the same.": "في المرة القادمة، وأبقِ بقية الجولة كما هي.",
     "Try": "جرّب",
     "Hide the journey — the sidebar still has everything": "إخفاء المسار — الشريط الجانبي ما زال يحتوي على كل شيء",
-    "Take me there": "خذني إلى هناك"
+    "Take me there": "خذني إلى هناك",
+    "Alright, skipping that.": "حسنًا، سأتخطى هذا.",
+    "asking — talk over me any time": "أسأل — قاطعني متى شئت",
+    "Did you mean this?": "هل تقصد هذا؟",
+    "I didn't catch that.": "لم أسمع ذلك جيدًا.",
+    "I'll leave this one to you.": "سأترك هذا لك.",
+    "I'm not following — have a look and pick one.": "لم أفهم — انظر واختر واحدًا.",
+    "listening…": "أستمع…",
+    "Sorry — which one?": "عذرًا — أيّها؟",
+    "working out what you meant…": "أحاول فهم ما قصدته…"
   },
   "same_as_english": [
     "Video Gen"

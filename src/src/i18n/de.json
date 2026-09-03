@@ -2928,7 +2928,16 @@
     "next, and keep the rest of the run the same.": "als Nächstes, und lass den Rest des Laufs gleich.",
     "Try": "Probier",
     "Hide the journey — the sidebar still has everything": "Reise ausblenden — die Seitenleiste hat weiterhin alles",
-    "Take me there": "Bring mich hin"
+    "Take me there": "Bring mich hin",
+    "Alright, skipping that.": "Gut, überspringen wir das.",
+    "asking — talk over me any time": "frage — unterbrich mich jederzeit",
+    "Did you mean this?": "Meintest du das?",
+    "I didn't catch that.": "Das habe ich nicht verstanden.",
+    "I'll leave this one to you.": "Das überlasse ich dir.",
+    "I'm not following — have a look and pick one.": "Ich komme nicht mit — schau es dir an und wähle eins.",
+    "listening…": "höre zu…",
+    "Sorry — which one?": "Nochmal — welches?",
+    "working out what you meant…": "überlege, was du gemeint hast…"
   },
   "same_as_english": [
     "Clips",

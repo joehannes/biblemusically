@@ -2899,7 +2899,16 @@
     "next, and keep the rest of the run the same.": "下次试试，其余保持不变。",
     "Try": "试试",
     "Hide the journey — the sidebar still has everything": "隐藏这段路程——侧边栏里一切照旧",
-    "Take me there": "带我过去"
+    "Take me there": "带我过去",
+    "Alright, skipping that.": "好，这个跳过。",
+    "asking — talk over me any time": "正在提问——随时打断我",
+    "Did you mean this?": "你是说这个吗？",
+    "I didn't catch that.": "我没听清。",
+    "I'll leave this one to you.": "这个交给你。",
+    "I'm not following — have a look and pick one.": "我没跟上——看一下，选一个。",
+    "listening…": "在听…",
+    "Sorry — which one?": "抱歉——哪一个？",
+    "working out what you meant…": "正在弄清你的意思…"
   },
   "same_as_english": [
     "DPI —",

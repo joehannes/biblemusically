@@ -2891,7 +2891,16 @@
     "next, and keep the rest of the run the same.": "następnym razem, a resztę serii zostaw bez zmian.",
     "Try": "Spróbuj",
     "Hide the journey — the sidebar still has everything": "Ukryj trasę — pasek boczny nadal ma wszystko",
-    "Take me there": "Zabierz mnie tam"
+    "Take me there": "Zabierz mnie tam",
+    "Alright, skipping that.": "Dobrze, pomijam to.",
+    "asking — talk over me any time": "pytam — przerwij mi w każdej chwili",
+    "Did you mean this?": "Chodziło ci o to?",
+    "I didn't catch that.": "Nie dosłyszałem.",
+    "I'll leave this one to you.": "To zostawiam tobie.",
+    "I'm not following — have a look and pick one.": "Nie nadążam — spójrz i wybierz jedno.",
+    "listening…": "słucham…",
+    "Sorry — which one?": "Przepraszam — które?",
+    "working out what you meant…": "zastanawiam się, co miałeś na myśli…"
   },
   "same_as_english": [
     "DPI —",

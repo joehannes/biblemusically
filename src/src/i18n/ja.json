@@ -2899,7 +2899,16 @@
     "next, and keep the rest of the run the same.": "を次に試して、ほかは同じままにしてください。",
     "Try": "試す：",
     "Hide the journey — the sidebar still has everything": "道のりを隠す——サイドバーにはすべて残っています",
-    "Take me there": "そこへ連れていく"
+    "Take me there": "そこへ連れていく",
+    "Alright, skipping that.": "わかりました、これは飛ばします。",
+    "asking — talk over me any time": "質問中——いつでも話しかけてください",
+    "Did you mean this?": "これのことですか？",
+    "I didn't catch that.": "聞き取れませんでした。",
+    "I'll leave this one to you.": "これはお任せします。",
+    "I'm not following — have a look and pick one.": "わかりませんでした——見て一つ選んでください。",
+    "listening…": "聞いています…",
+    "Sorry — which one?": "すみません——どれですか？",
+    "working out what you meant…": "おっしゃったことを考えています…"
   },
   "same_as_english": [
     "DPI —",

@@ -5,10 +5,11 @@ import Spotlight from "./Spotlight";
 import { Card } from "./ui/card";
 import {
   Sparkles, ArrowRight, ArrowLeft, Check, Wand2, Loader2, SlidersHorizontal,
-  ChevronRight, RotateCcw, Lightbulb, Mic, MicOff, Volume2, VolumeX,
+  ChevronRight, RotateCcw, Lightbulb, Mic, MicOff, Volume2, VolumeX, Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 import { speak, stopSpeaking, listen, interpretAnswer, voicePrefs, setVoicePrefs, voiceInputAvailable } from "../lib/voice";
+import { useConversation } from "../lib/useConversation";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The guided layer.
@@ -170,7 +171,8 @@ export default function GuidedFlow({
   const recommendedId = step ? recommendedFor(step, options) : null;
 
   useEffect(() => {
-    if (!step || !prefs.speak) return;
+    // In hands-free mode the loop does the speaking, and both doing it would talk over each other.
+    if (!step || !prefs.speak || (prefs.handsFree && voiceInputAvailable())) return;
     // One reading per step, even as re-renders come and go.
     const key = `${flow.id}:${step.id}:${i}`;
     if (spokenFor.current === key) return;
@@ -182,7 +184,7 @@ export default function GuidedFlow({
       .filter(Boolean).join(" ");
     speak(line).catch(() => {});
     return () => stopSpeaking();
-  }, [step, i, options, prefs.speak, flow.id, ctx, recommendedId]);
+  }, [step, i, options, prefs.speak, prefs.handsFree, flow.id, ctx, recommendedId]);
 
   /** Take a spoken answer: transcribe, map it to a choice, and act on it. */
   const answerByVoice = async () => {
@@ -213,6 +215,31 @@ export default function GuidedFlow({
     } finally { setListening(false); }
   };
 
+  // ── hands-free ────────────────────────────────────────────────────────────
+  // The same three pieces, chained: it asks, listens, interprets and moves on, and stops the moment
+  // somebody talks over it. Opt-in, off by default, and one click ends it — this holds the microphone
+  // open while it speaks, which is not something to do to a person who only wanted the questions
+  // read aloud.
+  const handsFree = prefs.handsFree && prefs.speak;
+  const conversation = useConversation({
+    step,
+    options,
+    recommendedId,
+    enabled: handsFree,
+    onChoose: (option, { spoken } = {}) => {
+      if (spoken) toast.success(`"${spoken}" → ${option.label}`);
+      choose(option);
+    },
+    onSkip: skip,
+  });
+
+  const toggleHandsFree = () => {
+    const next = setVoicePrefs({ handsFree: !prefs.handsFree, speak: !prefs.handsFree || prefs.speak });
+    setPrefs(next);
+    if (!next.handsFree) conversation.stop();
+    else conversation.restart();
+  };
+
   const toggleSpeech = () => {
     const next = setVoicePrefs({ speak: !prefs.speak });
     setPrefs(next);
@@ -241,10 +268,31 @@ export default function GuidedFlow({
           <div className="text-sm font-semibold leading-tight">{flow.title}</div>
           <div className="text-[11px] text-muted-foreground">
             Step {i + 1} of {steps.length}
+            {/* What the loop is doing right now. Without it, "listening" and "thinking" look
+                identical from outside — a silent pause — and people talk over the wrong one. */}
+            {handsFree && conversation.phase === "speaking" &&
+              <span className="ml-2 text-primary">asking — talk over me any time</span>}
+            {handsFree && conversation.phase === "listening" &&
+              <span className="ml-2 text-primary">listening…</span>}
+            {handsFree && conversation.phase === "thinking" &&
+              <span className="ml-2 text-primary">working out what you meant…</span>}
             {proposing && <span className="inline-flex items-center gap-1 ml-2"><Loader2 className="w-3 h-3 animate-spin" />reading your project…</span>}
             {!proposing && proposal?.model && <span className="ml-2 opacity-70">suggestions by {proposal.model}</span>}
           </div>
         </div>
+        {/* Hands-free: it asks, listens and moves on by itself. Only offered where there is a way
+            to listen at all, and one click ends it — being unable to stop an assistant is exactly
+            the thing that makes people never turn one on again. */}
+        {voiceInputAvailable() && (
+          <button
+            onClick={toggleHandsFree}
+            data-testid="guided-hands-free"
+            title={handsFree ? "Stop the conversation" : "Hands-free: it asks, you answer out loud"}
+            className={`p-1.5 rounded shrink-0 hover:bg-muted/40 ${handsFree ? "text-primary" : "text-muted-foreground"}`}
+          >
+            <Radio className={`w-4 h-4 ${handsFree ? "animate-pulse" : ""}`} />
+          </button>
+        )}
         <button
           onClick={toggleSpeech}
           title={prefs.speak ? "Stop reading the questions aloud" : "Read the questions aloud"}

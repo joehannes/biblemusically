@@ -2900,7 +2900,16 @@
     "next, and keep the rest of the run the same.": "을(를) 다음에 시도하고, 나머지는 그대로 두세요.",
     "Try": "시도:",
     "Hide the journey — the sidebar still has everything": "여정 숨기기 — 사이드바에는 여전히 전부 있습니다",
-    "Take me there": "그리로 데려가 주세요"
+    "Take me there": "그리로 데려가 주세요",
+    "Alright, skipping that.": "알겠습니다, 이건 건너뛸게요.",
+    "asking — talk over me any time": "묻는 중 — 언제든 끼어드세요",
+    "Did you mean this?": "이걸 말씀하신 건가요?",
+    "I didn't catch that.": "잘 못 들었어요.",
+    "I'll leave this one to you.": "이건 맡기겠습니다.",
+    "I'm not following — have a look and pick one.": "따라가지 못했어요 — 보시고 하나 골라 주세요.",
+    "listening…": "듣고 있어요…",
+    "Sorry — which one?": "죄송해요 — 어느 쪽인가요?",
+    "working out what you meant…": "무슨 뜻이었는지 헤아리는 중…"
   },
   "same_as_english": [
     "DPI —",
