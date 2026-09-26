@@ -254,6 +254,28 @@ pub async fn kernel_pull(slug: &str) -> Res<Option<PulledKernel>> {
     }))
 }
 
+/// The `owner/name` ref of the signed-in account's own kernel called `name`, as Kaggle reports it.
+///
+/// `GET /kernels/list?group=profile` — what `kaggle kernels list --mine` asks. The owner half of the
+/// answer is whoever Kaggle authenticated the request as, which is the one thing a push cannot be
+/// told otherwise about.
+pub async fn own_kernel_ref(name: &str) -> Res<Option<String>> {
+    let v = get("/kernels/list", &[("group", "profile"), ("search", name), ("pageSize", "20")]).await?;
+    let refs = v.as_array().map(|a| a.iter()
+        .filter_map(|k| k["ref"].as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    Ok(find_kernel_ref(&refs, name))
+}
+
+/// Pick the ref whose kernel part is exactly `name` out of a listing — CSV, table or bare refs.
+///
+/// A search for `biblemusically-video-server` also returns `biblemusically-video-server-copy`, so
+/// matching the name as a whole token is the point.
+pub fn find_kernel_ref(listing: &str, name: &str) -> Option<String> {
+    let pattern = format!(r"(?m)(?:^|[\s,])([A-Za-z0-9_.-]+)/{}(?:$|[\s,])", regex::escape(name));
+    let re = regex::Regex::new(&pattern).ok()?;
+    re.captures(listing).map(|c| format!("{}/{}", &c[1], name))
+}
+
 /// Prepare a notebook's source the way Kaggle's own client does before pushing it.
 ///
 /// Two transformations, both load-bearing and neither obvious:
@@ -481,6 +503,20 @@ mod tests {
 
     /// No address is None, not an empty string — the caller distinguishes "not up yet" from "up at
     /// nowhere", and only the first is worth waiting through.
+    #[test]
+    fn the_own_kernel_is_found_in_every_listing_shape() {
+        let csv = "ref,title,author,lastRunTime,totalVotes\n\
+                   realuser/biblemusically-heartmula-server-copy,x,Real User,2026-09-01,0\n\
+                   realuser/biblemusically-heartmula-server,biblemusically-heartmula-server,Real User,2026-09-01,0\n";
+        assert_eq!(find_kernel_ref(csv, "biblemusically-heartmula-server").as_deref(),
+                   Some("realuser/biblemusically-heartmula-server"));
+        let table = "ref                                  title\n---\nreal.user/biblemusically-comfyui-server  biblemusically-comfyui-server\n";
+        assert_eq!(find_kernel_ref(table, "biblemusically-comfyui-server").as_deref(),
+                   Some("real.user/biblemusically-comfyui-server"));
+        assert_eq!(find_kernel_ref("Not found", "biblemusically-comfyui-server"), None);
+        assert_eq!(find_kernel_ref("a/biblemusically-comfyui-server-2", "biblemusically-comfyui-server"), None);
+    }
+
     #[test]
     fn a_log_with_no_address_yields_nothing() {
         assert!(find_tunnel_url("installing packages...\nno url here").is_none());
