@@ -847,6 +847,101 @@ pub(crate) async fn kaggle_slugs(db: &crate::store::Db, engine: &str) -> Option<
     Some((format!("{owner}/{name}"), format!("{KAGGLE_UPSTREAM_OWNER}/{name}"), key))
 }
 
+/// The signed-in account's own copy of kernel `name`, as Kaggle itself reports it: `owner/name`.
+///
+/// `kernels list --mine` is answered for whoever Kaggle authenticated the call as, so the owner half
+/// of this is the one account name nothing on this machine can get wrong — not a stale settings
+/// record, not a username typed into a kaggle.json beside somebody else's key. `None` when the
+/// account has no such kernel yet (a first run) or Kaggle could not be asked.
+pub(crate) async fn own_kernel_ref(name: &str) -> Option<String> {
+    let found = locate_kaggle_opt();
+    if crate::kaggle_api::transport(found.is_some()) == crate::kaggle_api::Transport::Http {
+        return crate::kaggle_api::own_kernel_ref(name).await.ok().flatten();
+    }
+    let out = tokio::process::Command::new(found?)
+        .args(["kernels", "list", "--mine", "--search", name, "--csv", "--page-size", "20"])
+        .output().await.ok()?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    crate::kaggle_api::find_kernel_ref(&text, name)
+}
+
+/// The kernel a push must name: `own`, re-addressed to the account the push will really run as.
+///
+/// A push authenticates as whoever the credential belongs to, whatever owner its `id` names. When
+/// the two differ, Kaggle does not refuse on the owner — it reads the push as a request to *create*
+/// a kernel with this title under the real account, and when that account already holds one (from
+/// any earlier start) it answers `409 Conflict` on SaveKernel. That is the failure behind "409 Client
+/// Error: Conflict for url: …/SaveKernel", reported for heartmula and comfyui alike, and the same
+/// wrong owner is why the status check found no kernel and "Open notebook" landed on a page that
+/// is not the user's.
+///
+/// So ask Kaggle who owns this account's copy, fall back to who the CLI says it is for a first run,
+/// and record the answer so every later status poll and log read addresses the same kernel.
+async fn push_target(db: &crate::store::Db, engine: &str, own: &str) -> String {
+    let Some((claimed, name)) = own.split_once('/') else { return own.to_string() };
+    let real = match own_kernel_ref(name).await {
+        Some(r) => r.split('/').next().unwrap_or("").to_string(),
+        None => kaggle_cli_username().await.unwrap_or_default(),
+    };
+    if real.is_empty() || real.eq_ignore_ascii_case(claimed) { return own.to_string(); }
+    adopt_kernel_owner(db, engine, claimed, &real).await;
+    format!("{real}/{name}")
+}
+
+/// Make the app's records agree that `engine` runs on `real`, which Kaggle says is who this
+/// machine's credential actually is — rather than `claimed`, which the records said.
+async fn adopt_kernel_owner(db: &crate::store::Db, engine: &str, claimed: &str, real: &str) {
+    let known = |accts: &[Document]| accts.iter().any(|a| a.get_str("username").ok() == Some(real));
+    if !known(&stored_kaggle_accounts(db).await) {
+        // The key file says `claimed`, the CLI only echoes it back, and Kaggle says the key is
+        // `real`'s: the credential was filed under the wrong name. Rename it everywhere, key file
+        // included, or the next `config view` would put the wrong name straight back.
+        let cli = kaggle_cli_username().await;
+        if kaggle_json_username().await.as_deref() == Some(claimed) && cli.as_deref() == Some(claimed) {
+            rename_kaggle_account(db, claimed, real).await;
+        } else {
+            // Some other credential (an OAuth token, say) is what authenticates. Adopt it as-is.
+            reconcile_kaggle_identity(db).await;
+        }
+    }
+    if known(&stored_kaggle_accounts(db).await) { set_engine_account(db, engine, real).await; }
+}
+
+/// Rename a connected Kaggle account from `from` to `to` in every place the name is kept.
+async fn rename_kaggle_account(db: &crate::store::Db, from: &str, to: &str) {
+    let coll = db.collection::<Document>("settings");
+    let doc = coll.find_one(doc! { "_id": "singleton" }).await.ok().flatten().unwrap_or_default();
+
+    let mut accts = stored_kaggle_accounts(db).await;
+    for a in accts.iter_mut() {
+        if a.get_str("username").ok() == Some(from) { a.insert("username", to); }
+    }
+    let mut seen = std::collections::HashSet::new();
+    accts.retain(|a| seen.insert(a.get_str("username").unwrap_or("").to_string()));
+
+    let mut set = doc! {};
+    if let Ok(b) = bson::to_bson(&accts) { set.insert("kaggle_accounts", b); }
+    for key in ["kaggle_active", "kaggle_username"] {
+        if doc.get_str(key).ok() == Some(from) { set.insert(key, to); }
+    }
+    if let Ok(map) = doc.get_document("kaggle_engine_accounts") {
+        for (engine, v) in map.iter() {
+            if v.as_str() == Some(from) { set.insert(format!("kaggle_engine_accounts.{engine}"), to); }
+        }
+    }
+    let _ = coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": set })
+        .with_options(crate::store::UpdateOptions::builder().upsert(true).build()).await;
+
+    if let Some(raw) = read_kaggle_json_raw().await {
+        if let Ok(mut v) = serde_json::from_str::<Value>(&raw) {
+            if v["username"].as_str().map(str::trim) == Some(from) {
+                v["username"] = Value::String(to.to_string());
+                let _ = restore_kaggle_json_raw(&v.to_string()).await;
+            }
+        }
+    }
+}
+
 /// The engine id a kernel name belongs to — `johannes/biblemusically-video-server` → `video`.
 fn engine_of_slug(slug: &str) -> &str {
     slug.rsplit('/').next().unwrap_or(slug)
@@ -1117,8 +1212,15 @@ pub async fn kaggle_notebook_url(state: State<'_, AppState>, engine: String) -> 
         .map(|o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
         .unwrap_or_default();
     let low = status.to_lowercase();
-    let exists = !(low.contains("404") || low.contains("403") || low.contains("not found")
-                   || low.contains("forbidden"));
+    let mut exists = !(low.contains("404") || low.contains("403") || low.contains("not found")
+                       || low.contains("forbidden"));
+    // Missing under the recorded owner is not the same as missing: the records can name the wrong
+    // account (see `push_target`), and the notebook is then sitting under the real one.
+    let mut own = own;
+    if !exists {
+        let name = own.rsplit('/').next().unwrap_or(&own).to_string();
+        if let Some(found) = own_kernel_ref(&name).await { own = found; exists = true; }
+    }
 
     let own_url = format!("https://www.kaggle.com/code/{}", own);
     let upstream_url = format!("https://www.kaggle.com/code/{}", upstream);
@@ -1905,8 +2007,11 @@ pub(crate) async fn ensure_account_for_engine(state: &AppState, engine: &str) ->
             // down, or every later start re-decides from scratch and can wander.
             if assigned != *username { set_engine_account(&state.db, engine, username).await; }
             // The record can name an account the CLI is not actually signed in as — a cached OAuth
-            // token outranks the key file. Make it true rather than assume it.
-            if active != *username {
+            // token outranks the key file. Make it true rather than assume it: comparing against the
+            // stored `kaggle_active` alone is exactly the assumption, since that record is what goes
+            // stale, and it left pushes naming this account while running as another (a 409).
+            let signed_in = kaggle_cli_username().await;
+            if active != *username || signed_in.as_deref() != Some(username.as_str()) {
                 if let Some(acct) = stored_kaggle_accounts(&state.db).await.iter()
                     .find(|a| a.get_str("username").ok() == Some(username.as_str()))
                 {
@@ -2089,6 +2194,8 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
         Some(v) => v,
         None => return Ok(serde_json::json!({ "ok": false, "detail": format!("Unknown engine '{}'.", engine) })),
     };
+    // Name the kernel after the account the push will really run as. Any other owner is a 409.
+    let own = push_target(&state.db, &engine, &own).await;
     // Ask the quota before spending eight minutes finding out. A GPU-less run is not a failure the
     // notebook can do anything about: Kaggle simply declines the accelerator, the notebook prints
     // "NO GPU ON THIS RUN — not serving", and the person watching has already waited three minutes
@@ -2158,6 +2265,8 @@ pub async fn start_kaggle_server(state: State<'_, AppState>, engine: String) -> 
             "detail": format!("{} server starting on Kaggle (GPU batch run).{} It needs ~8-10 min to install, download models and open the tunnel.", engine, created),
             "next_step": "Watch the live log below. The run serves until Kaggle's ~9-12 h batch limit."
         }))
+    } else if is_kernel_conflict(&out) {
+        Ok(kernel_conflict_reply(&own))
     } else if low.contains("session count") || low.contains("concurrent")
         || low.contains("maximum number") || low.contains("too many")
         || low.contains("reached the maximum") || low.contains("active session")
@@ -2283,6 +2392,31 @@ fn request_no_accelerator(meta: &mut Value) {
     if let Some(obj) = meta.as_object_mut() { obj.remove("machine_shape"); }
 }
 
+/// Whether a refused push was Kaggle's `409 Conflict` on SaveKernel.
+fn is_kernel_conflict(text: &str) -> bool {
+    let low = text.to_lowercase();
+    low.contains("409") && low.contains("conflict")
+}
+
+/// What to say about a 409 that survived `push_target`.
+///
+/// The push already names the account it runs as, so the conflict is not the owner any more: the
+/// account holds a *different* notebook under this title — one whose address is not the one the app
+/// uses, typically a copy made by hand — and Kaggle will neither update it through this address nor
+/// create a second notebook with the same title beside it.
+fn kernel_conflict_reply(own: &str) -> Value {
+    let (owner, name) = own.split_once('/').unwrap_or(("", own));
+    serde_json::json!({
+        "ok": false, "status": "kernel_conflict",
+        "detail": format!(
+            "Kaggle refused to save {own} (409 Conflict): account “{owner}” already has a notebook \
+             titled “{name}” at a different address, so Kaggle will not create this one beside it."),
+        "next_step": format!(
+            "Open https://www.kaggle.com/{owner}/code, find the notebook titled “{name}” and rename or \
+             delete it, then press Start again — the app creates a fresh copy on its own."),
+    })
+}
+
 /// Turn whatever Kaggle said about a refused push into the app's own outcome codes.
 ///
 /// Shared by both transports on purpose. The CLI prints its reasons and the API returns them, but
@@ -2393,6 +2527,7 @@ async fn start_kaggle_server_http(engine: &str, own: &str, upstream: &str) -> Re
                 "next_step": "Watch the live log below. The run serves until Kaggle's ~9-12 h batch limit."
             }))
         }
+        Err(msg) if is_kernel_conflict(&msg) => Ok(kernel_conflict_reply(own)),
         Err(msg) => Ok(classify_push_failure(&msg)),
     }
 }
@@ -2543,6 +2678,8 @@ pub async fn supersede_session(db: &crate::store::Db, engine: &str) -> Res<Value
     // A phone can reach this, and a desktop may simply not have the CLI. Say which, in a
     // sentence, rather than letting it surface as a spawn error. See require_kaggle_cli.
     let kaggle = require_kaggle_cli()?;
+    // The same owner check a start makes: a teardown addressed to the wrong owner is a 409 too.
+    let own = push_target(db, engine, &own).await;
     let tmp = env::temp_dir().join(format!("bm-kaggle-stop-{}", engine));
     let _ = fs::remove_dir_all(&tmp).await;
     let _ = fs::create_dir_all(&tmp).await;
@@ -3193,6 +3330,20 @@ pub async fn mj_auto_login(state: State<'_, AppState>, login_account: String, lo
 #[cfg(test)]
 mod kaggle_slug_tests {
     use super::*;
+
+    /// The exact text the CLI printed for a push that named one owner and ran as another.
+    #[test]
+    fn a_savekernel_409_is_recognised_as_a_conflict() {
+        let out = "409 Client Error: Conflict for url: https://api.kaggle.com/v1/kernels.KernelsApiService/SaveKernel\n\
+                   409 Client Error: Conflict for url: https://api.kaggle.com/v1/kernels.KernelsApiService/SaveKernel";
+        assert!(is_kernel_conflict(out));
+        assert!(is_kernel_conflict("Kaggle answered 409 Conflict: {}"));
+        assert!(!is_kernel_conflict("Kernel version 3 successfully pushed."));
+        assert!(!is_kernel_conflict("403 Client Error: Forbidden"));
+        let reply = kernel_conflict_reply("realuser/biblemusically-heartmula-server");
+        assert_eq!(reply["status"], "kernel_conflict");
+        assert!(reply["next_step"].as_str().unwrap().contains("kaggle.com/realuser/code"));
+    }
 
     /// The regression that made every engine unusable for anybody but the notebook's author.
     ///
