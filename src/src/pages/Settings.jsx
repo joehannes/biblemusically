@@ -844,7 +844,14 @@ const SettingsComponent = () => {
     } catch (e) { toast.error(String(e)); }
   };
   const removeAccount = async (username) => {
-    try { await api.removeKaggleAccount(username); loadKaggleAccounts(); }
+    // The backend now scrubs the account's saved credentials too, and says so — or says what it
+    // could not remove (an environment variable), which is the one case that needs the user.
+    try {
+      const r = await api.removeKaggleAccount(username);
+      if (r?.ok) toast.success(r.detail);
+      else toast.error(r?.detail, { duration: 16000 });
+      loadKaggleAccounts();
+    }
     catch (e) { toast.error(String(e)); }
   };
 

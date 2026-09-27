@@ -219,6 +219,11 @@ pub async fn get_settings(state: State<'_, AppState>, project_id: Option<String>
             }
         }
     }
+    // Usernames only. The keys are credentials, the interface never needs them, and whatever it
+    // loads it posts back — which is how a removed account's key kept returning.
+    if let Some(list) = merged.get_mut("kaggle_accounts").and_then(|v| v.as_array_mut()) {
+        for a in list.iter_mut() { if let Some(o) = a.as_object_mut() { o.remove("key"); } }
+    }
     Ok(merged)
 }
 
@@ -244,6 +249,11 @@ pub async fn get_settings(state: State<'_, AppState>, project_id: Option<String>
 const ACCOUNT_SCOPED_KEYS: &[&str] = &[
     "subs_entitlement", "subs_checked_at", "device_id",
     "kaggle_accounts", "kaggle_active", "kaggle_username", "kaggle_connected",
+];
+
+/// Written only by the Kaggle account commands, never by a general settings save.
+const KAGGLE_ACCOUNT_KEYS: &[&str] = &[
+    "kaggle_accounts", "kaggle_active", "kaggle_username", "kaggle_connected", "kaggle_engine_accounts",
 ];
 
 fn strip_account_scoped(pdoc: &mut Document) {
@@ -276,6 +286,10 @@ pub async fn update_settings(state: State<'_, AppState>, payload: Value, project
     // project-only save would leave e.g. freshly-entered API keys invisible to them.
     let mut bson = bson::to_document(&payload).map_err(e)?;
     strip_debris(&mut bson);
+    // Kaggle account records are owned by the account commands. The Settings form posts back the
+    // whole document it loaded, so letting these through meant an autosave after removing an
+    // account wrote it — key and all — straight back.
+    for k in KAGGLE_ACCOUNT_KEYS { bson.remove(*k); }
     bson.insert("_id", "singleton");
     coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": &bson })
         .upsert(true)
@@ -1391,7 +1405,15 @@ pub(crate) async fn install_kaggle_credential(username: &str, key: &str) -> Res<
 
     // Undo, in the reverse order it was done. Restoring the *token* matters as much as the key file:
     // a pasted token that does not authenticate would otherwise sit on top of a sign-in that did.
-    if let Some(prev) = prev_kaggle_json { let _ = restore_kaggle_json_raw(&prev).await; }
+    match prev_kaggle_json {
+        Some(prev) => { let _ = restore_kaggle_json_raw(&prev).await; }
+        // There was no key file before this, so the rejected one must not stay behind as one: it is
+        // exactly the "account I removed keeps loading" that nothing in the app could see or undo.
+        None if !is_token => {
+            if let Some(dir) = kaggle_config_dir() { let _ = fs::remove_file(dir.join("kaggle.json")).await; }
+        }
+        None => {}
+    }
     if is_token { let _ = restore_access_token_raw(prev_token.as_deref()).await; }
     if let Some(path) = &parked { let _ = unpark_access_token(path).await; }
     Ok(Installed {
@@ -1439,8 +1461,14 @@ pub async fn save_kaggle_token(state: State<'_, AppState>, token_json: String) -
     // sent both engines to the wrong account (see `install_kaggle_credential`).
     let coll = state.db.collection::<Document>("settings");
     let mut accts = stored_kaggle_accounts(&state.db).await;
-    accts.retain(|a| a.get_str("username").ok() != Some(filed.as_str()));
-    accts.push(doc! { "username": &filed, "key": &key });
+    // Kept when Kaggle accepted the key, even if another sign-in shadowed it (that one is worth
+    // retrying once the other is signed out). A key Kaggle *rejected* is not kept: it can never
+    // work, and a half-connected account in the list was one more thing that looked like an account
+    // but was not — then had to be removed, and then would not stay removed.
+    if installed.ok || installed.shadowed {
+        accts.retain(|a| a.get_str("username").ok() != Some(filed.as_str()));
+        accts.push(doc! { "username": &filed, "key": &key });
+    }
     let bson_accts = bson::to_bson(&accts).map_err(e)?;
     let mut set = doc! { "kaggle_accounts": bson_accts };
     if installed.ok {
@@ -1465,8 +1493,8 @@ pub async fn save_kaggle_token(state: State<'_, AppState>, token_json: String) -
                          to Kaggle as “{}”, and every run would go there. {}",
                         installed.actual, installed.detail)
             } else {
-                format!("“{username}” was saved but Kaggle did not accept it, so nothing was changed \
-                         and your previous sign-in is untouched. {}", installed.detail)
+                format!("Kaggle did not accept the token for “{username}”, so it was not saved and \
+                         your previous sign-in is untouched. {}", installed.detail)
             },
             "next_step": if shadowed {
                 "Sign the other account out — `kaggle auth logout`, or delete \
@@ -1515,15 +1543,25 @@ pub async fn reconcile_kaggle_identity(db: &crate::store::Db) -> Option<String> 
     let known = accts.iter().any(|a| a.get_str("username").ok() == Some(cli_user.as_str()));
     if known && active == cli_user { return None; }
 
-    // The key is in the same file, so an account that reached the CLI without reaching the app can be
-    // adopted whole — it stays rotatable rather than becoming a one-way switch.
+    // Adopt the account whole, so it stays switchable rather than becoming a one-way switch — but
+    // with the credential that actually signs it in. This used to take kaggle.json's key whatever
+    // the CLI had authenticated with, so an account signed in by an access token was filed with
+    // *another account's* key, and switching back to it later silently became that other account.
     if !known {
-        let key = env::var("HOME").ok()
-            .map(|h| PathBuf::from(h).join(".kaggle/kaggle.json"))
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-            .and_then(|v| v["key"].as_str().map(|s| s.to_string()))
-            .unwrap_or_default();
+        let method = kaggle_cli_identity().await.map(|(_, m)| m).unwrap_or_default();
+        let dir = kaggle_config_dir();
+        let read = |name: &str| dir.as_ref().and_then(|d| std::fs::read_to_string(d.join(name)).ok());
+        let key = match method.as_str() {
+            "ACCESS_TOKEN" => read("access_token").map(|t| t.trim().to_string()).unwrap_or_default(),
+            "LEGACY_API_KEY" => read("kaggle.json")
+                .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+                .filter(|v| v["username"].as_str().map(str::trim) == Some(cli_user.as_str()))
+                .and_then(|v| v["key"].as_str().map(|s| s.trim().to_string()))
+                .unwrap_or_default(),
+            // An OAuth sign-in has no key the app could store; it is listed, and switching away and
+            // back needs a fresh token.
+            _ => String::new(),
+        };
         accts.push(doc! { "username": &cli_user, "key": key });
     }
     let bson_accts = bson::to_bson(&accts).ok()?;
@@ -1868,25 +1906,154 @@ pub async fn activate_kaggle_account(state: State<'_, AppState>, username: Strin
     }))
 }
 
-/// Remove a stored account. If it was active, the first remaining account becomes active.
+/// Remove a stored account, and every credential this machine holds for it.
+///
+/// Dropping the account from the list used to be all this did. The account's credential stayed in
+/// `~/.kaggle`, and a `KGAT_` token in `access_token` outranks every other credential there — so the
+/// Kaggle CLI kept running as the removed account, `list_kaggle_accounts` asked it who it was, and
+/// `reconcile_kaggle_identity` dutifully added the "removed" account straight back as the active
+/// one. Reported as: an unverified account removed in the GUI kept being loaded, and the working
+/// account could not be used.
+///
+/// So removal is: forget the account, scrub its files, and put a remaining account's credential in
+/// place so the CLI is signed in as something the list actually contains.
 #[tauri::command]
 pub async fn remove_kaggle_account(state: State<'_, AppState>, username: String) -> Res<Value> {
     let coll = state.db.collection::<Document>("settings");
-    let mut accts = stored_kaggle_accounts(&state.db).await;
-    accts.retain(|a| a.get_str("username").ok() != Some(username.as_str()));
-    let new_active = accts.first().and_then(|a| a.get_str("username").ok().map(|s| s.to_string()));
-    let bson_accts = bson::to_bson(&accts).map_err(e)?;
-    coll.update_one(
-        doc! { "_id": "singleton" },
-        doc! { "$set": { "kaggle_accounts": bson_accts, "kaggle_active": new_active.clone().unwrap_or_default() } },
-    ).await.map_err(e)?;
-    if let Some(u) = &new_active {
-        // Re-point the CLI token at whatever is now active.
-        if let Some(acct) = accts.iter().find(|a| a.get_str("username").ok() == Some(u.as_str())) {
-            if let Ok(key) = acct.get_str("key") { let _ = write_kaggle_json(u, key).await; }
+    let doc = coll.find_one(doc! { "_id": "singleton" }).await.map_err(e)?.unwrap_or_default();
+    let accts = stored_kaggle_accounts(&state.db).await;
+    let removed_key = accts.iter()
+        .find(|a| a.get_str("username").ok() == Some(username.as_str()))
+        .and_then(|a| a.get_str("key").ok().map(|k| k.trim().to_string()))
+        .filter(|k| !k.is_empty());
+    let remaining: Vec<Document> = accts.into_iter()
+        .filter(|a| a.get_str("username").ok() != Some(username.as_str())).collect();
+
+    // 1. Forget it: the list, and every record that names it — engine assignments included, or the
+    //    next start would address a kernel on an account the app no longer has a key for.
+    let was_active = doc.get_str("kaggle_active").ok() == Some(username.as_str());
+    let mut set = doc! { "kaggle_accounts": bson::to_bson(&remaining).map_err(e)? };
+    let mut unset = doc! {};
+    for key in ["kaggle_active", "kaggle_username"] {
+        if doc.get_str(key).ok() == Some(username.as_str()) { set.insert(key, ""); }
+    }
+    if let Ok(map) = doc.get_document("kaggle_engine_accounts") {
+        for (engine, v) in map.iter() {
+            if v.as_str() == Some(username.as_str()) { unset.insert(format!("kaggle_engine_accounts.{engine}"), ""); }
         }
     }
-    Ok(serde_json::json!({ "ok": true, "active": new_active }))
+    let mut update = doc! { "$set": set };
+    if !unset.is_empty() { update.insert("$unset", unset); }
+    coll.update_one(doc! { "_id": "singleton" }, update).await.map_err(e)?;
+    // Older builds mirrored account state into project documents. Nothing reads it there any more
+    // (see ACCOUNT_SCOPED_KEYS), but "no trace left" means those copies go too.
+    let _ = coll.update_many(doc! { "_id": { "$ne": "singleton" } }, doc! { "$unset": {
+        "kaggle_accounts": "", "kaggle_active": "", "kaggle_username": "", "kaggle_connected": "",
+        "kaggle_engine_accounts": "" } }).await;
+
+    // 2. Scrub its credentials from disk.
+    let mut notes = scrub_kaggle_credentials(&username, removed_key.as_deref()).await;
+
+    // 3. Sign the CLI in as an account the list still contains, unless it already is one.
+    let known = |u: &str| remaining.iter().any(|a| a.get_str("username").ok() == Some(u));
+    let signed_in = kaggle_cli_username().await;
+    let mut active = signed_in.clone().filter(|u| known(u));
+    if active.is_none() {
+        let prefer = doc.get_str("kaggle_active").ok().filter(|u| !was_active && known(u)).map(str::to_string);
+        let order: Vec<Document> = remaining.iter()
+            .filter(|a| prefer.is_some() && a.get_str("username").ok() == prefer.as_deref())
+            .chain(remaining.iter().filter(|a| a.get_str("username").ok() != prefer.as_deref()))
+            .cloned().collect();
+        for acct in &order {
+            let (Ok(u), Ok(k)) = (acct.get_str("username"), acct.get_str("key")) else { continue };
+            if k.trim().is_empty() { continue; } // an OAuth sign-in the app never had a key for
+            if let Ok(installed) = install_kaggle_credential(u, k).await {
+                if installed.ok && known(&installed.actual) { active = Some(installed.actual); break; }
+                notes.push(format!("“{u}” could not take over: {}", installed.detail.chars().take(160).collect::<String>()));
+            }
+        }
+    }
+    let active_name = active.clone().unwrap_or_default();
+    coll.update_one(doc! { "_id": "singleton" }, doc! { "$set": {
+        "kaggle_active": &active_name, "kaggle_username": &active_name, "kaggle_connected": active.is_some(),
+    } }).await.map_err(e)?;
+
+    // 4. Say so if the machine is *still* signed in as it. Only an environment variable can do that
+    //    after the scrub, and the app cannot unset those for the user.
+    let still = kaggle_cli_username().await.as_deref() == Some(username.as_str());
+    if still {
+        notes.push(format!(
+            "The Kaggle CLI still signs in as “{username}” from an environment variable \
+             (KAGGLE_API_TOKEN, or KAGGLE_USERNAME with KAGGLE_KEY). Remove it from your shell \
+             profile and restart the app."));
+    }
+    Ok(serde_json::json!({
+        "ok": !still, "removed": username, "active": active,
+        "detail": if notes.is_empty() {
+            format!("Removed “{username}” and its saved credentials.{}",
+                    active.as_ref().map(|a| format!(" Now running as “{a}”.")).unwrap_or_default())
+        } else { notes.join(" ") },
+    }))
+}
+
+/// Where the Kaggle client keeps its credentials — `KAGGLE_CONFIG_DIR`, else `~/.kaggle`.
+fn kaggle_config_dir() -> Option<PathBuf> {
+    if let Ok(d) = env::var("KAGGLE_CONFIG_DIR") { if !d.trim().is_empty() { return Some(PathBuf::from(d)); } }
+    env::var("HOME").ok().or_else(|| env::var("USERPROFILE").ok()).map(|h| PathBuf::from(h).join(".kaggle"))
+}
+
+/// Delete every credential file that belongs to `username`.
+///
+/// Four files can hold one, and the client reads them in this order: `access_token` (a `KGAT_`
+/// token, which carries its own identity), `kaggle.json` (username + legacy key), and
+/// `credentials.json` (an OAuth sign-in from `kaggle auth login`). `access_token.disabled` is where
+/// switching parks a token, and would come back the next time a switch is undone.
+///
+/// A file goes when it provably belongs to the account — its stored key, or its own username field.
+/// Then the CLI is asked who it signs in as, and while the answer is still `username` the file its
+/// `auth_method` names is removed too: that covers a token the app never recorded.
+async fn scrub_kaggle_credentials(username: &str, key: Option<&str>) -> Vec<String> {
+    let mut notes = Vec::new();
+    let Some(dir) = kaggle_config_dir() else { return notes };
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).ok();
+    let json_user = |raw: &str| serde_json::from_str::<Value>(raw).ok()
+        .and_then(|v| v["username"].as_str().map(|u| u.trim().to_string()));
+    let json_key = |raw: &str| serde_json::from_str::<Value>(raw).ok()
+        .and_then(|v| v["key"].as_str().map(|u| u.trim().to_string()));
+
+    let mut doomed: Vec<&str> = Vec::new();
+    for name in ["access_token", "access_token.disabled"] {
+        if let (Some(raw), Some(k)) = (read(name), key) { if raw.trim() == k { doomed.push(name); } }
+    }
+    if let Some(raw) = read("kaggle.json") {
+        if json_user(&raw).as_deref() == Some(username) || (key.is_some() && json_key(&raw).as_deref() == key) {
+            doomed.push("kaggle.json");
+        }
+    }
+    if let Some(raw) = read("credentials.json") {
+        if json_user(&raw).as_deref() == Some(username) { doomed.push("credentials.json"); }
+    }
+    for name in doomed { let _ = fs::remove_file(dir.join(name)).await; }
+
+    // Whatever is still signing in as this account, by the CLI's own account of it.
+    if locate_kaggle_opt().is_some() {
+        for _ in 0..3 {
+            let Some((who, method)) = kaggle_cli_identity().await else { break };
+            if who != username { break; }
+            let file = match method.as_str() {
+                "ACCESS_TOKEN" => "access_token",
+                "OAUTH" => "credentials.json",
+                _ => "kaggle.json",
+            };
+            let path = dir.join(file);
+            if !path.is_file() { break; } // an environment variable — reported by the caller
+            if let Err(err) = fs::remove_file(&path).await {
+                notes.push(format!("Could not delete {}: {err}.", path.display()));
+                break;
+            }
+        }
+    }
+    notes
 }
 
 // ── Choosing an account, rather than rotating blindly ───────────────────────
@@ -3330,6 +3497,29 @@ pub async fn mj_auto_login(state: State<'_, AppState>, login_account: String, lo
 #[cfg(test)]
 mod kaggle_slug_tests {
     use super::*;
+
+    /// Removing an account deletes the files that are provably its own, and only those.
+    #[tokio::test]
+    async fn removing_an_account_scrubs_its_credentials_and_nobody_elses() {
+        let dir = std::env::temp_dir().join(format!("bm-kaggle-scrub-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let removed_token = "KGAT_00000000000000000000000000000001";
+        std::fs::write(dir.join("access_token"), format!("{removed_token}\n")).unwrap();
+        std::fs::write(dir.join("access_token.disabled"), "KGAT_ffffffffffffffffffffffffffffffff").unwrap();
+        std::fs::write(dir.join("kaggle.json"), r#"{"username":"half-verified","key":"abc"}"#).unwrap();
+        std::fs::write(dir.join("credentials.json"), r#"{"username":"working","refresh_token":"x"}"#).unwrap();
+
+        std::env::set_var("KAGGLE_CONFIG_DIR", &dir);
+        scrub_kaggle_credentials("half-verified", Some(removed_token)).await;
+        std::env::remove_var("KAGGLE_CONFIG_DIR");
+
+        assert!(!dir.join("access_token").exists(), "its token outranks everything and must go");
+        assert!(!dir.join("kaggle.json").exists(), "its key file names it and must go");
+        assert!(dir.join("access_token.disabled").exists(), "another account's parked token stays");
+        assert!(dir.join("credentials.json").exists(), "another account's OAuth sign-in stays");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// The exact text the CLI printed for a push that named one owner and ran as another.
     #[test]
