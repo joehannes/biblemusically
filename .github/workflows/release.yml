@@ -45,6 +45,10 @@ on:
         description: "Also build macOS and iOS (10× the minutes — see the note at the top)"
         type: boolean
         default: false
+      publish:
+        description: "Publish the release once every platform has built (otherwise it stays a draft)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -131,7 +135,10 @@ jobs:
             echo "reusing $TAG"
           else
             # The notes become what the app shows in its update prompt, so they are worth writing.
-            gh release create "$TAG" --draft --title "$TAG" \
+            # --target pins the tag to the commit being built. A dispatched run names a tag that does
+            # not exist yet, and without a target GitHub would create it wherever the default branch
+            # happens to be at publish time — not necessarily what these jobs compiled.
+            gh release create "$TAG" --draft --title "$TAG" --target "$GITHUB_SHA" \
               --notes "Studio Lightkid $TAG
 
           Installing: see docs/INSTALL.md. Android needs one system toggle; iOS needs TestFlight or
@@ -443,3 +450,22 @@ jobs:
           find src-tauri/gen/apple -name '*.ipa' -exec \
             gh release upload "${{ needs.draft.outputs.tag }}" {} --clobber \; || \
             echo "No IPA produced — expected without a signing identity."
+
+  # Opt-in, and only once everything asked for has built. The draft exists so a half-finished matrix is
+  # never offered as an update; publishing after every platform job succeeded keeps that promise while
+  # sparing the hand step when a release is wanted end to end.
+  publish:
+    needs: [draft, desktop, android, ios]
+    if: >-
+      always() && github.event.inputs.publish == 'true'
+      && needs.draft.result == 'success' && needs.desktop.result == 'success'
+      && needs.android.result == 'success'
+      && (needs.ios.result == 'success' || needs.ios.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ needs.draft.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "${{ needs.draft.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
