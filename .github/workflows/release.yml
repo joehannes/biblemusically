@@ -248,7 +248,13 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: "aarch64-linux-android,armv7-linux-androideabi" }
+      # `packages` is spelled out because the action's default is "tools platform-tools", and the SDK
+      # retired the `tools` package: the runner's cmdline-tools 16 answers "Failed to find package
+      # 'tools'" and exits 1, which is what failed v0.142.0's Android job before it compiled a line.
+      # Everything else the build needs is installed by the NDK step below.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: NDK
         run: |
@@ -435,21 +441,36 @@ jobs:
       - name: Build an unsigned IPA
         run: |
           npx tauri ios init --ci || true
-          # No signing identity in CI, so this produces an unsigned archive. It cannot be installed on a
-          # stock device as-is — see the note at the top of this file and docs/INSTALL.md.
-          npx tauri ios build --export-method debugging || \
-          xcodebuild -workspace src-tauri/gen/apple/*.xcodeproj/project.xcworkspace \
-            -scheme "*" -configuration Release -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO archive || true
+          # No signing identity in CI. Xcode refuses to even plan a build that wants signing without a
+          # development team ("Signing for … requires a development team"), which is how v0.142.0's
+          # job ended with nothing, so signing is switched off in the generated project itself. The
+          # archive then builds; only the export step, which insists on signing, still fails.
+          PBX=$(ls -d src-tauri/gen/apple/*.xcodeproj)/project.pbxproj
+          perl -pi -e 's/buildSettings = \{/buildSettings = { CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = "";/' "$PBX"
+          grep -c 'CODE_SIGNING_ALLOWED = NO' "$PBX" || true
+          npx tauri ios build --export-method debugging || true
+
+          # Package the archive the way an IPA is laid out: Payload/<App>.app, zipped. It cannot be
+          # installed on a stock device as-is — the user signs it with AltStore/SideStore, see the
+          # note at the top of this file and docs/INSTALL.md.
+          ARCHIVE=$(find src-tauri/gen/apple "$HOME/Library/Developer/Xcode/Archives" \
+                      -name '*.xcarchive' -maxdepth 4 2>/dev/null | head -1)
+          echo "archive: ${ARCHIVE:-none}"
+          if [ -n "$ARCHIVE" ] && [ -z "$(find src-tauri/gen/apple -name '*.ipa' | head -1)" ]; then
+            VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+            mkdir -p ipa/Payload
+            cp -R "$ARCHIVE"/Products/Applications/*.app ipa/Payload/
+            (cd ipa && zip -qry "../src-tauri/gen/apple/lightkid_studio_${VERSION}_unsigned.ipa" Payload)
+          fi
 
       - name: Attach whatever built
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          find src-tauri/gen/apple -name '*.ipa' -o -name '*.xcarchive' | head -5
+          find src-tauri/gen/apple -name '*.ipa' | head -5
           find src-tauri/gen/apple -name '*.ipa' -exec \
             gh release upload "${{ needs.draft.outputs.tag }}" {} --clobber \; || \
-            echo "No IPA produced — expected without a signing identity."
+            echo "No IPA produced."
 
   # Opt-in, and only once everything asked for has built. The draft exists so a half-finished matrix is
   # never offered as an update; publishing after every platform job succeeded keeps that promise while
