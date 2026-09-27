@@ -14,7 +14,7 @@ import {
   Bot, Plus, X, Save, Upload, Download, Sparkles, FlaskConical, 
   ArrowRight, Wand2, Trash2, Copy, Keyboard, Eye, HelpCircle, 
   Film, Image, Settings, Music, ChevronDown, Check, Info,
-  ClipboardCheck, ListChecks, RefreshCw, SlidersHorizontal, Dices
+  ClipboardCheck, ListChecks, RefreshCw, SlidersHorizontal, Dices, PenLine
 } from "lucide-react";
 import { appendDailyFlavor } from "../lib/dailyFlavor";
 import { checkSingability } from "../lib/singability";
